@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package agent.v1;
+
+option go_package = "github.com/creamcroissant/xboard/pkg/pb/agent/v1;agentv1";
+
+import "agent/v1/status.proto";
+import "agent/v1/config.proto";
+import "agent/v1/traffic.proto";
+import "agent/v1/forwarding.proto";
+import "agent/v1/core.proto";
+import "agent/v1/access_log.proto";
+
+// AgentService defines the communication interface between Agent and Panel
+// Panel acts as the gRPC server, Agent connects as client
+service AgentService {
+  // Heartbeat keeps the connection alive and syncs time
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+
+  // ReportStatus reports system metrics and network traffic
+  rpc ReportStatus(StatusReport) returns (StatusResponse);
+
+  // GetConfig fetches node configuration
+  rpc GetConfig(ConfigRequest) returns (ConfigResponse);
+
+  // GetUsers fetches user list for the node
+  rpc GetUsers(UsersRequest) returns (UsersResponse);
+
+  // ReportTraffic reports user-level traffic data
+  rpc ReportTraffic(TrafficReport) returns (TrafficResponse);
+
+  // ReportAlive reports active user IDs
+  rpc ReportAlive(AliveReport) returns (AliveResponse);
+
+  // StatusStream is a bidirectional stream for real-time status updates
+  // Agent sends status reports, Panel can send commands
+  rpc StatusStream(stream StatusReport) returns (stream StatusCommand);
+
+  // GetForwardingRules fetches forwarding rules
+  rpc GetForwardingRules(ForwardingRulesRequest) returns (ForwardingRulesResponse);
+
+  // ReportForwardingStatus reports apply result
+  rpc ReportForwardingStatus(ForwardingStatusReport) returns (StatusResponse);
+
+  // GetCores fetches available cores and instances
+  rpc GetCores(GetCoresRequest) returns (GetCoresResponse);
+
+  // SwitchCore requests core switch
+  rpc SwitchCore(SwitchCoreRequest) returns (SwitchCoreResponse);
+
+  // ReportAccessLogs reports access logs
+  rpc ReportAccessLogs(AccessLogReport) returns (AccessLogResponse);
+}

@@ -1,0 +1,15 @@
+[Unit]
+Description=XBoard Panel Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/xboard
+EnvironmentFile=-/etc/default/xboard
+ExecStart=/opt/xboard/xboard serve --config /opt/xboard/config.yml
+Restart=always
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

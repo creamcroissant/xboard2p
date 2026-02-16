@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package agent.v1;
+
+option go_package = "github.com/creamcroissant/xboard/pkg/pb/agent/v1;agentv1";
+
+// CoreInfo describes a core type and its availability.
+message CoreInfo {
+  string type = 1;
+  string version = 2;
+  bool installed = 3;
+  repeated string capabilities = 4;
+}
+
+// CoreInstance describes a running core instance on agent.
+message CoreInstance {
+  string id = 1;
+  string core_type = 2;
+  string status = 3;
+  repeated int32 listen_ports = 4;
+  string config_path = 5;
+  string config_hash = 6;
+  int32 pid = 7;
+  int64 started_at = 8;
+  string error = 9;
+}
+
+// GetCoresRequest fetches available cores and instances.
+message GetCoresRequest {}
+
+// GetCoresResponse contains core info and instances.
+message GetCoresResponse {
+  repeated CoreInfo cores = 1;
+  repeated CoreInstance instances = 2;
+}
+
+// SwitchCoreRequest requests core switch.
+message SwitchCoreRequest {
+  string from_instance_id = 1;
+  string to_core_type = 2;
+  bytes config_json = 3;
+  string switch_id = 4;
+  // listen_ports 由 Panel 显式指定，Agent 无需解析配置推导端口
+  // 这避免了脆弱的配置文件解析依赖
+  repeated int32 listen_ports = 5;
+  // zero_downtime 指示是否启用零停机切换
+  bool zero_downtime = 6;
+}
+
+// SwitchCoreResponse reports switch result.
+message SwitchCoreResponse {
+  bool success = 1;
+  string new_instance_id = 2;
+  string message = 3;
+  string error = 4;
+}

@@ -1,0 +1,100 @@
+# XBoard Configuration File
+# This file is used to configure the XBoard server and node behavior.
+# Environment variables can override these settings (e.g. XBOARD_DB_PATH overrides database.path).
+
+# ------------------------------------------------------------------------------
+# System Configuration (Panel)
+# ------------------------------------------------------------------------------
+
+# HTTP Service Configuration
+http:
+  addr: "0.0.0.0:8080"            # Listen address
+  shutdown_timeout: "15s"         # Graceful shutdown timeout
+
+# Logging Configuration
+log:
+  level: "info"                   # debug, info, warn, error
+  format: "json"                  # json, text
+  add_source: false               # Include file source in logs
+  environment: "production"       # development, production
+
+# Database Configuration
+database:
+  driver: "sqlite"                # Currently only sqlite is supported
+  path: "data/xboard.db"          # Path to SQLite database file
+
+# Authentication & Security
+auth:
+  signing_key: "change-me"        # JWT signing key (Keep secret!)
+  token_ttl: "24h"                # Access token time-to-live
+  issuer: "xboard"                # JWT issuer
+  audience: "xboard-client"       # JWT audience
+  leeway: "30s"                   # Time skew allowance
+  bcrypt_cost: 12                 # Password hashing cost
+
+# Security Configuration
+security:
+  subscribe_obfuscation: false    # Enable subscription link obfuscation
+
+# Prometheus Metrics Configuration
+metrics:
+  enabled: false                  # Enable Prometheus metrics endpoint
+  namespace: "xboard"             # Metrics namespace prefix
+  subsystem: "http"               # Metrics subsystem name
+  token: ""                       # Bearer token for /metrics endpoint (optional)
+
+# User Interface Configuration
+ui:
+  admin:
+    enabled: true
+    dir: "web/admin-vite/dist"    # Path to Admin UI static files
+    base_url: ""                  # Base URL path (optional)
+    title: "XBoard Admin"
+    version: "1.0.0"
+  install:
+    enabled: true
+    dir: "web/install"            # Path to Install UI static files
+
+# ------------------------------------------------------------------------------
+# Agent Configuration (gRPC)
+# ------------------------------------------------------------------------------
+
+grpc:
+  enabled: true                 # Required. Agent only supports gRPC transport.
+  address: "127.0.0.1:9090"     # Panel gRPC address
+  timeout: "10s"               # RPC timeout
+  host_token: "change-me"      # Panel communication token
+
+tag: "default"                # Agent tag (optional)
+
+monitor:
+  interval: "10s"              # System metrics interval
+
+traffic:
+  interval: "10s"              # Traffic report interval
+
+# Agent core configuration (template rendering)
+core:
+  template_path: "/etc/xboard/templates/singbox.tmpl"  # Go template file
+  output_path: "/etc/sing-box/config.json"            # Rendered config path
+  reload_cmd: "systemctl reload sing-box"             # Command to reload core
+
+# Agent multi-core configuration (optional)
+# - Use this when you want to manage multiple core instances (sing-box / xray, etc.)
+# - `cores` defines available core types and their config paths
+# - `instances` declares initial running instances and their templates
+multi_core:
+  enabled: false
+  cores:
+    sing-box:
+      template_path: "/etc/xboard/templates/singbox.tmpl"
+      output_path: "/etc/sing-box/config.json"
+      reload_cmd: "systemctl reload sing-box"
+    xray:
+      template_path: "/etc/xboard/templates/xray.tmpl"
+      output_path: "/etc/xray/config.json"
+      reload_cmd: "systemctl reload xray"
+  instances:
+    - instance_id: "singbox-default"
+      core_type: "sing-box"
+      config_template_id: 1

@@ -1,0 +1,578 @@
+package main
+
+import (
+	"compress/gzip"
+	"context"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"text/tabwriter"
+	"time"
+
+	"github.com/creamcroissant/xboard/internal/async"
+	"github.com/creamcroissant/xboard/internal/bootstrap"
+	"github.com/creamcroissant/xboard/internal/config"
+	"github.com/creamcroissant/xboard/internal/job"
+	"github.com/creamcroissant/xboard/internal/migrations"
+	"github.com/creamcroissant/xboard/internal/notifier"
+	"github.com/creamcroissant/xboard/internal/repository"
+	"github.com/creamcroissant/xboard/internal/repository/sqlite"
+	"github.com/creamcroissant/xboard/internal/service"
+	"github.com/creamcroissant/xboard/internal/support/hash"
+	"github.com/spf13/cobra"
+)
+
+func init() {
+	// Migrate
+	var migrateStatus bool
+	var migrateRollback bool
+	var migrateCmd = &cobra.Command{
+		Use:   "migrate [up|down|status]",
+		Short: "Database migration management",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+			db, err := bootstrap.OpenSQLite(cfg.DB.Path)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("Using DB path: %s\n", cfg.DB.Path)
+			defer db.Close()
+
+			if migrateStatus {
+				return migrations.Status(db)
+			}
+			if migrateRollback {
+				return migrations.Down(db)
+			}
+
+			action := "up"
+			if len(args) > 0 {
+				action = args[0]
+			}
+
+			switch action {
+			case "up":
+				return migrations.Up(db)
+			case "down":
+				return migrations.Down(db)
+			case "status":
+				return migrations.Status(db)
+			default:
+				return fmt.Errorf("unknown migrate action %q", action)
+			}
+		},
+	}
+	migrateCmd.Flags().BoolVar(&migrateStatus, "status", false, "Show migration status")
+	migrateCmd.Flags().BoolVar(&migrateRollback, "rollback", false, "Rollback the last migration")
+	rootCmd.AddCommand(migrateCmd)
+
+	// Backup
+	var backupOutput string
+	var backupCompress bool
+	var backupCmd = &cobra.Command{
+		Use:   "backup",
+		Short: "Backup database",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+			target := backupOutput
+			if target == "" {
+				backupDir := "data/backups"
+				if err := os.MkdirAll(backupDir, 0755); err != nil {
+					return fmt.Errorf("create backup dir: %w", err)
+				}
+				ext := ".db"
+				if backupCompress {
+					ext += ".gz"
+				}
+				filename := fmt.Sprintf("xboard_%s%s", time.Now().Format("20060102_150405"), ext)
+				target = filepath.Join(backupDir, filename)
+			}
+
+			db, err := bootstrap.OpenSQLite(cfg.DB.Path)
+			if err != nil {
+				return err
+			}
+			defer db.Close()
+
+			tempFile := target
+			if backupCompress {
+				if strings.HasSuffix(target, ".gz") {
+					tempFile = strings.TrimSuffix(target, ".gz")
+				} else {
+					tempFile = target + ".tmp"
+				}
+			}
+
+			if _, err := db.Exec(fmt.Sprintf("VACUUM INTO '%s'", tempFile)); err != nil {
+				return fmt.Errorf("sqlite vacuum into: %w", err)
+			}
+
+			if backupCompress {
+				if err := compressFile(tempFile, target); err != nil {
+					os.Remove(tempFile)
+					return err
+				}
+				os.Remove(tempFile)
+			}
+
+			fmt.Printf("Backup created at %s\n", target)
+			return nil
+		},
+	}
+	backupCmd.Flags().StringVar(&backupOutput, "output", "", "Output file path")
+	backupCmd.Flags().BoolVar(&backupCompress, "compress", false, "Compress output with gzip")
+	rootCmd.AddCommand(backupCmd)
+
+	// Restore
+	var restoreCmd = &cobra.Command{
+		Use:   "restore <backup-file>",
+		Short: "Restore database from backup",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+			backupPath := args[0]
+			if _, err := os.Stat(backupPath); err != nil {
+				return fmt.Errorf("backup file not found: %w", err)
+			}
+
+			dbPath := cfg.DB.Path
+			// Auto-backup before restore
+			if _, err := os.Stat(dbPath); err == nil {
+				bakPath := dbPath + ".pre_restore_" + time.Now().Format("20060102_150405")
+				if err := copyFile(dbPath, bakPath); err != nil {
+					return fmt.Errorf("failed to backup current db: %w", err)
+				}
+				fmt.Printf("Current database backed up to %s\n", bakPath)
+			}
+
+			isGzip := strings.HasSuffix(backupPath, ".gz")
+			sourceFile := backupPath
+
+			if isGzip {
+				tempSource := dbPath + ".restoring"
+				if err := decompressFile(backupPath, tempSource); err != nil {
+					return fmt.Errorf("decompress failed: %w", err)
+				}
+				sourceFile = tempSource
+				defer os.Remove(tempSource)
+			}
+
+			if err := copyFile(sourceFile, dbPath); err != nil {
+				return fmt.Errorf("restore failed: %w", err)
+			}
+
+			fmt.Println("Database restored successfully.")
+			return nil
+		},
+	}
+	rootCmd.AddCommand(restoreCmd)
+
+	// User
+	var userCmd = &cobra.Command{
+		Use:   "user",
+		Short: "User management",
+	}
+	userCmd.AddCommand(&cobra.Command{
+		Use:   "list",
+		Short: "List users",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			store, _, err := getStore()
+			if err != nil {
+				return err
+			}
+			return runUserList(store)
+		},
+	})
+	
+	var createUserEmail, createUserPassword string
+	var createUserAdmin bool
+	var createUserCmd = &cobra.Command{
+		Use:   "create",
+		Short: "Create a user",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if createUserEmail == "" || createUserPassword == "" {
+				return fmt.Errorf("email and password are required")
+			}
+			store, cfg, err := getStore()
+			if err != nil {
+				return err
+			}
+			return runUserCreate(store, cfg, createUserEmail, createUserPassword, createUserAdmin)
+		},
+	}
+	createUserCmd.Flags().StringVar(&createUserEmail, "email", "", "User email")
+	createUserCmd.Flags().StringVar(&createUserPassword, "password", "", "User password")
+	createUserCmd.Flags().BoolVar(&createUserAdmin, "admin", false, "Set as admin")
+	userCmd.AddCommand(createUserCmd)
+
+	var resetUserEmail, resetUserPassword string
+	var resetPasswordCmd = &cobra.Command{
+		Use:   "reset-password",
+		Short: "Reset user password",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if resetUserEmail == "" || resetUserPassword == "" {
+				return fmt.Errorf("email and password are required")
+			}
+			store, cfg, err := getStore()
+			if err != nil {
+				return err
+			}
+			return runUserResetPassword(store, cfg, resetUserEmail, resetUserPassword)
+		},
+	}
+	resetPasswordCmd.Flags().StringVar(&resetUserEmail, "email", "", "User email")
+	resetPasswordCmd.Flags().StringVar(&resetUserPassword, "password", "", "New password")
+	userCmd.AddCommand(resetPasswordCmd)
+
+	userCmd.AddCommand(&cobra.Command{
+		Use:   "disable <email>",
+		Short: "Disable a user",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			store, _, err := getStore()
+			if err != nil {
+				return err
+			}
+			return runUserStatus(store, args[0], 0)
+		},
+	})
+
+	userCmd.AddCommand(&cobra.Command{
+		Use:   "enable <email>",
+		Short: "Enable a user",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			store, _, err := getStore()
+			if err != nil {
+				return err
+			}
+			return runUserStatus(store, args[0], 1)
+		},
+	})
+	rootCmd.AddCommand(userCmd)
+
+	// Config
+	var configCmd = &cobra.Command{
+		Use:   "config",
+		Short: "Configuration management",
+	}
+	configCmd.AddCommand(&cobra.Command{
+		Use:   "get <key>",
+		Short: "Get configuration value",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			store, _, err := getStore()
+			if err != nil {
+				return err
+			}
+			return runConfigGet(store, args[0])
+		},
+	})
+	configCmd.AddCommand(&cobra.Command{
+		Use:   "set <key> <value>",
+		Short: "Set configuration value",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			store, _, err := getStore()
+			if err != nil {
+				return err
+			}
+			return runConfigSet(store, args[0], args[1])
+		},
+	})
+	rootCmd.AddCommand(configCmd)
+
+	// Job
+	var jobCmd = &cobra.Command{
+		Use:   "job",
+		Short: "Job management",
+	}
+	jobCmd.AddCommand(&cobra.Command{
+		Use:   "list",
+		Short: "List available jobs",
+		Run: func(cmd *cobra.Command, args []string) {
+			jobs := getJobs(nil) // store not needed for list keys
+			fmt.Println("Available jobs:")
+			for name := range jobs {
+				fmt.Println("- " + name)
+			}
+		},
+	})
+	jobCmd.AddCommand(&cobra.Command{
+		Use:   "run <name>",
+		Short: "Run a job manually",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			store, _, err := getStore()
+			if err != nil {
+				return err
+			}
+			jobs := getJobs(store)
+			name := args[0]
+			j, ok := jobs[name]
+			if !ok {
+				return fmt.Errorf("unknown job %q", name)
+			}
+			fmt.Printf("Running job %s...\n", name)
+			if err := j.Run(context.Background()); err != nil {
+				return fmt.Errorf("job run failed: %w", err)
+			}
+			fmt.Println("Job completed successfully.")
+			return nil
+		},
+	})
+	rootCmd.AddCommand(jobCmd)
+
+	// Version
+	var versionCmd = &cobra.Command{
+		Use:   "version",
+		Short: "Print version information",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Printf("XBoard Go Edition %s\n", Version)
+			fmt.Printf("Commit: %s\n", Commit)
+			fmt.Printf("Build Time: %s\n", BuildTime)
+		},
+	}
+	rootCmd.AddCommand(versionCmd)
+}
+
+// Helper functions
+
+func getStore() (*sqlite.Store, *config.Config, error) {
+	cfg, err := config.Load()
+	if err != nil {
+		return nil, nil, err
+	}
+	db, err := bootstrap.OpenSQLite(cfg.DB.Path)
+	if err != nil {
+		return nil, nil, err
+	}
+	// db.Close() handled by caller? No, for CLI tools usually we keep open until exit.
+	// But here we return store which holds db.
+	// Ideally we should close db.
+	return sqlite.NewStore(db), cfg, nil
+}
+
+func runUserList(store *sqlite.Store) error {
+	ctx := context.Background()
+	users, err := store.Users().Search(ctx, repository.UserSearchFilter{Limit: 100})
+	if err != nil {
+		return err
+	}
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
+	fmt.Fprintln(w, "ID\tEmail\tAdmin\tStatus")
+	for _, u := range users {
+		fmt.Fprintf(w, "%d\t%s\t%v\t%d\n", u.ID, u.Email, u.IsAdmin, u.Status)
+	}
+	w.Flush()
+	return nil
+}
+
+func runUserCreate(store *sqlite.Store, cfg *config.Config, email, password string, isAdmin bool) error {
+	hasher, err := hash.NewBcryptHasher(cfg.Auth.BcryptCost)
+	if err != nil {
+		return err
+	}
+	hashed, err := hasher.Hash(password)
+	if err != nil {
+		return err
+	}
+
+	user := &repository.User{
+		Email:        email,
+		Password:     hashed,
+		IsAdmin:      isAdmin,
+		Status:       1,
+		CreatedAt:    time.Now().Unix(),
+		UpdatedAt:    time.Now().Unix(),
+		UUID:         fmt.Sprintf("cli-created-%d", time.Now().UnixNano()),
+		Token:        fmt.Sprintf("cli-token-%d", time.Now().UnixNano()),
+		PasswordAlgo: "bcrypt",
+	}
+
+	if _, err := store.Users().Create(context.Background(), user); err != nil {
+		return fmt.Errorf("create user failed: %w", err)
+	}
+	fmt.Printf("User %s created.\n", email)
+	return nil
+}
+
+func runUserResetPassword(store *sqlite.Store, cfg *config.Config, email, password string) error {
+	ctx := context.Background()
+	user, err := store.Users().FindByEmail(ctx, email)
+	if err != nil {
+		return fmt.Errorf("user not found: %w", err)
+	}
+
+	hasher, err := hash.NewBcryptHasher(cfg.Auth.BcryptCost)
+	if err != nil {
+		return err
+	}
+	hashed, err := hasher.Hash(password)
+	if err != nil {
+		return err
+	}
+
+	user.Password = hashed
+	user.PasswordAlgo = "bcrypt"
+	user.UpdatedAt = time.Now().Unix()
+
+	if err := store.Users().Save(ctx, user); err != nil {
+		return fmt.Errorf("save user failed: %w", err)
+	}
+	fmt.Printf("Password reset for %s.\n", email)
+	return nil
+}
+
+func runUserStatus(store *sqlite.Store, identifier string, status int) error {
+	ctx := context.Background()
+	user, err := store.Users().FindByEmail(ctx, identifier)
+	if err != nil {
+		return fmt.Errorf("find user failed: %w", err)
+	}
+
+	user.Status = status
+	user.UpdatedAt = time.Now().Unix()
+
+	if err := store.Users().Save(ctx, user); err != nil {
+		return fmt.Errorf("update user failed: %w", err)
+	}
+	action := "enabled"
+	if status == 0 {
+		action = "disabled"
+	}
+	fmt.Printf("User %s %s.\n", identifier, action)
+	return nil
+}
+
+func runConfigGet(store *sqlite.Store, key string) error {
+	ctx := context.Background()
+	setting, err := store.Settings().Get(ctx, key)
+	if err != nil {
+		return fmt.Errorf("get config failed: %w", err)
+	}
+	if setting == nil {
+		fmt.Println("<nil>")
+	} else {
+		fmt.Println(setting.Value)
+	}
+	return nil
+}
+
+func runConfigSet(store *sqlite.Store, key, value string) error {
+	ctx := context.Background()
+	setting := &repository.Setting{
+		Key:       key,
+		Value:     value,
+		UpdatedAt: time.Now().Unix(),
+	}
+	if err := store.Settings().Upsert(ctx, setting); err != nil {
+		return fmt.Errorf("set config failed: %w", err)
+	}
+	fmt.Printf("Config %s set.\n", key)
+	return nil
+}
+
+func getJobs(store *sqlite.Store) map[string]job.Runnable {
+	trafficQueue := async.NewTrafficQueue()
+	notificationQueue := async.NewNotificationQueue()
+	statAccumulator := job.NewStatUserAccumulator()
+	
+	// Store might be nil if just listing
+	var trafficSvc service.ServerTrafficService
+	var statRepo repository.StatUserRepository
+	
+	if store != nil {
+		trafficSvc = service.NewServerTrafficService(store.Users(), nil)
+		statRepo = store.StatUsers()
+	}
+	
+	notifierSvc := notifier.NewLoggerService(nil)
+
+	return map[string]job.Runnable{
+		"traffic.fetch":   job.NewTrafficFetchJob(trafficQueue, trafficSvc, nil),
+		"stat.user":       job.NewStatUserJob(statAccumulator, statRepo, nil),
+		"notify.email":    job.NewSendEmailJob(notificationQueue, notifierSvc, nil),
+		"notify.telegram": job.NewSendTelegramJob(notificationQueue, notifierSvc, nil),
+	}
+}
+
+// File utils
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	return nil
+}
+
+func compressFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	gw := gzip.NewWriter(out)
+	defer gw.Close()
+
+	if _, err := io.Copy(gw, in); err != nil {
+		return err
+	}
+	return nil
+}
+
+func decompressFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	gr, err := gzip.NewReader(in)
+	if err != nil {
+		return err
+	}
+	defer gr.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, gr); err != nil {
+		return err
+	}
+	return nil
+}
