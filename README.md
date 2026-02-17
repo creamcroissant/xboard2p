@@ -112,6 +112,14 @@ sudo ./deploy/panel.sh
 # Install agent only
 sudo ./deploy/agent.sh
 
+# One-liner bootstrap entry (downloads agent.sh/common.sh/agent.service + verifies SHA256)
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/master/deploy/agent-bootstrap.sh -o /tmp/agent-bootstrap.sh && \
+  sudo INSTALL_DIR=/opt/xboard sh /tmp/agent-bootstrap.sh --ref latest
+
+# Bootstrap with explicit tag (script/service/binary version bound to same tag)
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/master/deploy/agent-bootstrap.sh -o /tmp/agent-bootstrap.sh && \
+  sudo INSTALL_DIR=/opt/xboard sh /tmp/agent-bootstrap.sh --ref v1.2.3
+
 # Install agent from CloudPaste shortlink (stable)
 sudo CLOUDPASTE_API_ENDPOINT="https://cloudpaste.example.com" \
   CLOUDPASTE_SLUG_PREFIX="xboard" \
@@ -146,6 +154,26 @@ Agent shortlink download environment variables:
 - `CLOUDPASTE_ALLOW_CHANNEL_DRIFT`: allow fallback to opposite channel slug (`true` by default).
 - `XBOARD_AGENT_DOWNLOAD_URL`: explicit direct URL override (tried before endpoint-based slug URL).
 - `XBOARD_AGENT_DOWNLOAD_STRICT=1`: fail-closed mode; do not fallback to local binary/source build when download fails.
+- `XBOARD_BOOTSTRAP_REF`: bootstrap target ref (`latest`, release tag, or commit hash; commit hash requires `XBOARD_RELEASE_TAG` to be set explicitly for version consistency).
+- `XBOARD_BOOTSTRAP_REPO`: bootstrap source repository (default `creamcroissant/xboard2p`).
+- `XBOARD_AGENT_SCRIPT_URL` / `XBOARD_COMMON_SCRIPT_URL` / `XBOARD_AGENT_SERVICE_URL`: optional override URLs for private mirror or emergency fallback.
+- `XBOARD_BOOTSTRAP_CHECKSUM_URL`: optional checksum manifest URL override.
+- `XBOARD_BOOTSTRAP_DOWNLOAD_STRICT=1`: fail-closed mode for bootstrap service file handling. If `agent.service` download/checksum fails, bootstrap exits immediately (no local fallback).
+
+Bootstrap `agent.service` local fallback priority (used when `XBOARD_BOOTSTRAP_DOWNLOAD_STRICT=0`, default):
+1. `XBOARD_AGENT_SERVICE_FILE`
+2. `${CALLER_DIR}/deploy/agent.service`
+3. `${CALLER_DIR}/agent.service`
+
+Fallback is triggered on:
+- remote `agent.service` download failure
+- `agent.service` checksum verification failure
+
+Strict bootstrap example (production fail-closed):
+```bash
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/master/deploy/agent-bootstrap.sh -o /tmp/agent-bootstrap.sh && \
+  sudo INSTALL_DIR=/opt/xboard XBOARD_BOOTSTRAP_DOWNLOAD_STRICT=1 sh /tmp/agent-bootstrap.sh --ref latest
+```
 
 ## ⚙️ Configuration
 

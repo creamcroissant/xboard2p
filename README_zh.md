@@ -114,6 +114,14 @@ sudo ./deploy/panel.sh
 # 仅安装 agent
 sudo ./deploy/agent.sh
 
+# 单命令 bootstrap 入口（自动下载 agent.sh/common.sh/agent.service 并校验 SHA256）
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/master/deploy/agent-bootstrap.sh -o /tmp/agent-bootstrap.sh && \
+  sudo INSTALL_DIR=/opt/xboard sh /tmp/agent-bootstrap.sh --ref latest
+
+# 指定 tag 的 bootstrap（脚本/service/二进制版本强绑定）
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/master/deploy/agent-bootstrap.sh -o /tmp/agent-bootstrap.sh && \
+  sudo INSTALL_DIR=/opt/xboard sh /tmp/agent-bootstrap.sh --ref v1.2.3
+
 # 通过 CloudPaste 短链安装 agent（stable）
 sudo CLOUDPASTE_API_ENDPOINT="https://cloudpaste.example.com" \
   CLOUDPASTE_SLUG_PREFIX="xboard" \
@@ -148,6 +156,26 @@ agent 短链下载相关环境变量：
 - `CLOUDPASTE_ALLOW_CHANNEL_DRIFT`：允许回退到对侧通道 slug（默认 `true`）。
 - `XBOARD_AGENT_DOWNLOAD_URL`：显式直链覆盖（优先于 endpoint+slug 方式）。
 - `XBOARD_AGENT_DOWNLOAD_STRICT=1`：失败即退出，不回退本地二进制/源码构建。
+- `XBOARD_BOOTSTRAP_REF`：bootstrap 目标版本（`latest`、release tag 或 commit hash；commit hash 场景需显式设置 `XBOARD_RELEASE_TAG` 以保持版本一致）。
+- `XBOARD_BOOTSTRAP_REPO`：bootstrap 源仓库（默认 `creamcroissant/xboard2p`）。
+- `XBOARD_AGENT_SCRIPT_URL` / `XBOARD_COMMON_SCRIPT_URL` / `XBOARD_AGENT_SERVICE_URL`：私有镜像或应急回源时的下载地址覆盖。
+- `XBOARD_BOOTSTRAP_CHECKSUM_URL`：校验清单地址覆盖。
+- `XBOARD_BOOTSTRAP_DOWNLOAD_STRICT=1`：bootstrap 严格模式（fail-closed）。当 `agent.service` 下载或校验失败时立即退出，不执行本地回退。
+
+Bootstrap 在 `XBOARD_BOOTSTRAP_DOWNLOAD_STRICT=0`（默认）时的 `agent.service` 本地回退优先级：
+1. `XBOARD_AGENT_SERVICE_FILE`
+2. `${CALLER_DIR}/deploy/agent.service`
+3. `${CALLER_DIR}/agent.service`
+
+触发回退的场景：
+- 远端 `agent.service` 下载失败
+- `agent.service` checksum 校验失败
+
+严格模式示例（生产环境 fail-closed）：
+```bash
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/master/deploy/agent-bootstrap.sh -o /tmp/agent-bootstrap.sh && \
+  sudo INSTALL_DIR=/opt/xboard XBOARD_BOOTSTRAP_DOWNLOAD_STRICT=1 sh /tmp/agent-bootstrap.sh --ref latest
+```
 
 ## ⚙️ 配置参数
 
