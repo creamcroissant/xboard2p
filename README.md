@@ -113,27 +113,12 @@ sudo ./deploy/panel.sh
 sudo ./deploy/agent.sh
 
 # One-liner bootstrap entry (downloads agent.sh/common.sh/agent.service + verifies SHA256)
-curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/master/deploy/agent-bootstrap.sh -o /tmp/agent-bootstrap.sh && \
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard/master/deploy/agent-bootstrap.sh -o /tmp/agent-bootstrap.sh && \
   sudo INSTALL_DIR=/opt/xboard sh /tmp/agent-bootstrap.sh --ref latest
 
 # Bootstrap with explicit tag (script/service/binary version bound to same tag)
-curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/master/deploy/agent-bootstrap.sh -o /tmp/agent-bootstrap.sh && \
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard/master/deploy/agent-bootstrap.sh -o /tmp/agent-bootstrap.sh && \
   sudo INSTALL_DIR=/opt/xboard sh /tmp/agent-bootstrap.sh --ref v1.2.3
-
-# Install agent from CloudPaste shortlink (stable)
-sudo CLOUDPASTE_API_ENDPOINT="https://cloudpaste.example.com" \
-  CLOUDPASTE_SLUG_PREFIX="xboard" \
-  CLOUDPASTE_CHANNEL="stable" \
-  ./deploy/agent.sh
-
-# Install agent from explicit direct URL
-sudo XBOARD_AGENT_DOWNLOAD_URL="https://cloudpaste.example.com/api/s/xboard-stable-agent-linux-amd64" \
-  ./deploy/agent.sh
-
-# Enable strict download mode (fail if shortlink download fails)
-sudo CLOUDPASTE_API_ENDPOINT="https://cloudpaste.example.com" \
-  XBOARD_AGENT_DOWNLOAD_STRICT=1 \
-  ./deploy/agent.sh
 
 # Start service
 sudo systemctl start xboard
@@ -147,15 +132,9 @@ sudo ./deploy/uninstall.sh
 
 Default installation directory is `/opt/xboard`.
 
-Agent shortlink download environment variables:
-- `CLOUDPASTE_API_ENDPOINT`: CloudPaste base URL (supports values with or without `/api`).
-- `CLOUDPASTE_SLUG_PREFIX`: slug prefix (default `xboard`).
-- `CLOUDPASTE_CHANNEL`: `stable` or `pre` (default `stable`).
-- `CLOUDPASTE_ALLOW_CHANNEL_DRIFT`: allow fallback to opposite channel slug (`true` by default).
-- `XBOARD_AGENT_DOWNLOAD_URL`: explicit direct URL override (tried before endpoint-based slug URL).
-- `XBOARD_AGENT_DOWNLOAD_STRICT=1`: fail-closed mode; do not fallback to local binary/source build when download fails.
+Agent install environment variables:
 - `XBOARD_BOOTSTRAP_REF`: bootstrap target ref (`latest`, release tag, or commit hash; commit hash requires `XBOARD_RELEASE_TAG` to be set explicitly for version consistency).
-- `XBOARD_BOOTSTRAP_REPO`: bootstrap source repository (default `creamcroissant/xboard2p`).
+- `XBOARD_BOOTSTRAP_REPO`: bootstrap source repository (default `creamcroissant/xboard`).
 - `XBOARD_AGENT_SCRIPT_URL` / `XBOARD_COMMON_SCRIPT_URL` / `XBOARD_AGENT_SERVICE_URL`: optional override URLs for private mirror or emergency fallback.
 - `XBOARD_BOOTSTRAP_CHECKSUM_URL`: optional checksum manifest URL override.
 - `XBOARD_BOOTSTRAP_DOWNLOAD_STRICT=1`: fail-closed mode for bootstrap service file handling. If `agent.service` download/checksum fails, bootstrap exits immediately (no local fallback).
@@ -171,7 +150,7 @@ Fallback is triggered on:
 
 Strict bootstrap example (production fail-closed):
 ```bash
-curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/master/deploy/agent-bootstrap.sh -o /tmp/agent-bootstrap.sh && \
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard/master/deploy/agent-bootstrap.sh -o /tmp/agent-bootstrap.sh && \
   sudo INSTALL_DIR=/opt/xboard XBOARD_BOOTSTRAP_DOWNLOAD_STRICT=1 sh /tmp/agent-bootstrap.sh --ref latest
 ```
 
