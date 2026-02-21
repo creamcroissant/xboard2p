@@ -114,13 +114,13 @@ sudo ./deploy/panel.sh
 # 仅安装 agent
 sudo ./deploy/agent.sh
 
-# 单命令 bootstrap 入口（自动下载 agent.sh/common.sh/agent.service 并校验 SHA256）
-curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard/master/deploy/agent-bootstrap.sh -o /tmp/agent-bootstrap.sh && \
-  sudo INSTALL_DIR=/opt/xboard sh /tmp/agent-bootstrap.sh --ref latest
+# 单命令 bootstrap 入口（bootstrap 逻辑已并入 agent.sh）
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/master/deploy/agent.sh -o /tmp/agent.sh && \
+  sudo INSTALL_DIR=/opt/xboard sh /tmp/agent.sh --bootstrap --ref latest
 
 # 指定 tag 的 bootstrap（脚本/service/二进制版本强绑定）
-curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard/master/deploy/agent-bootstrap.sh -o /tmp/agent-bootstrap.sh && \
-  sudo INSTALL_DIR=/opt/xboard sh /tmp/agent-bootstrap.sh --ref v1.2.3
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/master/deploy/agent.sh -o /tmp/agent.sh && \
+  sudo INSTALL_DIR=/opt/xboard sh /tmp/agent.sh --bootstrap --ref v1.2.3
 
 # 启动服务
 sudo systemctl start xboard
@@ -128,33 +128,66 @@ sudo systemctl start xboard
 # 查看状态
 sudo systemctl status xboard
 
-# 卸载
-sudo ./deploy/uninstall.sh
+# 卸载 panel 脚本管理产物
+sudo ./deploy/panel.sh --uninstall
+
+# 卸载 agent 脚本管理产物
+sudo ./deploy/agent.sh --uninstall
+
+# 通过聚合入口卸载
+sudo ./deploy/install.sh --full --uninstall
+sudo ./deploy/install.sh --panel-only --uninstall
+sudo ./deploy/install.sh --agent-only --uninstall
 ```
 
 默认安装目录为 `/opt/xboard`。
 
+下载依赖准备（`curl` + CA 证书）由 `deploy/panel.sh` 与 `deploy/agent.sh` 在二进制下载前直接处理。
+
+release 二进制完整性校验：
+- `deploy/panel.sh` 与 `deploy/agent.sh` 会使用同一 release 的 `SHA256SUMS.txt` 校验下载二进制。
+- checksum 条目缺失、checksum 不一致、或清单下载失败都会直接 hard-fail。
+
 agent 安装相关环境变量：
 - `XBOARD_BOOTSTRAP_REF`：bootstrap 目标版本（`latest`、release tag 或 commit hash；commit hash 场景需显式设置 `XBOARD_RELEASE_TAG` 以保持版本一致）。
-- `XBOARD_BOOTSTRAP_REPO`：bootstrap 源仓库（默认 `creamcroissant/xboard`）。
-- `XBOARD_AGENT_SCRIPT_URL` / `XBOARD_COMMON_SCRIPT_URL` / `XBOARD_AGENT_SERVICE_URL`：私有镜像或应急回源时的下载地址覆盖。
-- `XBOARD_BOOTSTRAP_CHECKSUM_URL`：校验清单地址覆盖。
-- `XBOARD_BOOTSTRAP_DOWNLOAD_STRICT=1`：bootstrap 严格模式（fail-closed）。当 `agent.service` 下载或校验失败时立即退出，不执行本地回退。
+- `XBOARD_BOOTSTRAP_REPO`：bootstrap 源仓库（默认 `creamcroissant/xboard2p`）。
+- `XBOARD_AGENT_SCRIPT_URL` / `XBOARD_AGENT_SERVICE_URL`：私有镜像下载地址覆盖。
+- `XBOARD_BOOTSTRAP_DOWNLOAD_STRICT`：兼容保留变量；bootstrap 默认 strict-only，不再影响行为。
 
-Bootstrap 在 `XBOARD_BOOTSTRAP_DOWNLOAD_STRICT=0`（默认）时的 `agent.service` 本地回退优先级：
-1. `XBOARD_AGENT_SERVICE_FILE`
-2. `${CALLER_DIR}/deploy/agent.service`
-3. `${CALLER_DIR}/agent.service`
+`deploy/agent.sh` 参数化初始化（CLI/ENV 对应）：
+- `--host-token` / `XBOARD_AGENT_HOST_TOKEN`
+- `--grpc-address` / `XBOARD_AGENT_GRPC_ADDRESS`
+- `--grpc-tls-enabled` / `XBOARD_AGENT_GRPC_TLS_ENABLED`（默认 `false`）
+- `--traffic-type` / `XBOARD_AGENT_TRAFFIC_TYPE`（默认 `netio`）
+- `--force-config-overwrite` / `XBOARD_AGENT_CONFIG_OVERWRITE=1`
+- `--uninstall`（仅清理脚本管理产物）
 
-触发回退的场景：
-- 远端 `agent.service` 下载失败
-- `agent.service` checksum 校验失败
+配置文件生成规则：
+- `agent_config.yml` 不存在：按参数写入。
+- `agent_config.yml` 已存在：默认不覆盖；显式开启 overwrite 才覆盖。
+- `host_token` 或 `grpc_address` 缺失：直接失败并输出示例。
+- 安装日志不打印 token 明文。
 
-严格模式示例（生产环境 fail-closed）：
+卸载行为说明：
+- `--uninstall` 仅清理脚本管理项。
+- 不会删除 `INSTALL_DIR` 下未知文件。
+- 不会卸载系统依赖（如 `curl`、`ca-certificates`）。
+- `agent.sh` 中 `--bootstrap` 与 `--uninstall` 互斥；`--uninstall` 与安装/bootstrap 参数混用会直接失败。
+
+非交互示例：
 ```bash
-curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard/master/deploy/agent-bootstrap.sh -o /tmp/agent-bootstrap.sh && \
-  sudo INSTALL_DIR=/opt/xboard XBOARD_BOOTSTRAP_DOWNLOAD_STRICT=1 sh /tmp/agent-bootstrap.sh --ref latest
+sudo INSTALL_DIR=/opt/xboard \
+  XBOARD_AGENT_HOST_TOKEN='your-agent-host-token' \
+  XBOARD_AGENT_GRPC_ADDRESS='10.0.0.2:9090' \
+  XBOARD_AGENT_GRPC_TLS_ENABLED=false \
+  sh ./deploy/agent.sh
 ```
+
+bootstrap 现为 strict-only：
+- checksum 清单来源固定为目标 release tag 对应的 `SHA256SUMS.txt`。
+- `agent.sh` 与 `agent.service` 均需通过 checksum 校验后才会执行安装。
+- `agent.service` 下载失败：立即退出。
+- `agent.service` checksum 校验失败：立即退出。
 
 ## ⚙️ 配置参数
 

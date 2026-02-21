@@ -153,8 +153,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          sh -n deploy/common.sh deploy/install.sh deploy/panel.sh deploy/agent.sh deploy/agent-bootstrap.sh
-          bash -n deploy/common.sh deploy/install.sh deploy/panel.sh deploy/agent.sh deploy/agent-bootstrap.sh
+          sh -n deploy/install.sh deploy/panel.sh deploy/agent.sh
+          bash -n deploy/install.sh deploy/panel.sh deploy/agent.sh
 
           WORKDIR_SH="$(mktemp -d)"
           WORKDIR_BASH="$(mktemp -d)"
@@ -164,63 +164,287 @@ jobs:
           cp deploy/install.sh "${WORKDIR_SH}/install.sh"
           cp deploy/panel.sh "${WORKDIR_SH}/panel.sh"
           cp deploy/agent.sh "${WORKDIR_SH}/agent.sh"
-          cp deploy/common.sh "${WORKDIR_SH}/common.sh"
           cp deploy/agent.service "${WORKDIR_SH}/agent.service"
-          cp deploy/agent-bootstrap.sh "${WORKDIR_SH}/agent-bootstrap.sh"
-          cp deploy/agent-bootstrap.sha256 "${WORKDIR_SH}/agent-bootstrap.sha256"
 
           cp dist/release/agent-linux-amd64 "${WORKDIR_BASH}/agent"
           cp deploy/install.sh "${WORKDIR_BASH}/install.sh"
           cp deploy/panel.sh "${WORKDIR_BASH}/panel.sh"
           cp deploy/agent.sh "${WORKDIR_BASH}/agent.sh"
-          cp deploy/common.sh "${WORKDIR_BASH}/common.sh"
           cp deploy/agent.service "${WORKDIR_BASH}/agent.service"
-          cp deploy/agent-bootstrap.sh "${WORKDIR_BASH}/agent-bootstrap.sh"
-          cp deploy/agent-bootstrap.sha256 "${WORKDIR_BASH}/agent-bootstrap.sha256"
 
           mkdir -p "${WORKDIR_SH}/local/local/releases/download/local" "${WORKDIR_BASH}/local/local/releases/download/local"
           cp dist/release/agent-linux-amd64 "${WORKDIR_SH}/local/local/releases/download/local/agent-linux-amd64"
           cp dist/release/agent-linux-amd64 "${WORKDIR_BASH}/local/local/releases/download/local/agent-linux-amd64"
+          cp dist/release/xboard-linux-amd64 "${WORKDIR_SH}/local/local/releases/download/local/xboard-linux-amd64"
+          cp dist/release/xboard-linux-amd64 "${WORKDIR_BASH}/local/local/releases/download/local/xboard-linux-amd64"
 
-          chmod +x "${WORKDIR_SH}/agent" "${WORKDIR_SH}/install.sh" "${WORKDIR_SH}/panel.sh" "${WORKDIR_SH}/agent.sh" "${WORKDIR_SH}/common.sh" "${WORKDIR_SH}/agent-bootstrap.sh"
-          chmod +x "${WORKDIR_BASH}/agent" "${WORKDIR_BASH}/install.sh" "${WORKDIR_BASH}/panel.sh" "${WORKDIR_BASH}/agent.sh" "${WORKDIR_BASH}/common.sh" "${WORKDIR_BASH}/agent-bootstrap.sh"
+          AGENT_SHA="$(sha256sum dist/release/agent-linux-amd64 | awk '{print $1}')"
+          XBOARD_SHA="$(sha256sum dist/release/xboard-linux-amd64 | awk '{print $1}')"
+          SCRIPT_SHA="$(sha256sum deploy/agent.sh | awk '{print $1}')"
+          SERVICE_SHA="$(sha256sum deploy/agent.service | awk '{print $1}')"
+          printf '%s  %s\n%s  %s\n%s  %s\n%s  %s\n' \
+            "${AGENT_SHA}" "agent-linux-amd64" \
+            "${XBOARD_SHA}" "xboard-linux-amd64" \
+            "${SCRIPT_SHA}" "agent.sh" \
+            "${SERVICE_SHA}" "agent.service" \
+            > "${WORKDIR_SH}/local/local/releases/download/local/SHA256SUMS.txt"
+          cp "${WORKDIR_SH}/local/local/releases/download/local/SHA256SUMS.txt" "${WORKDIR_BASH}/local/local/releases/download/local/SHA256SUMS.txt"
 
-          if [ "$(sha256sum "${WORKDIR_SH}/agent.sh" | awk '{print $1}')" != "$(awk '/[[:space:]]agent\.sh$/ {print $1}' "${WORKDIR_SH}/agent-bootstrap.sha256')" ]; then
-            echo "agent.sh checksum mismatch against deploy/agent-bootstrap.sha256" >&2
-            exit 1
-          fi
-          if [ "$(sha256sum "${WORKDIR_SH}/common.sh" | awk '{print $1}')" != "$(awk '/[[:space:]]common\.sh$/ {print $1}' "${WORKDIR_SH}/agent-bootstrap.sha256')" ]; then
-            echo "common.sh checksum mismatch against deploy/agent-bootstrap.sha256" >&2
-            exit 1
-          fi
-          if [ "$(sha256sum "${WORKDIR_SH}/agent.service" | awk '{print $1}')" != "$(awk '/[[:space:]]agent\.service$/ {print $1}' "${WORKDIR_SH}/agent-bootstrap.sha256')" ]; then
-            echo "agent.service checksum mismatch against deploy/agent-bootstrap.sha256" >&2
-            exit 1
-          fi
+          chmod +x "${WORKDIR_SH}/agent" "${WORKDIR_SH}/install.sh" "${WORKDIR_SH}/panel.sh" "${WORKDIR_SH}/agent.sh"
+          chmod +x "${WORKDIR_BASH}/agent" "${WORKDIR_BASH}/install.sh" "${WORKDIR_BASH}/panel.sh" "${WORKDIR_BASH}/agent.sh"
 
           (
             cd "${WORKDIR_SH}"
-            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_SH}/out" sh ./install.sh --agent-only
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_SH}/out" \
+            XBOARD_RELEASE_BASE_URL="file://${WORKDIR_SH}" \
+            XBOARD_RELEASE_REPO="local/local" \
+            XBOARD_RELEASE_TAG="local" \
+            XBOARD_AGENT_HOST_TOKEN="workflow-token-sh" \
+            XBOARD_AGENT_GRPC_ADDRESS="127.0.0.1:19090" \
+            sh ./install.sh --agent-only
             test -x "${WORKDIR_SH}/out/agent"
             test -f "${WORKDIR_SH}/out/agent_config.yml"
           )
 
           (
             cd "${WORKDIR_BASH}"
-            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_BASH}/out" bash ./install.sh --agent-only
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_BASH}/out" \
+            XBOARD_RELEASE_BASE_URL="file://${WORKDIR_BASH}" \
+            XBOARD_RELEASE_REPO="local/local" \
+            XBOARD_RELEASE_TAG="local" \
+            XBOARD_AGENT_HOST_TOKEN="workflow-token-bash" \
+            XBOARD_AGENT_GRPC_ADDRESS="127.0.0.1:19090" \
+            bash ./install.sh --agent-only
             test -x "${WORKDIR_BASH}/out/agent"
             test -f "${WORKDIR_BASH}/out/agent_config.yml"
           )
 
           (
             cd "${WORKDIR_SH}"
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_SH}/panel-out" \
+            XBOARD_RELEASE_BASE_URL="file://${WORKDIR_SH}" \
+            XBOARD_RELEASE_REPO="local/local" \
+            XBOARD_RELEASE_TAG="local" \
+            sh ./panel.sh
+            test -x "${WORKDIR_SH}/panel-out/xboard"
+            sh ./panel.sh --uninstall
+            sh ./panel.sh --uninstall
+            test ! -e "${WORKDIR_SH}/panel-out/xboard"
+            test ! -e "${WORKDIR_SH}/panel-out/config.yml"
+            test ! -e "${WORKDIR_SH}/panel-out/.env"
+            test ! -e "${WORKDIR_SH}/panel-out/web/user-vite/dist"
+            test ! -e "${WORKDIR_SH}/panel-out/web/install"
+          )
+
+          (
+            cd "${WORKDIR_BASH}"
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_BASH}/panel-out" \
+            XBOARD_RELEASE_BASE_URL="file://${WORKDIR_BASH}" \
+            XBOARD_RELEASE_REPO="local/local" \
+            XBOARD_RELEASE_TAG="local" \
+            bash ./panel.sh
+            test -x "${WORKDIR_BASH}/panel-out/xboard"
+            bash ./panel.sh --uninstall
+            bash ./panel.sh --uninstall
+            test ! -e "${WORKDIR_BASH}/panel-out/xboard"
+            test ! -e "${WORKDIR_BASH}/panel-out/config.yml"
+            test ! -e "${WORKDIR_BASH}/panel-out/.env"
+            test ! -e "${WORKDIR_BASH}/panel-out/web/user-vite/dist"
+            test ! -e "${WORKDIR_BASH}/panel-out/web/install"
+          )
+
+          (
+            cd "${WORKDIR_SH}"
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_SH}/out" \
+            sh ./agent.sh --uninstall
+            sh ./agent.sh --uninstall
+            test ! -e "${WORKDIR_SH}/out/agent"
+            test ! -e "${WORKDIR_SH}/out/agent_config.yml"
+          )
+
+          (
+            cd "${WORKDIR_BASH}"
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_BASH}/out" \
+            bash ./agent.sh --uninstall
+            bash ./agent.sh --uninstall
+            test ! -e "${WORKDIR_BASH}/out/agent"
+            test ! -e "${WORKDIR_BASH}/out/agent_config.yml"
+          )
+
+          (
+            cd "${WORKDIR_SH}"
+            mkdir -p "${WORKDIR_SH}/custom-install"
+            touch "${WORKDIR_SH}/custom-install/unknown.keep"
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_SH}/custom-install" \
+            XBOARD_RELEASE_BASE_URL="file://${WORKDIR_SH}" \
+            XBOARD_RELEASE_REPO="local/local" \
+            XBOARD_RELEASE_TAG="local" \
+            XBOARD_AGENT_HOST_TOKEN="custom-token-sh" \
+            XBOARD_AGENT_GRPC_ADDRESS="127.0.0.1:19090" \
+            sh ./agent.sh
+            test -f "${WORKDIR_SH}/custom-install/unknown.keep"
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_SH}/custom-install" \
+            sh ./agent.sh --uninstall
+            test -f "${WORKDIR_SH}/custom-install/unknown.keep"
+            test ! -e "${WORKDIR_SH}/custom-install/agent"
+            test ! -e "${WORKDIR_SH}/custom-install/agent_config.yml"
+          )
+
+          (
+            cd "${WORKDIR_BASH}"
+            mkdir -p "${WORKDIR_BASH}/custom-install"
+            touch "${WORKDIR_BASH}/custom-install/unknown.keep"
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_BASH}/custom-install" \
+            XBOARD_RELEASE_BASE_URL="file://${WORKDIR_BASH}" \
+            XBOARD_RELEASE_REPO="local/local" \
+            XBOARD_RELEASE_TAG="local" \
+            XBOARD_AGENT_HOST_TOKEN="custom-token-bash" \
+            XBOARD_AGENT_GRPC_ADDRESS="127.0.0.1:19090" \
+            bash ./agent.sh
+            test -f "${WORKDIR_BASH}/custom-install/unknown.keep"
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_BASH}/custom-install" \
+            bash ./agent.sh --uninstall
+            test -f "${WORKDIR_BASH}/custom-install/unknown.keep"
+            test ! -e "${WORKDIR_BASH}/custom-install/agent"
+            test ! -e "${WORKDIR_BASH}/custom-install/agent_config.yml"
+          )
+
+          (
+            cd "${WORKDIR_SH}"
+            if XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_SH}/conflict-out" \
+              sh ./agent.sh --uninstall --host-token "conflict-token" --grpc-address "127.0.0.1:19090"; then
+              echo "agent.sh --uninstall should fail when mixed with install parameters" >&2
+              exit 1
+            fi
+          )
+
+          (
+            cd "${WORKDIR_SH}"
+            if XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_SH}/conflict-bootstrap-uninstall-out" \
+              sh ./agent.sh --bootstrap --uninstall; then
+              echo "agent.sh --bootstrap --uninstall should fail" >&2
+              exit 1
+            fi
+          )
+
+          (
+            cd "${WORKDIR_BASH}"
+            if XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_BASH}/conflict-bootstrap-uninstall-out" \
+              bash ./agent.sh --bootstrap --uninstall; then
+              echo "agent.sh --bootstrap --uninstall should fail under bash" >&2
+              exit 1
+            fi
+          )
+
+          (
+            cd "${WORKDIR_SH}"
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_SH}/install-full-out" \
+            XBOARD_RELEASE_BASE_URL="file://${WORKDIR_SH}" \
+            XBOARD_RELEASE_REPO="local/local" \
+            XBOARD_RELEASE_TAG="local" \
+            XBOARD_AGENT_HOST_TOKEN="install-full-token-sh" \
+            XBOARD_AGENT_GRPC_ADDRESS="127.0.0.1:19090" \
+            sh ./install.sh --full
+            test -x "${WORKDIR_SH}/install-full-out/xboard"
+            test -x "${WORKDIR_SH}/install-full-out/agent"
+            test -f "${WORKDIR_SH}/install-full-out/agent_config.yml"
+            sh ./install.sh --full --uninstall
+            sh ./install.sh --full --uninstall
+            test ! -e "${WORKDIR_SH}/install-full-out/xboard"
+            test ! -e "${WORKDIR_SH}/install-full-out/agent"
+            test ! -e "${WORKDIR_SH}/install-full-out/agent_config.yml"
+          )
+
+          (
+            cd "${WORKDIR_BASH}"
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_BASH}/install-full-out" \
+            XBOARD_RELEASE_BASE_URL="file://${WORKDIR_BASH}" \
+            XBOARD_RELEASE_REPO="local/local" \
+            XBOARD_RELEASE_TAG="local" \
+            XBOARD_AGENT_HOST_TOKEN="install-full-token-bash" \
+            XBOARD_AGENT_GRPC_ADDRESS="127.0.0.1:19090" \
+            bash ./install.sh --full
+            test -x "${WORKDIR_BASH}/install-full-out/xboard"
+            test -x "${WORKDIR_BASH}/install-full-out/agent"
+            test -f "${WORKDIR_BASH}/install-full-out/agent_config.yml"
+            bash ./install.sh --full --uninstall
+            bash ./install.sh --full --uninstall
+            test ! -e "${WORKDIR_BASH}/install-full-out/xboard"
+            test ! -e "${WORKDIR_BASH}/install-full-out/agent"
+            test ! -e "${WORKDIR_BASH}/install-full-out/agent_config.yml"
+          )
+
+          (
+            cd "${WORKDIR_SH}"
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_SH}/install-panel-out" \
+            XBOARD_RELEASE_BASE_URL="file://${WORKDIR_SH}" \
+            XBOARD_RELEASE_REPO="local/local" \
+            XBOARD_RELEASE_TAG="local" \
+            sh ./install.sh --panel-only
+            test -x "${WORKDIR_SH}/install-panel-out/xboard"
+            sh ./install.sh --panel-only --uninstall
+            sh ./install.sh --panel-only --uninstall
+            test ! -e "${WORKDIR_SH}/install-panel-out/xboard"
+          )
+
+          (
+            cd "${WORKDIR_BASH}"
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_BASH}/install-panel-out" \
+            XBOARD_RELEASE_BASE_URL="file://${WORKDIR_BASH}" \
+            XBOARD_RELEASE_REPO="local/local" \
+            XBOARD_RELEASE_TAG="local" \
+            bash ./install.sh --panel-only
+            test -x "${WORKDIR_BASH}/install-panel-out/xboard"
+            bash ./install.sh --panel-only --uninstall
+            bash ./install.sh --panel-only --uninstall
+            test ! -e "${WORKDIR_BASH}/install-panel-out/xboard"
+          )
+
+          (
+            cd "${WORKDIR_SH}"
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_SH}/install-agent-out" \
+            XBOARD_RELEASE_BASE_URL="file://${WORKDIR_SH}" \
+            XBOARD_RELEASE_REPO="local/local" \
+            XBOARD_RELEASE_TAG="local" \
+            XBOARD_AGENT_HOST_TOKEN="install-agent-token-sh" \
+            XBOARD_AGENT_GRPC_ADDRESS="127.0.0.1:19090" \
+            sh ./install.sh --agent-only
+            test -x "${WORKDIR_SH}/install-agent-out/agent"
+            test -f "${WORKDIR_SH}/install-agent-out/agent_config.yml"
+            sh ./install.sh --agent-only --uninstall
+            sh ./install.sh --agent-only --uninstall
+            test ! -e "${WORKDIR_SH}/install-agent-out/agent"
+            test ! -e "${WORKDIR_SH}/install-agent-out/agent_config.yml"
+          )
+
+          (
+            cd "${WORKDIR_BASH}"
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_BASH}/install-agent-out" \
+            XBOARD_RELEASE_BASE_URL="file://${WORKDIR_BASH}" \
+            XBOARD_RELEASE_REPO="local/local" \
+            XBOARD_RELEASE_TAG="local" \
+            XBOARD_AGENT_HOST_TOKEN="install-agent-token-bash" \
+            XBOARD_AGENT_GRPC_ADDRESS="127.0.0.1:19090" \
+            bash ./install.sh --agent-only
+            test -x "${WORKDIR_BASH}/install-agent-out/agent"
+            test -f "${WORKDIR_BASH}/install-agent-out/agent_config.yml"
+            bash ./install.sh --agent-only --uninstall
+            bash ./install.sh --agent-only --uninstall
+            test ! -e "${WORKDIR_BASH}/install-agent-out/agent"
+            test ! -e "${WORKDIR_BASH}/install-agent-out/agent_config.yml"
+          )
+
+          (
+            cd "${WORKDIR_SH}"
             XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_SH}/bootstrap-out" XBOARD_BOOTSTRAP_REF=local \
             XBOARD_RELEASE_BASE_URL="file://${WORKDIR_SH}" \
-            XBOARD_AGENT_SCRIPT_URL="file://${WORKDIR_SH}/agent.sh" XBOARD_COMMON_SCRIPT_URL="file://${WORKDIR_SH}/common.sh" \
-            sh ./agent-bootstrap.sh \
+            XBOARD_BOOTSTRAP_RELEASE_BASE_URL="file://${WORKDIR_SH}" \
+            XBOARD_AGENT_SCRIPT_URL="file://${WORKDIR_SH}/agent.sh" \
+            XBOARD_AGENT_HOST_TOKEN="bootstrap-token-sh" \
+            XBOARD_AGENT_GRPC_ADDRESS="127.0.0.1:19090" \
+            sh ./agent.sh --bootstrap \
               --repo local/local \
-              --service-url "file://${WORKDIR_SH}/agent.service" \
-              --checksum-url "file://${WORKDIR_SH}/agent-bootstrap.sha256"
+              --service-url "file://${WORKDIR_SH}/agent.service"
             test -x "${WORKDIR_SH}/bootstrap-out/agent"
             test -f "${WORKDIR_SH}/bootstrap-out/agent_config.yml"
           )
@@ -229,63 +453,64 @@ jobs:
             cd "${WORKDIR_BASH}"
             XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_BASH}/bootstrap-out" XBOARD_BOOTSTRAP_REF=local \
             XBOARD_RELEASE_BASE_URL="file://${WORKDIR_BASH}" \
-            XBOARD_AGENT_SCRIPT_URL="file://${WORKDIR_BASH}/agent.sh" XBOARD_COMMON_SCRIPT_URL="file://${WORKDIR_BASH}/common.sh" \
-            bash ./agent-bootstrap.sh \
+            XBOARD_BOOTSTRAP_RELEASE_BASE_URL="file://${WORKDIR_BASH}" \
+            XBOARD_AGENT_SCRIPT_URL="file://${WORKDIR_BASH}/agent.sh" \
+            XBOARD_AGENT_HOST_TOKEN="bootstrap-token-bash" \
+            XBOARD_AGENT_GRPC_ADDRESS="127.0.0.1:19090" \
+            bash ./agent.sh --bootstrap \
               --repo local/local \
-              --service-url "file://${WORKDIR_BASH}/agent.service" \
-              --checksum-url "file://${WORKDIR_BASH}/agent-bootstrap.sha256"
+              --service-url "file://${WORKDIR_BASH}/agent.service"
             test -x "${WORKDIR_BASH}/bootstrap-out/agent"
             test -f "${WORKDIR_BASH}/bootstrap-out/agent_config.yml"
           )
 
-          cp "${WORKDIR_SH}/agent.service" "${WORKDIR_SH}/agent.service.local-fallback"
           cp "${WORKDIR_SH}/agent.service" "${WORKDIR_SH}/agent.service.bad"
           printf '\n# checksum mismatch fixture\n' >> "${WORKDIR_SH}/agent.service.bad"
 
           (
             cd "${WORKDIR_SH}"
-            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_SH}/bootstrap-checksum-fallback-out" XBOARD_BOOTSTRAP_REF=local \
-            XBOARD_RELEASE_BASE_URL="file://${WORKDIR_SH}" \
-            XBOARD_AGENT_SCRIPT_URL="file://${WORKDIR_SH}/agent.sh" XBOARD_COMMON_SCRIPT_URL="file://${WORKDIR_SH}/common.sh" \
-            XBOARD_AGENT_SERVICE_FILE="${WORKDIR_SH}/agent.service.local-fallback" \
-            XBOARD_BOOTSTRAP_DOWNLOAD_STRICT=0 \
-            sh ./agent-bootstrap.sh \
-              --repo local/local \
-              --service-url "file://${WORKDIR_SH}/agent.service.bad" \
-              --checksum-url "file://${WORKDIR_SH}/agent-bootstrap.sha256"
-            test -x "${WORKDIR_SH}/bootstrap-checksum-fallback-out/agent"
-            test -f "${WORKDIR_SH}/bootstrap-checksum-fallback-out/agent_config.yml"
-          )
-
-          (
-            cd "${WORKDIR_SH}"
-            if XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_SH}/bootstrap-checksum-strict-out" XBOARD_BOOTSTRAP_REF=local \
+            if XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_SH}/bootstrap-checksum-fail-out" XBOARD_BOOTSTRAP_REF=local \
               XBOARD_RELEASE_BASE_URL="file://${WORKDIR_SH}" \
-              XBOARD_AGENT_SCRIPT_URL="file://${WORKDIR_SH}/agent.sh" XBOARD_COMMON_SCRIPT_URL="file://${WORKDIR_SH}/common.sh" \
-              XBOARD_AGENT_SERVICE_FILE="${WORKDIR_SH}/agent.service.local-fallback" \
-              XBOARD_BOOTSTRAP_DOWNLOAD_STRICT=1 \
-              sh ./agent-bootstrap.sh \
+              XBOARD_BOOTSTRAP_RELEASE_BASE_URL="file://${WORKDIR_SH}" \
+              XBOARD_AGENT_SCRIPT_URL="file://${WORKDIR_SH}/agent.sh" \
+              XBOARD_AGENT_HOST_TOKEN="bootstrap-checksum-token" \
+              XBOARD_AGENT_GRPC_ADDRESS="127.0.0.1:19090" \
+              sh ./agent.sh --bootstrap \
                 --repo local/local \
-                --service-url "file://${WORKDIR_SH}/agent.service.bad" \
-                --checksum-url "file://${WORKDIR_SH}/agent-bootstrap.sha256"; then
-              echo "agent-bootstrap should fail when agent.service checksum mismatches in strict mode" >&2
+                --service-url "file://${WORKDIR_SH}/agent.service.bad"; then
+              echo "agent.sh --bootstrap should fail when agent.service checksum mismatches" >&2
               exit 1
             fi
           )
 
           (
             cd "${WORKDIR_SH}"
-            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_SH}/bootstrap-download-fallback-out" XBOARD_BOOTSTRAP_REF=local \
-            XBOARD_RELEASE_BASE_URL="file://${WORKDIR_SH}" \
-            XBOARD_AGENT_SCRIPT_URL="file://${WORKDIR_SH}/agent.sh" XBOARD_COMMON_SCRIPT_URL="file://${WORKDIR_SH}/common.sh" \
-            XBOARD_AGENT_SERVICE_FILE="${WORKDIR_SH}/agent.service.local-fallback" \
-            XBOARD_BOOTSTRAP_DOWNLOAD_STRICT=0 \
-            sh ./agent-bootstrap.sh \
-              --repo local/local \
-              --service-url "file://${WORKDIR_SH}/missing-agent.service" \
-              --checksum-url "file://${WORKDIR_SH}/agent-bootstrap.sha256"
-            test -x "${WORKDIR_SH}/bootstrap-download-fallback-out/agent"
-            test -f "${WORKDIR_SH}/bootstrap-download-fallback-out/agent_config.yml"
+            if XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_SH}/bootstrap-download-fail-out" XBOARD_BOOTSTRAP_REF=local \
+              XBOARD_RELEASE_BASE_URL="file://${WORKDIR_SH}" \
+              XBOARD_BOOTSTRAP_RELEASE_BASE_URL="file://${WORKDIR_SH}" \
+              XBOARD_AGENT_SCRIPT_URL="file://${WORKDIR_SH}/agent.sh" \
+              XBOARD_AGENT_HOST_TOKEN="bootstrap-download-token" \
+              XBOARD_AGENT_GRPC_ADDRESS="127.0.0.1:19090" \
+              sh ./agent.sh --bootstrap \
+                --repo local/local \
+                --service-url "file://${WORKDIR_SH}/missing-agent.service"; then
+              echo "agent.sh --bootstrap should fail when agent.service download fails" >&2
+              exit 1
+            fi
+          )
+
+          (
+            cd "${WORKDIR_SH}"
+            if XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_SH}/install-download-fail-out" \
+              XBOARD_RELEASE_BASE_URL="file://${WORKDIR_SH}" \
+              XBOARD_RELEASE_REPO="local/local" \
+              XBOARD_RELEASE_TAG="missing" \
+              XBOARD_AGENT_HOST_TOKEN="strict-install-token" \
+              XBOARD_AGENT_GRPC_ADDRESS="127.0.0.1:19090" \
+              sh ./install.sh --agent-only; then
+              echo "install.sh --agent-only should fail when release binary download fails" >&2
+              exit 1
+            fi
           )
 
       - name: Set up Go for install config check
@@ -293,7 +518,7 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
-      - name: Verify install config compatibility (gRPC-only)
+      - name: Verify install config compatibility
         run: |
           set -euo pipefail
 
@@ -305,13 +530,23 @@ jobs:
           cp deploy/install.sh "${WORKDIR}/install.sh"
           cp deploy/panel.sh "${WORKDIR}/panel.sh"
           cp deploy/agent.sh "${WORKDIR}/agent.sh"
-          cp deploy/common.sh "${WORKDIR}/common.sh"
 
-          chmod +x "${WORKDIR}/agent" "${WORKDIR}/install.sh" "${WORKDIR}/panel.sh" "${WORKDIR}/agent.sh" "${WORKDIR}/common.sh"
+          mkdir -p "${WORKDIR}/local/local/releases/download/local"
+          cp dist/release/agent-linux-amd64 "${WORKDIR}/local/local/releases/download/local/agent-linux-amd64"
+          AGENT_SHA="$(sha256sum dist/release/agent-linux-amd64 | awk '{print $1}')"
+          printf '%s  %s\n' "${AGENT_SHA}" "agent-linux-amd64" > "${WORKDIR}/local/local/releases/download/local/SHA256SUMS.txt"
+
+          chmod +x "${WORKDIR}/agent" "${WORKDIR}/install.sh" "${WORKDIR}/panel.sh" "${WORKDIR}/agent.sh"
 
           (
             cd "${WORKDIR}"
-            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR}/out" sh ./install.sh --agent-only
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR}/out" \
+            XBOARD_RELEASE_BASE_URL="file://${WORKDIR}" \
+            XBOARD_RELEASE_REPO="local/local" \
+            XBOARD_RELEASE_TAG="local" \
+            XBOARD_AGENT_HOST_TOKEN="release-check-token" \
+            XBOARD_AGENT_GRPC_ADDRESS="127.0.0.1:19090" \
+            sh ./install.sh --agent-only
             test -f "${WORKDIR}/out/agent_config.yml"
           )
 
@@ -345,24 +580,20 @@ jobs:
             echo "agent_config.yml missing grpc.enabled=true" >&2
             exit 1
           fi
-          if ! grep -Eq '^[[:space:]]*address:[[:space:]]*""[[:space:]]*$' "${WORKDIR}/out/agent_config.yml"; then
-            echo "agent_config.yml should require manual grpc.address override" >&2
+          if ! grep -Eq '^[[:space:]]*enabled:[[:space:]]*false[[:space:]]*$' "${WORKDIR}/out/agent_config.yml"; then
+            echo "agent_config.yml should default grpc.tls.enabled=false" >&2
             exit 1
           fi
-          if grep -Eq '^[[:space:]]*address:[[:space:]]*"127\.0\.0\.1:9090"[[:space:]]*$' "${WORKDIR}/out/agent_config.yml"; then
-            echo "agent_config.yml must not keep default grpc.address=127.0.0.1:9090" >&2
+          if ! grep -Eq '^[[:space:]]*address:[[:space:]]*"127\.0\.0\.1:19090"[[:space:]]*$' "${WORKDIR}/out/agent_config.yml"; then
+            echo "agent_config.yml grpc.address should be initialized from install parameters" >&2
             exit 1
           fi
           if ! grep -Eq '^[[:space:]]*panel:' "${WORKDIR}/out/agent_config.yml"; then
             echo "agent_config.yml missing panel section" >&2
             exit 1
           fi
-          if ! grep -Eq '^[[:space:]]*host_token:[[:space:]]*""[[:space:]]*$' "${WORKDIR}/out/agent_config.yml"; then
-            echo "agent_config.yml should require manual panel.host_token override" >&2
-            exit 1
-          fi
-          if grep -Eq '^[[:space:]]*host_token:[[:space:]]*"change_me"[[:space:]]*$' "${WORKDIR}/out/agent_config.yml"; then
-            echo "agent_config.yml must not keep placeholder panel.host_token" >&2
+          if ! grep -Eq '^[[:space:]]*host_token:[[:space:]]*"release-check-token"[[:space:]]*$' "${WORKDIR}/out/agent_config.yml"; then
+            echo "agent_config.yml panel.host_token should be initialized from install parameters" >&2
             exit 1
           fi
           if ! grep -Eq '^[[:space:]]*traffic:' "${WORKDIR}/out/agent_config.yml"; then
@@ -382,22 +613,15 @@ jobs:
             exit 1
           fi
 
-          if go run "${VALIDATE_GO}" "${WORKDIR}/out/agent_config.yml"; then
-            echo "agent_config.yml should fail validation before real token/address override" >&2
-            exit 1
-          fi
-
-          python3 -c 'from pathlib import Path; import sys; text = Path(sys.argv[1]).read_text(); text = text.replace("host_token: \"\"", "host_token: \"release-check-token\"", 1); text = text.replace("address: \"\"", "address: \"127.0.0.1:19090\"", 1); Path(sys.argv[2]).write_text(text)' "${WORKDIR}/out/agent_config.yml" "${WORKDIR}/out/agent_config.runtime.yml"
-
-          go run "${VALIDATE_GO}" "${WORKDIR}/out/agent_config.runtime.yml"
-          rm -f "${VALIDATE_GO}" "${WORKDIR}/out/agent_config.runtime.yml"
+          go run "${VALIDATE_GO}" "${WORKDIR}/out/agent_config.yml"
+          rm -f "${VALIDATE_GO}"
 
       - name: Merge checksums
         run: |
           set -euo pipefail
 
           cat dist/release/*.sha256 > dist/release/SHA256SUMS.txt
-          sha256sum deploy/agent.sh deploy/common.sh deploy/agent.service >> dist/release/SHA256SUMS.txt
+          sha256sum deploy/agent.sh deploy/agent.service >> dist/release/SHA256SUMS.txt
           sort -k2 dist/release/SHA256SUMS.txt -o dist/release/SHA256SUMS.txt
 
       - name: Publish release assets

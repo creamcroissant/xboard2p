@@ -112,13 +112,13 @@ sudo ./deploy/panel.sh
 # Install agent only
 sudo ./deploy/agent.sh
 
-# One-liner bootstrap entry (downloads agent.sh/common.sh/agent.service + verifies SHA256)
-curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard/master/deploy/agent-bootstrap.sh -o /tmp/agent-bootstrap.sh && \
-  sudo INSTALL_DIR=/opt/xboard sh /tmp/agent-bootstrap.sh --ref latest
+# One-liner bootstrap entry (bootstrap logic is merged into agent.sh)
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/master/deploy/agent.sh -o /tmp/agent.sh && \
+  sudo INSTALL_DIR=/opt/xboard sh /tmp/agent.sh --bootstrap --ref latest
 
 # Bootstrap with explicit tag (script/service/binary version bound to same tag)
-curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard/master/deploy/agent-bootstrap.sh -o /tmp/agent-bootstrap.sh && \
-  sudo INSTALL_DIR=/opt/xboard sh /tmp/agent-bootstrap.sh --ref v1.2.3
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/master/deploy/agent.sh -o /tmp/agent.sh && \
+  sudo INSTALL_DIR=/opt/xboard sh /tmp/agent.sh --bootstrap --ref v1.2.3
 
 # Start service
 sudo systemctl start xboard
@@ -126,33 +126,66 @@ sudo systemctl start xboard
 # Check status
 sudo systemctl status xboard
 
-# Uninstall
-sudo ./deploy/uninstall.sh
+# Uninstall panel-managed artifacts
+sudo ./deploy/panel.sh --uninstall
+
+# Uninstall agent-managed artifacts
+sudo ./deploy/agent.sh --uninstall
+
+# Uninstall via aggregate entry
+sudo ./deploy/install.sh --full --uninstall
+sudo ./deploy/install.sh --panel-only --uninstall
+sudo ./deploy/install.sh --agent-only --uninstall
 ```
 
 Default installation directory is `/opt/xboard`.
 
+Download dependency preparation (`curl` + CA certificates) is handled directly in `deploy/panel.sh` and `deploy/agent.sh` before binary download.
+
+Release binary integrity:
+- `deploy/panel.sh` and `deploy/agent.sh` verify downloaded release binaries against `SHA256SUMS.txt` from the same release.
+- Missing checksum entries, checksum mismatches, or checksum manifest download failures all cause hard failure.
+
 Agent install environment variables:
 - `XBOARD_BOOTSTRAP_REF`: bootstrap target ref (`latest`, release tag, or commit hash; commit hash requires `XBOARD_RELEASE_TAG` to be set explicitly for version consistency).
-- `XBOARD_BOOTSTRAP_REPO`: bootstrap source repository (default `creamcroissant/xboard`).
-- `XBOARD_AGENT_SCRIPT_URL` / `XBOARD_COMMON_SCRIPT_URL` / `XBOARD_AGENT_SERVICE_URL`: optional override URLs for private mirror or emergency fallback.
-- `XBOARD_BOOTSTRAP_CHECKSUM_URL`: optional checksum manifest URL override.
-- `XBOARD_BOOTSTRAP_DOWNLOAD_STRICT=1`: fail-closed mode for bootstrap service file handling. If `agent.service` download/checksum fails, bootstrap exits immediately (no local fallback).
+- `XBOARD_BOOTSTRAP_REPO`: bootstrap source repository (default `creamcroissant/xboard2p`).
+- `XBOARD_AGENT_SCRIPT_URL` / `XBOARD_AGENT_SERVICE_URL`: optional override URLs for private mirror.
+- `XBOARD_BOOTSTRAP_DOWNLOAD_STRICT`: deprecated compatibility flag; bootstrap is strict-only by default.
 
-Bootstrap `agent.service` local fallback priority (used when `XBOARD_BOOTSTRAP_DOWNLOAD_STRICT=0`, default):
-1. `XBOARD_AGENT_SERVICE_FILE`
-2. `${CALLER_DIR}/deploy/agent.service`
-3. `${CALLER_DIR}/agent.service`
+Agent config initialization parameters (`deploy/agent.sh`):
+- `--host-token` / `XBOARD_AGENT_HOST_TOKEN`
+- `--grpc-address` / `XBOARD_AGENT_GRPC_ADDRESS`
+- `--grpc-tls-enabled` / `XBOARD_AGENT_GRPC_TLS_ENABLED` (default `false`)
+- `--traffic-type` / `XBOARD_AGENT_TRAFFIC_TYPE` (default `netio`)
+- `--force-config-overwrite` / `XBOARD_AGENT_CONFIG_OVERWRITE=1`
+- `--uninstall` (remove script-managed artifacts only)
 
-Fallback is triggered on:
-- remote `agent.service` download failure
-- `agent.service` checksum verification failure
+Config generation behavior:
+- If `agent_config.yml` does not exist: installer writes it from parameters.
+- If `agent_config.yml` exists: installer keeps it unless overwrite is explicitly enabled.
+- Missing `host_token` or `grpc_address` causes hard failure with usage example.
+- Installer logs do not print token values.
 
-Strict bootstrap example (production fail-closed):
+Uninstall behavior:
+- `--uninstall` removes only artifacts managed by the scripts.
+- It does not remove unknown files under `INSTALL_DIR`.
+- It does not uninstall system dependencies (e.g., `curl`, `ca-certificates`).
+- `agent.sh` treats `--bootstrap` and `--uninstall` as mutually exclusive; mixing `--uninstall` with install/bootstrap parameters fails.
+
+Example (non-interactive):
 ```bash
-curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard/master/deploy/agent-bootstrap.sh -o /tmp/agent-bootstrap.sh && \
-  sudo INSTALL_DIR=/opt/xboard XBOARD_BOOTSTRAP_DOWNLOAD_STRICT=1 sh /tmp/agent-bootstrap.sh --ref latest
+sudo INSTALL_DIR=/opt/xboard \
+  XBOARD_AGENT_HOST_TOKEN='your-agent-host-token' \
+  XBOARD_AGENT_GRPC_ADDRESS='10.0.0.2:9090' \
+  XBOARD_AGENT_GRPC_TLS_ENABLED=false \
+  sh ./deploy/agent.sh
 ```
+
+Bootstrap is strict-only:
+- Checksum manifest source is fixed to release `SHA256SUMS.txt` for the selected release tag.
+- `agent.sh` and `agent.service` must both pass checksum verification before installer execution.
+- `agent.service` download failure => bootstrap exits immediately.
+- `agent.service` checksum mismatch => bootstrap exits immediately.
 
 ## ⚙️ Configuration
 

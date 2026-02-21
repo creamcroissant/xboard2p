@@ -2,6 +2,7 @@
 set -e
 
 MODE="full"
+ACTION="install"
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PANEL_SCRIPT="${SCRIPT_DIR}/panel.sh"
 AGENT_SCRIPT="${SCRIPT_DIR}/agent.sh"
@@ -20,6 +21,10 @@ while [ "$#" -gt 0 ]; do
             MODE="full"
             shift
             ;;
+        --uninstall)
+            ACTION="uninstall"
+            shift
+            ;;
         *)
             echo "Unknown parameter passed: $1"
             exit 1
@@ -27,7 +32,11 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-echo "Installing XBoard (Mode: $MODE) to ${INSTALL_DIR:-/opt/xboard}..."
+if [ "$ACTION" = "uninstall" ]; then
+    echo "Uninstalling XBoard managed artifacts (Mode: $MODE) from ${INSTALL_DIR:-/opt/xboard}..."
+else
+    echo "Installing XBoard (Mode: $MODE) to ${INSTALL_DIR:-/opt/xboard}..."
+fi
 
 case "$MODE" in
     panel)
@@ -35,14 +44,22 @@ case "$MODE" in
             echo "Error: panel installer not found at $PANEL_SCRIPT"
             exit 1
         fi
-        sh "$PANEL_SCRIPT"
+        if [ "$ACTION" = "uninstall" ]; then
+            sh "$PANEL_SCRIPT" --uninstall
+        else
+            sh "$PANEL_SCRIPT"
+        fi
         ;;
     agent)
         if [ ! -f "$AGENT_SCRIPT" ]; then
             echo "Error: agent installer not found at $AGENT_SCRIPT"
             exit 1
         fi
-        sh "$AGENT_SCRIPT"
+        if [ "$ACTION" = "uninstall" ]; then
+            sh "$AGENT_SCRIPT" --uninstall
+        else
+            sh "$AGENT_SCRIPT"
+        fi
         ;;
     full)
         if [ ! -f "$PANEL_SCRIPT" ]; then
@@ -53,15 +70,24 @@ case "$MODE" in
             echo "Error: agent installer not found at $AGENT_SCRIPT"
             exit 1
         fi
-        sh "$PANEL_SCRIPT"
-        sh "$AGENT_SCRIPT"
+        if [ "$ACTION" = "uninstall" ]; then
+            sh "$AGENT_SCRIPT" --uninstall
+            sh "$PANEL_SCRIPT" --uninstall
+        else
+            sh "$PANEL_SCRIPT"
+            sh "$AGENT_SCRIPT"
+        fi
         ;;
 esac
 
-echo "=== Installation Complete ==="
-if [ "$MODE" = "panel" ] || [ "$MODE" = "full" ]; then
+if [ "$ACTION" = "uninstall" ]; then
+    echo "=== Uninstall Complete ==="
+else
+    echo "=== Installation Complete ==="
+fi
+if [ "$ACTION" != "uninstall" ] && { [ "$MODE" = "panel" ] || [ "$MODE" = "full" ]; }; then
     echo "- Panel: systemctl start xboard"
 fi
-if [ "$MODE" = "agent" ] || [ "$MODE" = "full" ]; then
+if [ "$ACTION" != "uninstall" ] && { [ "$MODE" = "agent" ] || [ "$MODE" = "full" ]; }; then
     echo "- Agent: systemctl start xboard-agent"
 fi
