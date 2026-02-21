@@ -624,6 +624,13 @@ jobs:
           sha256sum deploy/agent.sh deploy/agent.service >> dist/release/SHA256SUMS.txt
           sort -k2 dist/release/SHA256SUMS.txt -o dist/release/SHA256SUMS.txt
 
+      - name: Verify bootstrap checksum entries
+        run: |
+          set -euo pipefail
+
+          grep -Eq '[[:space:]]deploy/agent\.sh$' dist/release/SHA256SUMS.txt
+          grep -Eq '[[:space:]]deploy/agent\.service$' dist/release/SHA256SUMS.txt
+
       - name: Publish release assets
         uses: softprops/action-gh-release@v2
         with:
