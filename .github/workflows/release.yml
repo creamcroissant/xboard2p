@@ -227,8 +227,8 @@ jobs:
             XBOARD_RELEASE_TAG="local" \
             sh ./panel.sh
             test -x "${WORKDIR_SH}/panel-out/xboard"
-            sh ./panel.sh --uninstall
-            sh ./panel.sh --uninstall
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_SH}/panel-out" XBOARD_RELEASE_BASE_URL="file://${WORKDIR_SH}" XBOARD_RELEASE_REPO="local/local" XBOARD_RELEASE_TAG="local" sh ./panel.sh --uninstall
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_SH}/panel-out" XBOARD_RELEASE_BASE_URL="file://${WORKDIR_SH}" XBOARD_RELEASE_REPO="local/local" XBOARD_RELEASE_TAG="local" sh ./panel.sh --uninstall
             test ! -e "${WORKDIR_SH}/panel-out/xboard"
             test ! -e "${WORKDIR_SH}/panel-out/config.yml"
             test ! -e "${WORKDIR_SH}/panel-out/.env"
@@ -244,8 +244,8 @@ jobs:
             XBOARD_RELEASE_TAG="local" \
             bash ./panel.sh
             test -x "${WORKDIR_BASH}/panel-out/xboard"
-            bash ./panel.sh --uninstall
-            bash ./panel.sh --uninstall
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_BASH}/panel-out" XBOARD_RELEASE_BASE_URL="file://${WORKDIR_BASH}" XBOARD_RELEASE_REPO="local/local" XBOARD_RELEASE_TAG="local" bash ./panel.sh --uninstall
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_BASH}/panel-out" XBOARD_RELEASE_BASE_URL="file://${WORKDIR_BASH}" XBOARD_RELEASE_REPO="local/local" XBOARD_RELEASE_TAG="local" bash ./panel.sh --uninstall
             test ! -e "${WORKDIR_BASH}/panel-out/xboard"
             test ! -e "${WORKDIR_BASH}/panel-out/config.yml"
             test ! -e "${WORKDIR_BASH}/panel-out/.env"
