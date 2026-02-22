@@ -7,6 +7,16 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PANEL_SCRIPT="${SCRIPT_DIR}/panel.sh"
 AGENT_SCRIPT="${SCRIPT_DIR}/agent.sh"
 
+run_installer() {
+    script_path=$1
+    shift
+
+    XBOARD_RELEASE_BASE_URL="${XBOARD_RELEASE_BASE_URL:-}" \
+    XBOARD_RELEASE_REPO="${XBOARD_RELEASE_REPO:-}" \
+    XBOARD_RELEASE_TAG="${XBOARD_RELEASE_TAG:-}" \
+    sh "$script_path" "$@"
+}
+
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --panel-only)
@@ -45,9 +55,9 @@ case "$MODE" in
             exit 1
         fi
         if [ "$ACTION" = "uninstall" ]; then
-            sh "$PANEL_SCRIPT" --uninstall
+            run_installer "$PANEL_SCRIPT" --uninstall
         else
-            sh "$PANEL_SCRIPT"
+            run_installer "$PANEL_SCRIPT"
         fi
         ;;
     agent)
@@ -56,9 +66,9 @@ case "$MODE" in
             exit 1
         fi
         if [ "$ACTION" = "uninstall" ]; then
-            sh "$AGENT_SCRIPT" --uninstall
+            run_installer "$AGENT_SCRIPT" --uninstall
         else
-            sh "$AGENT_SCRIPT"
+            run_installer "$AGENT_SCRIPT"
         fi
         ;;
     full)
@@ -71,11 +81,11 @@ case "$MODE" in
             exit 1
         fi
         if [ "$ACTION" = "uninstall" ]; then
-            sh "$AGENT_SCRIPT" --uninstall
-            sh "$PANEL_SCRIPT" --uninstall
+            run_installer "$AGENT_SCRIPT" --uninstall
+            run_installer "$PANEL_SCRIPT" --uninstall
         else
-            sh "$PANEL_SCRIPT"
-            sh "$AGENT_SCRIPT"
+            run_installer "$PANEL_SCRIPT"
+            run_installer "$AGENT_SCRIPT"
         fi
         ;;
 esac
