@@ -257,7 +257,7 @@ jobs:
             cd "${WORKDIR_SH}"
             XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_SH}/out" \
             sh ./agent.sh --uninstall
-            sh ./agent.sh --uninstall
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_SH}/out" sh ./agent.sh --uninstall
             test ! -e "${WORKDIR_SH}/out/agent"
             test ! -e "${WORKDIR_SH}/out/agent_config.yml"
           )
@@ -266,7 +266,7 @@ jobs:
             cd "${WORKDIR_BASH}"
             XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_BASH}/out" \
             bash ./agent.sh --uninstall
-            bash ./agent.sh --uninstall
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_BASH}/out" bash ./agent.sh --uninstall
             test ! -e "${WORKDIR_BASH}/out/agent"
             test ! -e "${WORKDIR_BASH}/out/agent_config.yml"
           )
@@ -348,8 +348,8 @@ jobs:
             test -x "${WORKDIR_SH}/install-full-out/xboard"
             test -x "${WORKDIR_SH}/install-full-out/agent"
             test -f "${WORKDIR_SH}/install-full-out/agent_config.yml"
-            sh ./install.sh --full --uninstall
-            sh ./install.sh --full --uninstall
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_SH}/install-full-out" XBOARD_RELEASE_BASE_URL="file://${WORKDIR_SH}" XBOARD_RELEASE_REPO="local/local" XBOARD_RELEASE_TAG="local" sh ./install.sh --full --uninstall
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_SH}/install-full-out" XBOARD_RELEASE_BASE_URL="file://${WORKDIR_SH}" XBOARD_RELEASE_REPO="local/local" XBOARD_RELEASE_TAG="local" sh ./install.sh --full --uninstall
             test ! -e "${WORKDIR_SH}/install-full-out/xboard"
             test ! -e "${WORKDIR_SH}/install-full-out/agent"
             test ! -e "${WORKDIR_SH}/install-full-out/agent_config.yml"
@@ -367,8 +367,8 @@ jobs:
             test -x "${WORKDIR_BASH}/install-full-out/xboard"
             test -x "${WORKDIR_BASH}/install-full-out/agent"
             test -f "${WORKDIR_BASH}/install-full-out/agent_config.yml"
-            bash ./install.sh --full --uninstall
-            bash ./install.sh --full --uninstall
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_BASH}/install-full-out" XBOARD_RELEASE_BASE_URL="file://${WORKDIR_BASH}" XBOARD_RELEASE_REPO="local/local" XBOARD_RELEASE_TAG="local" bash ./install.sh --full --uninstall
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_BASH}/install-full-out" XBOARD_RELEASE_BASE_URL="file://${WORKDIR_BASH}" XBOARD_RELEASE_REPO="local/local" XBOARD_RELEASE_TAG="local" bash ./install.sh --full --uninstall
             test ! -e "${WORKDIR_BASH}/install-full-out/xboard"
             test ! -e "${WORKDIR_BASH}/install-full-out/agent"
             test ! -e "${WORKDIR_BASH}/install-full-out/agent_config.yml"
@@ -382,8 +382,8 @@ jobs:
             XBOARD_RELEASE_TAG="local" \
             sh ./install.sh --panel-only
             test -x "${WORKDIR_SH}/install-panel-out/xboard"
-            sh ./install.sh --panel-only --uninstall
-            sh ./install.sh --panel-only --uninstall
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_SH}/install-panel-out" XBOARD_RELEASE_BASE_URL="file://${WORKDIR_SH}" XBOARD_RELEASE_REPO="local/local" XBOARD_RELEASE_TAG="local" sh ./install.sh --panel-only --uninstall
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_SH}/install-panel-out" XBOARD_RELEASE_BASE_URL="file://${WORKDIR_SH}" XBOARD_RELEASE_REPO="local/local" XBOARD_RELEASE_TAG="local" sh ./install.sh --panel-only --uninstall
             test ! -e "${WORKDIR_SH}/install-panel-out/xboard"
           )
 
@@ -395,8 +395,8 @@ jobs:
             XBOARD_RELEASE_TAG="local" \
             bash ./install.sh --panel-only
             test -x "${WORKDIR_BASH}/install-panel-out/xboard"
-            bash ./install.sh --panel-only --uninstall
-            bash ./install.sh --panel-only --uninstall
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_BASH}/install-panel-out" XBOARD_RELEASE_BASE_URL="file://${WORKDIR_BASH}" XBOARD_RELEASE_REPO="local/local" XBOARD_RELEASE_TAG="local" bash ./install.sh --panel-only --uninstall
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_BASH}/install-panel-out" XBOARD_RELEASE_BASE_URL="file://${WORKDIR_BASH}" XBOARD_RELEASE_REPO="local/local" XBOARD_RELEASE_TAG="local" bash ./install.sh --panel-only --uninstall
             test ! -e "${WORKDIR_BASH}/install-panel-out/xboard"
           )
 
@@ -411,8 +411,8 @@ jobs:
             sh ./install.sh --agent-only
             test -x "${WORKDIR_SH}/install-agent-out/agent"
             test -f "${WORKDIR_SH}/install-agent-out/agent_config.yml"
-            sh ./install.sh --agent-only --uninstall
-            sh ./install.sh --agent-only --uninstall
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_SH}/install-agent-out" XBOARD_RELEASE_BASE_URL="file://${WORKDIR_SH}" XBOARD_RELEASE_REPO="local/local" XBOARD_RELEASE_TAG="local" sh ./install.sh --agent-only --uninstall
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_SH}/install-agent-out" XBOARD_RELEASE_BASE_URL="file://${WORKDIR_SH}" XBOARD_RELEASE_REPO="local/local" XBOARD_RELEASE_TAG="local" sh ./install.sh --agent-only --uninstall
             test ! -e "${WORKDIR_SH}/install-agent-out/agent"
             test ! -e "${WORKDIR_SH}/install-agent-out/agent_config.yml"
           )
@@ -428,8 +428,8 @@ jobs:
             bash ./install.sh --agent-only
             test -x "${WORKDIR_BASH}/install-agent-out/agent"
             test -f "${WORKDIR_BASH}/install-agent-out/agent_config.yml"
-            bash ./install.sh --agent-only --uninstall
-            bash ./install.sh --agent-only --uninstall
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_BASH}/install-agent-out" XBOARD_RELEASE_BASE_URL="file://${WORKDIR_BASH}" XBOARD_RELEASE_REPO="local/local" XBOARD_RELEASE_TAG="local" bash ./install.sh --agent-only --uninstall
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_BASH}/install-agent-out" XBOARD_RELEASE_BASE_URL="file://${WORKDIR_BASH}" XBOARD_RELEASE_REPO="local/local" XBOARD_RELEASE_TAG="local" bash ./install.sh --agent-only --uninstall
             test ! -e "${WORKDIR_BASH}/install-agent-out/agent"
             test ! -e "${WORKDIR_BASH}/install-agent-out/agent_config.yml"
           )
