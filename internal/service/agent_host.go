@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/md5"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/creamcroissant/xboard/internal/repository"
@@ -18,6 +20,7 @@ import (
 type AgentHostService interface {
 	// CRUD operations
 	Create(ctx context.Context, req CreateAgentHostRequest) (*repository.AgentHost, error)
+	RegisterByCommunicationKey(ctx context.Context, req RegisterAgentHostRequest) (*repository.AgentHost, error)
 	GetByID(ctx context.Context, id int64) (*repository.AgentHost, error)
 	GetByToken(ctx context.Context, token string) (*repository.AgentHost, error)
 	Update(ctx context.Context, id int64, req UpdateAgentHostRequest) error
@@ -56,15 +59,15 @@ type ProtocolInfo struct {
 
 // ProtocolDetails contains detailed protocol configuration
 type ProtocolDetails struct {
-	Protocol  string          `json:"protocol"`
-	Tag       string          `json:"tag"`
-	Listen    string          `json:"listen"`
-	Port      int             `json:"port"`
-	Transport *TransportInfo  `json:"transport,omitempty"`
-	TLS       *TLSInfo        `json:"tls,omitempty"`
-	Multiplex *MultiplexInfo  `json:"multiplex,omitempty"`
-	Users     []UserInfoData  `json:"users,omitempty"`
-	CoreType  string          `json:"core_type"`
+	Protocol  string         `json:"protocol"`
+	Tag       string         `json:"tag"`
+	Listen    string         `json:"listen"`
+	Port      int            `json:"port"`
+	Transport *TransportInfo `json:"transport,omitempty"`
+	TLS       *TLSInfo       `json:"tls,omitempty"`
+	Multiplex *MultiplexInfo `json:"multiplex,omitempty"`
+	Users     []UserInfoData `json:"users,omitempty"`
+	CoreType  string         `json:"core_type"`
 }
 
 // TransportInfo describes transport layer settings
@@ -77,9 +80,9 @@ type TransportInfo struct {
 
 // TLSInfo describes TLS settings
 type TLSInfo struct {
-	Enabled    bool        `json:"enabled"`
-	ServerName string      `json:"server_name,omitempty"`
-	ALPN       []string    `json:"alpn,omitempty"`
+	Enabled    bool         `json:"enabled"`
+	ServerName string       `json:"server_name,omitempty"`
+	ALPN       []string     `json:"alpn,omitempty"`
 	Reality    *RealityInfo `json:"reality,omitempty"`
 }
 
@@ -122,6 +125,13 @@ type CreateAgentHostRequest struct {
 	Host string
 }
 
+// RegisterAgentHostRequest contains data for zero-touch agent registration.
+type RegisterAgentHostRequest struct {
+	CommunicationKey string
+	Hostname         string
+	AdvertiseHost    string
+}
+
 // UpdateAgentHostRequest contains data for updating an agent host.
 type UpdateAgentHostRequest struct {
 	Name *string
@@ -154,6 +164,7 @@ type agentHostService struct {
 	serverClientConfigs repository.ServerClientConfigRepository
 	configTemplates     repository.ConfigTemplateRepository
 	users               repository.UserRepository
+	settings            repository.SettingRepository
 }
 
 // NewAgentHostService creates a new agent host service.
@@ -163,6 +174,7 @@ func NewAgentHostService(
 	serverClientConfigs repository.ServerClientConfigRepository,
 	configTemplates repository.ConfigTemplateRepository,
 	users repository.UserRepository,
+	settings repository.SettingRepository,
 ) AgentHostService {
 	return &agentHostService{
 		agentHosts:          agentHosts,
@@ -170,28 +182,84 @@ func NewAgentHostService(
 		serverClientConfigs: serverClientConfigs,
 		configTemplates:     configTemplates,
 		users:               users,
+		settings:            settings,
 	}
 }
 
 func (s *agentHostService) Create(ctx context.Context, req CreateAgentHostRequest) (*repository.AgentHost, error) {
-	// Generate a secure random token
-	tokenBytes := make([]byte, 32)
-	if _, err := rand.Read(tokenBytes); err != nil {
-		return nil, fmt.Errorf("generate token: %v / 生成 token 失败: %w", err, err)
+	token, err := generateAgentHostToken()
+	if err != nil {
+		return nil, err
 	}
-	token := hex.EncodeToString(tokenBytes)
 
 	host := &repository.AgentHost{
-		Name:   req.Name,
-		Host:   req.Host,
+		Name:   strings.TrimSpace(req.Name),
+		Host:   strings.TrimSpace(req.Host),
 		Token:  token,
 		Status: 0, // Offline initially
+	}
+
+	if host.Name == "" || host.Host == "" {
+		return nil, fmt.Errorf("name and host are required / 名称和主机地址不能为空")
 	}
 
 	if err := s.agentHosts.Create(ctx, host); err != nil {
 		return nil, err
 	}
 
+	return host, nil
+}
+
+func (s *agentHostService) RegisterByCommunicationKey(ctx context.Context, req RegisterAgentHostRequest) (*repository.AgentHost, error) {
+	if s == nil || s.settings == nil {
+		return nil, fmt.Errorf("agent host service not configured / Agent 服务未配置")
+	}
+
+	providedKey := strings.TrimSpace(req.CommunicationKey)
+	hostname := strings.TrimSpace(req.Hostname)
+	advertiseHost := strings.TrimSpace(req.AdvertiseHost)
+	if providedKey == "" || hostname == "" {
+		return nil, fmt.Errorf("communication_key and hostname are required / communication_key 与 hostname 不能为空")
+	}
+
+	entry, err := s.settings.Get(ctx, communicationKeySettingKey)
+	if err != nil {
+		if err == repository.ErrNotFound {
+			return nil, ErrInvalidCommunicationKey
+		}
+		return nil, err
+	}
+	expectedKey := ""
+	if entry != nil {
+		expectedKey = strings.TrimSpace(entry.Value)
+	}
+	if expectedKey == "" || subtle.ConstantTimeCompare([]byte(expectedKey), []byte(providedKey)) != 1 {
+		return nil, ErrInvalidCommunicationKey
+	}
+
+	name := hostname
+	if name == "" {
+		name = buildPendingAgentName()
+	}
+	hostValue := advertiseHost
+	if hostValue == "" {
+		hostValue = buildPendingAgentHostPlaceholder()
+	}
+
+	token, err := generateAgentHostToken()
+	if err != nil {
+		return nil, err
+	}
+
+	host := &repository.AgentHost{
+		Name:   name,
+		Host:   hostValue,
+		Token:  token,
+		Status: 0,
+	}
+	if err := s.agentHosts.Create(ctx, host); err != nil {
+		return nil, err
+	}
 	return host, nil
 }
 
@@ -210,10 +278,13 @@ func (s *agentHostService) Update(ctx context.Context, id int64, req UpdateAgent
 	}
 
 	if req.Name != nil {
-		host.Name = *req.Name
+		host.Name = strings.TrimSpace(*req.Name)
 	}
 	if req.Host != nil {
-		host.Host = *req.Host
+		host.Host = strings.TrimSpace(*req.Host)
+	}
+	if host.Name == "" || host.Host == "" {
+		return fmt.Errorf("name and host are required / 名称和主机地址不能为空")
 	}
 
 	return s.agentHosts.Update(ctx, host)
@@ -574,6 +645,41 @@ func (s *agentHostService) buildTemplateContext(ctx context.Context, host *repos
 }
 
 // parseAgentCapabilities constructs AgentCapabilities from host data.
+func generateAgentHostToken() (string, error) {
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return "", fmt.Errorf("generate token: %v / 生成 token 失败: %w", err, err)
+	}
+	return hex.EncodeToString(tokenBytes), nil
+}
+
+func buildPendingAgentName() string {
+	suffix, err := randomHex(4)
+	if err != nil {
+		return "Agent-pending"
+	}
+	return fmt.Sprintf("Agent-%s", suffix)
+}
+
+func buildPendingAgentHostPlaceholder() string {
+	suffix, err := randomHex(6)
+	if err != nil {
+		return "pending-host"
+	}
+	return fmt.Sprintf("pending-%s", suffix)
+}
+
+func randomHex(n int) (string, error) {
+	if n <= 0 {
+		return "", nil
+	}
+	buf := make([]byte, n)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf), nil
+}
+
 func (s *agentHostService) parseAgentCapabilities(host *repository.AgentHost) *template.AgentCapabilities {
 	caps := &template.AgentCapabilities{
 		CoreType:    "sing-box", // Default
@@ -908,4 +1014,3 @@ func (s *agentHostService) CheckTemplateCompatibility(ctx context.Context, agent
 
 	return result, nil
 }
-

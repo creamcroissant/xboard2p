@@ -193,6 +193,8 @@
   "error.bad_request": "错误的请求",
   "error.bad_gateway": "网关错误",
   "error.missing_fields": "缺少必填字段",
+  "error.missing_communication_key": "缺少通信密钥",
+  "error.missing_hostname": "缺少主机名",
   "error.validation_failed": "验证失败",
   "error.email_required": "邮箱不能为空",
   "error.feature_disabled": "功能未开启",

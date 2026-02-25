@@ -199,7 +199,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		Audit:             infra.Audit,
 	})
 
-	agentHostService := service.NewAgentHostService(store.AgentHosts(), store.Servers(), store.ServerClientConfigs(), store.ConfigTemplates(), store.Users())
+	agentHostService := service.NewAgentHostService(store.AgentHosts(), store.Servers(), store.ServerClientConfigs(), store.ConfigTemplates(), store.Users(), store.Settings())
 	agentService := service.NewAgentService(store.Servers(), store.Users())
 	forwardingService := service.NewForwardingServiceWithLogger(store.ForwardingRules(), store.ForwardingRuleLogs(), store.AgentHosts(), logger)
 	converterRegistry := template.NewConverterRegistry(&template.SingBoxConverter{}, &template.XrayConverter{})

@@ -55,7 +55,7 @@ type adminSystemSettingsService struct {
 	now      func() time.Time
 }
 
-const communicationKeySettingKey = "communication_key" // DEPRECATED: This key is no longer used for Agent authentication (replaced by Per-Agent Token).
+const communicationKeySettingKey = "communication_key" // Used for first-time agent registration only; long-lived auth uses per-agent token.
 const communicationKeyLength = 32
 const communicationKeyMaskRune = '*'
 const communicationKeyVisibleSuffix = 4

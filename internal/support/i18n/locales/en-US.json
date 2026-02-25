@@ -169,6 +169,8 @@
   "error.bad_request": "Bad Request",
   "error.bad_gateway": "Bad Gateway",
   "error.missing_fields": "Missing required fields",
+  "error.missing_communication_key": "Missing communication key",
+  "error.missing_hostname": "Missing hostname",
   "error.validation_failed": "Validation Failed",
   "error.email_required": "Email is required",
   "error.feature_disabled": "Feature disabled",

@@ -1,11 +1,18 @@
 package config
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"net/url"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
-	
 	"gopkg.in/yaml.v3"
 )
 
@@ -21,6 +28,7 @@ const (
 	defaultProxyNftTableName   = "xboard_proxy"
 	defaultProxyPIDDir         = "/var/run/xboard/cores"
 	defaultProxyCgroupBasePath = "/sys/fs/cgroup/xboard"
+	defaultPanelHTTPPort       = "8080"
 )
 
 type Config struct {
@@ -172,11 +180,12 @@ type CustomCommands struct {
 }
 
 type PanelConfig struct {
-	URL       string `yaml:"url"`        // Panel URL (reserved for future use)
-	Token     string `yaml:"token"`      // DEPRECATED: Legacy V2bX node token, no longer supported
-	HostToken string `yaml:"host_token"` // Agent Host Token (Required)
-	NodeID    int    `yaml:"node_id"`    // DEPRECATED: Legacy V2bX node ID, no longer supported
-	NodeType  string `yaml:"node_type"`  // DEPRECATED: Legacy V2bX node type, no longer supported
+	URL              string `yaml:"url"`               // Panel base URL for initial registration (optional, defaults from grpc.address)
+	Token            string `yaml:"token"`             // DEPRECATED: Legacy V2bX node token, no longer supported
+	HostToken        string `yaml:"host_token"`        // Agent Host Token (long-lived auth)
+	CommunicationKey string `yaml:"communication_key"` // One-time registration key for first boot
+	NodeID           int    `yaml:"node_id"`           // DEPRECATED: Legacy V2bX node ID, no longer supported
+	NodeType         string `yaml:"node_type"`         // DEPRECATED: Legacy V2bX node type, no longer supported
 }
 
 type ForwardingConfig struct {
@@ -205,7 +214,6 @@ type ProxyConfig struct {
 	CgroupBasePath string        `yaml:"cgroup_base_path"`
 }
 
-
 type IntervalConfig struct {
 	Sync   int `yaml:"sync"`   // Seconds
 	Report int `yaml:"report"` // Seconds
@@ -225,6 +233,28 @@ type TrafficConfig struct {
 
 // Load reads configuration from file
 func Load(path string) (*Config, error) {
+	cfg, err := loadFromPath(path)
+	if err != nil {
+		return nil, err
+	}
+
+	if strings.TrimSpace(cfg.Panel.HostToken) == "" {
+		if err := ensureHostToken(path, cfg); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := applyDefaults(cfg); err != nil {
+		return nil, err
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
+}
+
+func loadFromPath(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read config file: %w", err)
@@ -233,6 +263,13 @@ func Load(path string) (*Config, error) {
 	cfg := &Config{}
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("parse config file: %w", err)
+	}
+	return cfg, nil
+}
+
+func applyDefaults(cfg *Config) error {
+	if cfg == nil {
+		return fmt.Errorf("config is nil")
 	}
 
 	// Set defaults
@@ -351,11 +388,188 @@ func Load(path string) (*Config, error) {
 		}
 	}
 
-	if err := cfg.Validate(); err != nil {
-		return nil, err
+	return nil
+}
+
+func ensureHostToken(path string, cfg *Config) error {
+	commKey := strings.TrimSpace(cfg.Panel.CommunicationKey)
+	if commKey == "" {
+		return nil
 	}
 
-	return cfg, nil
+	registerURL, err := resolveRegisterEndpoint(cfg)
+	if err != nil {
+		return err
+	}
+
+	hostname, err := os.Hostname()
+	if err != nil {
+		return fmt.Errorf("resolve hostname: %w", err)
+	}
+
+	hostToken, err := registerAgentHost(registerURL, registerRequest{
+		CommunicationKey: commKey,
+		Hostname:         strings.TrimSpace(hostname),
+	})
+	if err != nil {
+		return err
+	}
+	cfg.Panel.HostToken = hostToken
+	cfg.Panel.CommunicationKey = ""
+	if err := save(path, cfg); err != nil {
+		return err
+	}
+	return nil
+}
+
+func resolveRegisterEndpoint(cfg *Config) (string, error) {
+	if cfg == nil {
+		return "", fmt.Errorf("config is nil")
+	}
+
+	if panelURL := strings.TrimSpace(cfg.Panel.URL); panelURL != "" {
+		base, err := normalizePanelURL(panelURL)
+		if err != nil {
+			return "", fmt.Errorf("invalid panel.url: %w", err)
+		}
+		return joinRegisterPath(base), nil
+	}
+
+	grpcAddress := strings.TrimSpace(cfg.GRPC.Address)
+	if grpcAddress == "" {
+		return "", fmt.Errorf("grpc.address is required to infer panel register endpoint")
+	}
+
+	host, _, err := net.SplitHostPort(grpcAddress)
+	if err != nil {
+		return "", fmt.Errorf("parse grpc.address %q: %w", grpcAddress, err)
+	}
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return "", fmt.Errorf("grpc.address host is empty")
+	}
+
+	panelHost := net.JoinHostPort(host, defaultPanelHTTPPort)
+	return "http://" + panelHost + "/api/v1/agent/register", nil
+}
+
+func normalizePanelURL(raw string) (string, error) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return "", err
+	}
+	if u.Scheme == "" || u.Host == "" {
+		return "", fmt.Errorf("panel.url must include scheme and host")
+	}
+	u.Path = strings.TrimSuffix(u.Path, "/")
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String(), nil
+}
+
+func joinRegisterPath(base string) string {
+	return strings.TrimSuffix(base, "/") + "/api/v1/agent/register"
+}
+
+type registerRequest struct {
+	CommunicationKey string `json:"communication_key"`
+	Hostname         string `json:"hostname"`
+}
+
+type registerResponse struct {
+	Data registerResponseData `json:"data"`
+}
+
+type registerResponseData struct {
+	HostToken string `json:"host_token"`
+}
+
+func registerAgentHost(endpoint string, req registerRequest) (string, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return "", fmt.Errorf("marshal register request: %w", err)
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	httpReq, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("build register request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return "", fmt.Errorf("request register endpoint: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		message := fmt.Sprintf("register endpoint returned status %d", resp.StatusCode)
+		if payload, readErr := io.ReadAll(io.LimitReader(resp.Body, 512)); readErr == nil {
+			trimmed := strings.TrimSpace(string(payload))
+			if trimmed != "" {
+				message = fmt.Sprintf("%s: %s", message, trimmed)
+			}
+		}
+		return "", fmt.Errorf("%s", message)
+	}
+
+	var parsed registerResponse
+	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		return "", fmt.Errorf("decode register response: %w", err)
+	}
+
+	hostToken := strings.TrimSpace(parsed.Data.HostToken)
+	if hostToken == "" {
+		return "", fmt.Errorf("register response missing host_token")
+	}
+	return hostToken, nil
+}
+
+func save(path string, cfg *Config) error {
+	if strings.TrimSpace(path) == "" {
+		return fmt.Errorf("config path is empty")
+	}
+	if cfg == nil {
+		return fmt.Errorf("config is nil")
+	}
+
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("marshal config file: %w", err)
+	}
+	if len(data) == 0 {
+		return fmt.Errorf("marshal config file: empty output")
+	}
+	if data[len(data)-1] != '\n' {
+		data = append(data, '\n')
+	}
+
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".agent_config_tmp_*")
+	if err != nil {
+		return fmt.Errorf("create temp config file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer func() {
+		_ = os.Remove(tmpPath)
+	}()
+
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("set temp config permissions: %w", err)
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write temp config file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temp config file: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return fmt.Errorf("replace config file: %w", err)
+	}
+	return nil
 }
 
 // Validate enforces gRPC-only mode and rejects legacy V2bX settings.
@@ -367,7 +581,7 @@ func (cfg *Config) Validate() error {
 		return fmt.Errorf("gRPC transport is required; set grpc.enabled=true and grpc.address")
 	}
 	if cfg.Panel.HostToken == "" {
-		return fmt.Errorf("panel.host_token is required for gRPC authentication")
+		return fmt.Errorf("panel.host_token is required for gRPC authentication (or provide panel.communication_key for first-boot registration)")
 	}
 	if cfg.GRPCServer.Enabled {
 		if cfg.GRPCServer.Listen == "" {

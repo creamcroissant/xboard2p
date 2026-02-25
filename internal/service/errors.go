@@ -15,6 +15,8 @@ var (
 	ErrAccountDisabled = errors.New("service: account disabled / 账号已禁用")
 	// ErrUnauthorized indicates missing or invalid auth tokens.
 	ErrUnauthorized = errors.New("service: unauthorized / 未授权")
+	// ErrInvalidCommunicationKey indicates registration key mismatch.
+	ErrInvalidCommunicationKey = errors.New("service: invalid communication key / 通信密钥无效")
 	// ErrInvalidRefreshToken indicates refresh token problems.
 	ErrInvalidRefreshToken = errors.New("service: invalid refresh token / 刷新令牌无效")
 	// ErrInvalidCaptcha indicates captcha validation failed.

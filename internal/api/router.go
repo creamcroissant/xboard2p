@@ -57,45 +57,45 @@ func resolveRateLimitConfig() (middleware.RateLimitConfig, bool) {
 }
 
 type Services struct {
-	Config         service.ConfigService
-	User           service.UserService
-	UserStat       service.UserStatService
-	UserKnowledge  service.UserKnowledgeService
-	UserNotice     service.UserNoticeService
-	Auth           service.AuthService
-	AdminPath      service.AdminPathService
-	Install        service.InstallService
-	AdminServer    service.AdminServerService
-	AdminNotice    service.AdminNoticeService
-	AdminKnowledge service.AdminKnowledgeService
-	ServerAuth     service.ServerAuthService
-	ServerNode     service.ServerNodeService
-	Traffic        service.ServerTrafficService
-	Telemetry      service.ServerTelemetryService
-	Verify         service.VerificationService
-	Invite         service.InviteService
-	Password       service.PasswordService
-	Register       service.RegistrationService
-	MailLink       service.MailLinkService
-	Comm           service.CommService
-	AdminPlan      service.AdminPlanService
-	AdminUser      service.AdminUserService
-	AdminStat      service.AdminStatService
-	AdminNodeStat  service.AdminNodeStatService
-	AdminSystem    service.AdminSystemService
+	Config              service.ConfigService
+	User                service.UserService
+	UserStat            service.UserStatService
+	UserKnowledge       service.UserKnowledgeService
+	UserNotice          service.UserNoticeService
+	Auth                service.AuthService
+	AdminPath           service.AdminPathService
+	Install             service.InstallService
+	AdminServer         service.AdminServerService
+	AdminNotice         service.AdminNoticeService
+	AdminKnowledge      service.AdminKnowledgeService
+	ServerAuth          service.ServerAuthService
+	ServerNode          service.ServerNodeService
+	Traffic             service.ServerTrafficService
+	Telemetry           service.ServerTelemetryService
+	Verify              service.VerificationService
+	Invite              service.InviteService
+	Password            service.PasswordService
+	Register            service.RegistrationService
+	MailLink            service.MailLinkService
+	Comm                service.CommService
+	AdminPlan           service.AdminPlanService
+	AdminUser           service.AdminUserService
+	AdminStat           service.AdminStatService
+	AdminNodeStat       service.AdminNodeStatService
+	AdminSystem         service.AdminSystemService
 	AdminSystemSettings service.AdminSystemSettingsService
-	AgentHost      service.AgentHostService
-	AgentCore      service.AgentCoreService
-	Forwarding     service.ForwardingService
-	AccessLog      service.AccessLogService
-	Plan           service.PlanService
-	Server         service.ServerService
-	Subscription   service.SubscriptionService
-	UserSelection  service.UserServerSelectionService
-	ShortLink      service.ShortLinkService
-	TrafficQueue   *async.TrafficQueue
-	SubLogQueue    *async.SubscriptionLogQueue
-	I18n           *i18n.Manager
+	AgentHost           service.AgentHostService
+	AgentCore           service.AgentCoreService
+	Forwarding          service.ForwardingService
+	AccessLog           service.AccessLogService
+	Plan                service.PlanService
+	Server              service.ServerService
+	Subscription        service.SubscriptionService
+	UserSelection       service.UserServerSelectionService
+	ShortLink           service.ShortLinkService
+	TrafficQueue        *async.TrafficQueue
+	SubLogQueue         *async.SubscriptionLogQueue
+	I18n                *i18n.Manager
 }
 
 // NewRouter wires minimal endpoints；其余 handler 会在后续逐步补齐。
@@ -613,5 +613,6 @@ func registerV1AgentRoutes(v1 chi.Router, agentHost service.AgentHostService, i1
 		// Status reporting from agent (no auth middleware, token in query param)
 		agent.Post("/status", agentHostHandler.ReportStatus)
 		agent.Post("/heartbeat", agentHostHandler.Heartbeat)
+		agent.Post("/register", agentHostHandler.Register)
 	})
 }

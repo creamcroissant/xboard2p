@@ -831,6 +831,7 @@ run_bootstrap_mode() {
 }
 
 HOST_TOKEN="${XBOARD_AGENT_HOST_TOKEN:-}"
+COMMUNICATION_KEY="${XBOARD_AGENT_COMMUNICATION_KEY:-}"
 GRPC_ADDRESS="${XBOARD_AGENT_GRPC_ADDRESS:-}"
 GRPC_TLS_ENABLED="${XBOARD_AGENT_GRPC_TLS_ENABLED:-false}"
 TRAFFIC_TYPE="${XBOARD_AGENT_TRAFFIC_TYPE:-netio}"
@@ -845,6 +846,7 @@ Usage: sh agent.sh [options] [-- <agent install args>]
 
 Options:
   --host-token <token>          Agent host token
+  --communication-key <key>     Agent registration communication key (first boot)
   --grpc-address <address>      Panel gRPC address, e.g. 10.0.0.2:9090
   --grpc-tls-enabled <bool>     true/false, default false
   --traffic-type <type>         traffic.type, default netio
@@ -858,6 +860,7 @@ Options:
 
 Environment:
   XBOARD_AGENT_HOST_TOKEN
+  XBOARD_AGENT_COMMUNICATION_KEY
   XBOARD_AGENT_GRPC_ADDRESS
   XBOARD_AGENT_GRPC_TLS_ENABLED
   XBOARD_AGENT_TRAFFIC_TYPE
@@ -894,6 +897,15 @@ while [ "$#" -gt 0 ]; do
                 exit 1
             fi
             HOST_TOKEN=$2
+            INSTALL_SEMANTIC_ARGS_USED=1
+            shift 2
+            ;;
+        --communication-key)
+            if [ "$#" -lt 2 ]; then
+                echo "Error: --communication-key requires a value."
+                exit 1
+            fi
+            COMMUNICATION_KEY=$2
             INSTALL_SEMANTIC_ARGS_USED=1
             shift 2
             ;;
@@ -1046,12 +1058,20 @@ CONFIG_PATH="$INSTALL_DIR/agent_config.yml"
 if [ -f "$CONFIG_PATH" ] && [ "$FORCE_CONFIG_OVERWRITE" != "1" ]; then
     echo "agent_config.yml already exists. Keep existing file (use --force-config-overwrite to overwrite)."
 else
-    if [ -z "$HOST_TOKEN" ] || [ -z "$GRPC_ADDRESS" ]; then
+    if [ -z "$GRPC_ADDRESS" ]; then
         echo "Error: missing required config parameters."
-        echo "Both host token and grpc address are required to initialize agent_config.yml."
+        echo "grpc address is required to initialize agent_config.yml."
         echo "Example:"
+        echo "  sh ./deploy/agent.sh --communication-key '<key>' --grpc-address '127.0.0.1:9090'"
+        echo "  or"
         echo "  sh ./deploy/agent.sh --host-token '<token>' --grpc-address '127.0.0.1:9090'"
-        echo "  or set XBOARD_AGENT_HOST_TOKEN and XBOARD_AGENT_GRPC_ADDRESS"
+        echo "  or set XBOARD_AGENT_GRPC_ADDRESS with XBOARD_AGENT_HOST_TOKEN / XBOARD_AGENT_COMMUNICATION_KEY"
+        exit 1
+    fi
+
+    if [ -z "$HOST_TOKEN" ] && [ -z "$COMMUNICATION_KEY" ]; then
+        echo "Error: missing required authentication parameters."
+        echo "Provide either --host-token or --communication-key to initialize agent_config.yml."
         exit 1
     fi
 
@@ -1059,6 +1079,7 @@ else
     cat > "$CONFIG_PATH" <<EOF
 panel:
   host_token: "${HOST_TOKEN}"
+  communication_key: "${COMMUNICATION_KEY}"
 
 grpc:
   enabled: true

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/creamcroissant/xboard/internal/api/requestctx"
 	"github.com/creamcroissant/xboard/internal/service"
@@ -25,8 +26,8 @@ func NewAgentHostHandler(svc service.AgentHostService, i18nMgr *i18n.Manager) *A
 
 // AgentHostStatusRequest represents the status payload from an agent.
 type AgentHostStatusRequest struct {
-	CPU          float64 `json:"cpu"`
-	Mem          struct {
+	CPU float64 `json:"cpu"`
+	Mem struct {
 		Total int64 `json:"total"`
 		Used  int64 `json:"used"`
 	} `json:"mem"`
@@ -55,7 +56,7 @@ func (h *AgentHostHandler) ReportStatus(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// First update heartbeat to mark host as online
-		if err := h.service.UpdateHeartbeat(ctx, token); err != nil {
+	if err := h.service.UpdateHeartbeat(ctx, token); err != nil {
 		if errors.Is(err, service.ErrNotFound) {
 			RespondErrorI18nAction(ctx, w, http.StatusUnauthorized, "agent_host.status", "error.invalid_token", h.i18n)
 			return
@@ -94,7 +95,7 @@ func (h *AgentHostHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-		if err := h.service.UpdateHeartbeat(ctx, token); err != nil {
+	if err := h.service.UpdateHeartbeat(ctx, token); err != nil {
 		if errors.Is(err, service.ErrNotFound) {
 			RespondErrorI18nAction(ctx, w, http.StatusUnauthorized, "agent_host.heartbeat", "error.invalid_token", h.i18n)
 			return
@@ -265,6 +266,60 @@ func (h *AgentHostHandler) Get(w http.ResponseWriter, r *http.Request) {
 type UpdateAgentHostRequest struct {
 	Name *string `json:"name,omitempty"`
 	Host *string `json:"host,omitempty"`
+}
+
+// RegisterAgentHostRequest represents the request to auto-register an agent host.
+type RegisterAgentHostRequest struct {
+	CommunicationKey string `json:"communication_key"`
+	Hostname         string `json:"hostname"`
+	AdvertiseHost    string `json:"advertise_host,omitempty"`
+}
+
+// Register handles POST /api/v1/agent/register
+// Registers a new pending host using communication key and returns per-agent token.
+func (h *AgentHostHandler) Register(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	var req RegisterAgentHostRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		RespondErrorI18nAction(ctx, w, http.StatusBadRequest, "agent_host.register", "error.bad_request", h.i18n)
+		return
+	}
+
+	if strings.TrimSpace(req.CommunicationKey) == "" {
+		RespondErrorI18nAction(ctx, w, http.StatusBadRequest, "agent_host.register", "error.missing_communication_key", h.i18n)
+		return
+	}
+	if strings.TrimSpace(req.Hostname) == "" {
+		RespondErrorI18nAction(ctx, w, http.StatusBadRequest, "agent_host.register", "error.missing_hostname", h.i18n)
+		return
+	}
+
+	host, err := h.service.RegisterByCommunicationKey(ctx, service.RegisterAgentHostRequest{
+		CommunicationKey: req.CommunicationKey,
+		Hostname:         req.Hostname,
+		AdvertiseHost:    req.AdvertiseHost,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrInvalidCommunicationKey):
+			RespondErrorI18nAction(ctx, w, http.StatusUnauthorized, "agent_host.register", "error.invalid_token", h.i18n)
+			return
+		default:
+			RespondErrorI18nAction(ctx, w, http.StatusInternalServerError, "agent_host.register", "error.internal_server_error", h.i18n)
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]any{
+		"data": map[string]any{
+			"id":         host.ID,
+			"name":       host.Name,
+			"host":       host.Host,
+			"host_token": host.Token,
+		},
+	})
 }
 
 // Update handles PUT /agent-hosts/{id}
