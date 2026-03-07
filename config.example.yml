@@ -47,7 +47,7 @@ metrics:
 ui:
   admin:
     enabled: true
-    dir: "web/admin-vite/dist"    # Path to Admin UI static files
+    dir: "web/user-vite/dist"     # Path to Admin UI static files
     base_url: ""                  # Base URL path (optional)
     title: "XBoard Admin"
     version: "1.0.0"
@@ -61,9 +61,7 @@ ui:
 
 grpc:
   enabled: true                 # Required. Agent only supports gRPC transport.
-  address: "127.0.0.1:9090"     # Panel gRPC address
-  timeout: "10s"               # RPC timeout
-  host_token: "change-me"      # Panel communication token
+  addr: "127.0.0.1:9090"       # Panel gRPC listen address
 
 tag: "default"                # Agent tag (optional)
 

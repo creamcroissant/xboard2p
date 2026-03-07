@@ -65,6 +65,12 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	if strings.TrimSpace(v.GetString("grpc.addr")) == "" {
+		if legacyAddr := strings.TrimSpace(v.GetString("grpc.address")); legacyAddr != "" {
+			v.Set("grpc.addr", legacyAddr)
+		}
+	}
+
 	fmt.Printf("Viper database.path: %s\n", v.GetString("database.path"))
 
 	var cfg Config
@@ -95,7 +101,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("auth.bcrypt_cost", 12)
 
 	v.SetDefault("ui.admin.enabled", false)
-	v.SetDefault("ui.admin.dir", "web/admin-vite/dist")
+	v.SetDefault("ui.admin.dir", "web/user-vite/dist")
 	v.SetDefault("ui.admin.title", "XBoard Admin")
 	v.SetDefault("ui.admin.version", "1.0.0")
 	v.SetDefault("ui.admin.hidden_modules", []string{"payment", "ticket", "gift-card", "plugin", "theme"})
