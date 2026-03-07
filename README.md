@@ -33,7 +33,6 @@ Dockerfile            # Go multi-stage build
 config.example.yml    # YAML configuration example
 ```
 
-For more details, stage goals, and architectural constraints, see `coding.md`.
 
 ## 🚀 Quick Start
 
@@ -113,11 +112,11 @@ sudo ./deploy/panel.sh
 sudo ./deploy/agent.sh
 
 # One-liner bootstrap entry (bootstrap logic is merged into agent.sh)
-curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/master/deploy/agent.sh -o /tmp/agent.sh && \
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh -o /tmp/agent.sh && \
   sudo INSTALL_DIR=/opt/xboard sh /tmp/agent.sh --bootstrap --ref latest
 
 # Bootstrap with explicit tag (script/service/binary version bound to same tag)
-curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/master/deploy/agent.sh -o /tmp/agent.sh && \
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh -o /tmp/agent.sh && \
   sudo INSTALL_DIR=/opt/xboard sh /tmp/agent.sh --bootstrap --ref v1.2.3
 
 # Start service
@@ -187,11 +186,44 @@ Bootstrap is strict-only:
 - `agent.service` download failure => bootstrap exits immediately.
 - `agent.service` checksum mismatch => bootstrap exits immediately.
 
+## 🔌 API Overview
+
+Base URL: `/api`
+
+### Health & observability
+- `GET /healthz`
+- `GET /health`
+- `GET /_internal/ready`
+- `GET /metrics` (optional token protection)
+
+### Install endpoints
+- `GET /api/install/status`
+- `POST /api/install/`
+
+### v2 endpoints (`/api/v2`)
+- Admin: `/api/v2/{securePath}` with modules such as `config`, `plan`, `user`, `stat`, `system`, `notice`, `knowledge`, `agent-hosts`, `forwarding`, `access-logs`
+- User: `/api/v2/user`
+- Passport: `/api/v2/passport/auth`, `/api/v2/passport/comm`
+- Server: `/api/v2/server/*` (for server/agent communication)
+- Guest: `/api/v2/guest/i18n/{lang}`
+
+### v1 endpoints (`/api/v1`)
+- Client: `/api/v1/client` (includes subscription/app-compatible endpoints)
+- Guest: `/api/v1/guest` (plan/telegram/comm)
+- Passport: `/api/v1/passport/auth`, `/api/v1/passport/comm`
+- User: `/api/v1/user` and submodules (`invite`, `notice`, `server`, `telegram`, `comm`, `knowledge`, `plan`, `stat`, `shortlink`)
+- Agent: `/api/v1/agent` (`register`, `status`, `heartbeat`)
+
+### Short link
+- `GET /s/{code}`
+
+Route registration reference: `internal/api/router.go`.
+
 ## ⚙️ Configuration
 
 Configuration is loaded from `config.yml` (preferred) or Environment Variables (for containerization).
 
-See `config.example.yml` for structure and `coding.md` for details.
+See `config.example.yml` for configuration structure details.
 
 ## 🧪 Development Workflow
 

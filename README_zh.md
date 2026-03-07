@@ -27,13 +27,11 @@ pkg/, test/       # 预留扩展库与契约/集成测试
 Dockerfile        # Go 多阶段构建
 .env.example      # 环境变量示例
 config.example.yml # YAML 配置示例
-coding.md         # 官方架构文档
 README.md         # 英文概览
 README_zh.md      # 中文概览
 todo.list         # 开发任务板
 ```
 
-详细架构、约束与规划请参阅 `coding.md`。
 
 ## 🚀 快速开始
 
@@ -115,11 +113,11 @@ sudo ./deploy/panel.sh
 sudo ./deploy/agent.sh
 
 # 单命令 bootstrap 入口（bootstrap 逻辑已并入 agent.sh）
-curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/master/deploy/agent.sh -o /tmp/agent.sh && \
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh -o /tmp/agent.sh && \
   sudo INSTALL_DIR=/opt/xboard sh /tmp/agent.sh --bootstrap --ref latest
 
 # 指定 tag 的 bootstrap（脚本/service/二进制版本强绑定）
-curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/master/deploy/agent.sh -o /tmp/agent.sh && \
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh -o /tmp/agent.sh && \
   sudo INSTALL_DIR=/opt/xboard sh /tmp/agent.sh --bootstrap --ref v1.2.3
 
 # 启动服务
@@ -189,11 +187,44 @@ bootstrap 现为 strict-only：
 - `agent.service` 下载失败：立即退出。
 - `agent.service` checksum 校验失败：立即退出。
 
+## 🔌 API 接口概览
+
+基础路径：`/api`
+
+### 健康检查与观测
+- `GET /healthz`
+- `GET /health`
+- `GET /_internal/ready`
+- `GET /metrics`（可配置 token 保护）
+
+### 安装初始化接口
+- `GET /api/install/status`
+- `POST /api/install/`
+
+### v2 接口（`/api/v2`）
+- 管理端：`/api/v2/{securePath}`，包含 `config`、`plan`、`user`、`stat`、`system`、`notice`、`knowledge`、`agent-hosts`、`forwarding`、`access-logs` 等模块
+- 用户端：`/api/v2/user`
+- 认证与通信：`/api/v2/passport/auth`、`/api/v2/passport/comm`
+- 服务端通信：`/api/v2/server/*`
+- 访客端：`/api/v2/guest/i18n/{lang}`
+
+### v1 接口（`/api/v1`）
+- 客户端兼容：`/api/v1/client`（含订阅与 app 兼容接口）
+- 访客端：`/api/v1/guest`（plan/telegram/comm）
+- 认证与通信：`/api/v1/passport/auth`、`/api/v1/passport/comm`
+- 用户端：`/api/v1/user` 及其子模块（`invite`、`notice`、`server`、`telegram`、`comm`、`knowledge`、`plan`、`stat`、`shortlink`）
+- Agent：`/api/v1/agent`（`register`、`status`、`heartbeat`）
+
+### 短链跳转
+- `GET /s/{code}`
+
+路由注册参考：`internal/api/router.go`。
+
 ## ⚙️ 配置参数
 
 配置优先读取 `config.yml`，同时支持环境变量覆盖（适合容器化部署）。
 
-详见 `config.example.yml` 及 `coding.md`。
+详见 `config.example.yml`。
 
 ## 🧪 开发流程
 
