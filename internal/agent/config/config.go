@@ -197,6 +197,9 @@ type ForwardingConfig struct {
 
 	// TableName is the nftables table name
 	TableName string `yaml:"table_name"`
+
+	// NftBin is the nft executable path
+	NftBin string `yaml:"nft_bin"`
 }
 
 type ProxyConfig struct {
@@ -349,6 +352,9 @@ func applyDefaults(cfg *Config) error {
 	}
 	if cfg.Forwarding.TableName == "" {
 		cfg.Forwarding.TableName = "xboard_forwarding"
+	}
+	if cfg.Forwarding.NftBin == "" {
+		cfg.Forwarding.NftBin = defaultProxyNftBin
 	}
 
 	// Proxy defaults

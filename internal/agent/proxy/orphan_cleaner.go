@@ -14,7 +14,7 @@ import (
 
 const (
 	defaultPIDDir      = "/var/run/xboard/cores"
-	pidFilePermissions = 0644
+	pidFilePermissions = 0600
 )
 
 // PIDFile describes the process metadata persisted to disk.

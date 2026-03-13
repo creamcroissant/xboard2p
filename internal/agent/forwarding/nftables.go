@@ -13,24 +13,32 @@ import (
 	agentv1 "github.com/creamcroissant/xboard/pkg/pb/agent/v1"
 )
 
-const defaultNFTTableName = "xboard_forwarding"
+const (
+	defaultNFTTableName = "xboard_forwarding"
+	defaultNFTBin       = "/usr/sbin/nft"
+)
 
 // NFTablesExecutor 使用 nftables 应用转发规则。
 type NFTablesExecutor struct {
 	tableName string
+	nftBin    string
 }
 
 // NewNFTablesExecutor 创建执行器，默认表名为内置值。
-func NewNFTablesExecutor(tableName string) *NFTablesExecutor {
+func NewNFTablesExecutor(tableName, nftBin string) *NFTablesExecutor {
 	if strings.TrimSpace(tableName) == "" {
 		tableName = defaultNFTTableName
 	}
-	return &NFTablesExecutor{tableName: tableName}
+	nftBin = strings.TrimSpace(nftBin)
+	if nftBin == "" {
+		nftBin = defaultNFTBin
+	}
+	return &NFTablesExecutor{tableName: tableName, nftBin: nftBin}
 }
 
 // CheckAvailability 检查 nftables 是否可用。
 func (e *NFTablesExecutor) CheckAvailability(ctx context.Context) error {
-	cmd := exec.CommandContext(ctx, "nft", "--version")
+	cmd := exec.CommandContext(ctx, e.nftBin, "--version")
 	if _, err := cmd.Output(); err != nil {
 		return fmt.Errorf("nftables not available: %w", err)
 	}
@@ -66,7 +74,7 @@ func (e *NFTablesExecutor) Cleanup(ctx context.Context) error {
 }
 
 func (e *NFTablesExecutor) runNft(ctx context.Context, args []string, script string) error {
-	cmd := exec.CommandContext(ctx, "nft", args...)
+	cmd := exec.CommandContext(ctx, e.nftBin, args...)
 	cmd.Stdin = strings.NewReader(script)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -161,13 +169,13 @@ func buildPreroutingRule(rule *agentv1.ForwardingRule) ([]string, error) {
 
 	switch strings.ToLower(strings.TrimSpace(rule.Protocol)) {
 	case "tcp":
-		return []string{fmt.Sprintf("%s%stcp dport %d dnat to %s:%d", nfprotoPrefix(addr), nfprotoAddrLabel(addr), listen, addr, port)}, nil
+		return []string{fmt.Sprintf("%stcp dport %d dnat to %s:%d", nfprotoPrefix(addr), listen, addr, port)}, nil
 	case "udp":
-		return []string{fmt.Sprintf("%s%sudp dport %d dnat to %s:%d", nfprotoPrefix(addr), nfprotoAddrLabel(addr), listen, addr, port)}, nil
+		return []string{fmt.Sprintf("%sudp dport %d dnat to %s:%d", nfprotoPrefix(addr), listen, addr, port)}, nil
 	case "both":
 		return []string{
-			fmt.Sprintf("%s%stcp dport %d dnat to %s:%d", nfprotoPrefix(addr), nfprotoAddrLabel(addr), listen, addr, port),
-			fmt.Sprintf("%s%sudp dport %d dnat to %s:%d", nfprotoPrefix(addr), nfprotoAddrLabel(addr), listen, addr, port),
+			fmt.Sprintf("%stcp dport %d dnat to %s:%d", nfprotoPrefix(addr), listen, addr, port),
+			fmt.Sprintf("%sudp dport %d dnat to %s:%d", nfprotoPrefix(addr), listen, addr, port),
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported protocol: %s", rule.Protocol)
@@ -186,13 +194,13 @@ func buildPostroutingRule(rule *agentv1.ForwardingRule) ([]string, error) {
 
 	switch strings.ToLower(strings.TrimSpace(rule.Protocol)) {
 	case "tcp":
-		return []string{fmt.Sprintf("%stcp dport %d masquerade", nfprotoAddrLabel(addr), port)}, nil
+		return []string{fmt.Sprintf("%s%stcp dport %d masquerade", nfprotoPrefix(addr), nfprotoAddrLabel(addr), port)}, nil
 	case "udp":
-		return []string{fmt.Sprintf("%sudp dport %d masquerade", nfprotoAddrLabel(addr), port)}, nil
+		return []string{fmt.Sprintf("%s%sudp dport %d masquerade", nfprotoPrefix(addr), nfprotoAddrLabel(addr), port)}, nil
 	case "both":
 		return []string{
-			fmt.Sprintf("%stcp dport %d masquerade", nfprotoAddrLabel(addr), port),
-			fmt.Sprintf("%sudp dport %d masquerade", nfprotoAddrLabel(addr), port),
+			fmt.Sprintf("%s%stcp dport %d masquerade", nfprotoPrefix(addr), nfprotoAddrLabel(addr), port),
+			fmt.Sprintf("%s%sudp dport %d masquerade", nfprotoPrefix(addr), nfprotoAddrLabel(addr), port),
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported protocol: %s", rule.Protocol)

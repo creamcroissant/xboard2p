@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"regexp"
 
 	"github.com/creamcroissant/xboard/internal/repository"
 	chiMiddleware "github.com/go-chi/chi/v5/middleware"
@@ -60,16 +59,16 @@ type ForwardingService interface {
 
 // CreateForwardingRuleRequest 创建转发规则请求
 type CreateForwardingRuleRequest struct {
-	AgentHostID   int64   // 关联的 Agent 主机 ID
-	Name          string  // 规则名称
-	Protocol      string  // tcp/udp/both
-	ListenPort    int     // 本地监听端口
-	TargetAddress string  // 目标地址
-	TargetPort    int     // 目标端口
-	Enabled       bool    // 是否启用
-	Priority      int     // 优先级
-	Remark        string  // 备注
-	OperatorID    *int64  // 操作人 ID（管理员）
+	AgentHostID   int64  // 关联的 Agent 主机 ID
+	Name          string // 规则名称
+	Protocol      string // tcp/udp/both
+	ListenPort    int    // 本地监听端口
+	TargetAddress string // 目标地址
+	TargetPort    int    // 目标端口
+	Enabled       bool   // 是否启用
+	Priority      int    // 优先级
+	Remark        string // 备注
+	OperatorID    *int64 // 操作人 ID（管理员）
 }
 
 // UpdateForwardingRuleRequest 更新转发规则请求
@@ -90,7 +89,7 @@ var (
 	ErrInvalidProtocol      = errors.New("invalid protocol: must be tcp, udp, or both / 协议无效：仅支持 tcp、udp 或 both")
 	ErrInvalidListenPort    = errors.New("invalid listen port: must be between 1 and 65535 / 监听端口无效：必须在 1-65535 之间")
 	ErrInvalidTargetPort    = errors.New("invalid target port: must be between 1 and 65535 / 目标端口无效：必须在 1-65535 之间")
-	ErrInvalidTargetAddress = errors.New("invalid target address: must be a valid IP or domain / 目标地址无效：需为合法 IP 或域名")
+	ErrInvalidTargetAddress = errors.New("invalid target address: must be a valid IP / 目标地址无效：需为合法 IP")
 	ErrPortConflict         = errors.New("port conflict: another rule is already using this port/protocol combination / 端口冲突：该端口与协议组合已被占用")
 	ErrRuleNameRequired     = errors.New("rule name is required / 规则名称不能为空")
 	ErrAgentHostRequired    = errors.New("agent host ID is required / 必须指定节点 ID")
@@ -391,28 +390,10 @@ func isValidPort(port int) bool {
 	return port >= MinPort && port <= MaxPort
 }
 
-// isValidAddress 校验目标地址是否有效（IP 或域名）
+// isValidAddress 校验目标地址是否有效（仅 IP）
 func isValidAddress(addr string) bool {
 	if addr == "" {
 		return false
 	}
-
-	// 检查是否为有效 IP
-	if ip := net.ParseIP(addr); ip != nil {
-		return true
-	}
-
-	// 检查是否为有效域名
-	// 简化的域名正则，支持基本格式
-	domainRegex := regexp.MustCompile(`^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$`)
-	if domainRegex.MatchString(addr) {
-		return true
-	}
-
-	// 支持 localhost
-	if addr == "localhost" {
-		return true
-	}
-
-	return false
+	return net.ParseIP(addr) != nil
 }

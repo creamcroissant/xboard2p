@@ -32,7 +32,8 @@ func (g *Generic) Start(ctx context.Context, service string) error {
 		return fmt.Errorf("generic init system requires BinaryPath to be set")
 	}
 
-	cmd := exec.Command(g.BinaryPath, g.Args...)
+	startCtx := context.WithoutCancel(ctx)
+	cmd := exec.CommandContext(startCtx, g.BinaryPath, g.Args...)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	configureGenericCommand(cmd)
@@ -43,7 +44,7 @@ func (g *Generic) Start(ctx context.Context, service string) error {
 
 	// Write PID file if configured
 	if g.PidFile != "" {
-		if err := os.WriteFile(g.PidFile, []byte(strconv.Itoa(cmd.Process.Pid)), 0644); err != nil {
+		if err := os.WriteFile(g.PidFile, []byte(strconv.Itoa(cmd.Process.Pid)), 0600); err != nil {
 			return fmt.Errorf("failed to write PID file: %w", err)
 		}
 	}

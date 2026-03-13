@@ -112,21 +112,16 @@ func runCommand(ctx context.Context, command string) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	fmt.Printf("DEBUG: Executing command: %s\n", command)
 	name, args, err := splitCommand(command)
 	if err != nil {
-		fmt.Printf("DEBUG: Split command failed: %v\n", err)
 		return err
 	}
-	fmt.Printf("DEBUG: Parsed command: name=%s args=%v\n", name, args)
 
 	cmd := exec.CommandContext(ctx, name, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		fmt.Printf("DEBUG: Command failed: %v, output: %s, cmd=%s\n", err, string(output), command)
 		return fmt.Errorf("command failed: %s, output: %s", err, string(output))
 	}
-	fmt.Printf("DEBUG: Command success, output: %s, cmd=%s\n", string(output), command)
 	return nil
 }
 

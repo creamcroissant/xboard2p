@@ -232,7 +232,7 @@ func New(cfg *config.Config) (*Agent, error) {
 	})
 	if agent.cfg.Forwarding.Enabled {
 		interval := agent.cfg.Forwarding.SyncInterval
-		executor := forwarding.NewNFTablesExecutor(agent.cfg.Forwarding.TableName)
+		executor := forwarding.NewNFTablesExecutor(agent.cfg.Forwarding.TableName, agent.cfg.Forwarding.NftBin)
 		agent.forward = forwarding.NewManager(agent.grpc, executor, interval, slog.Default())
 	}
 
