@@ -31,6 +31,8 @@ const (
 	AgentService_GetCores_FullMethodName               = "/agent.v1.AgentService/GetCores"
 	AgentService_SwitchCore_FullMethodName             = "/agent.v1.AgentService/SwitchCore"
 	AgentService_ReportAccessLogs_FullMethodName       = "/agent.v1.AgentService/ReportAccessLogs"
+	AgentService_GetApplyBatch_FullMethodName          = "/agent.v1.AgentService/GetApplyBatch"
+	AgentService_ReportApplyRun_FullMethodName         = "/agent.v1.AgentService/ReportApplyRun"
 )
 
 // AgentServiceClient is the client API for AgentService service.
@@ -65,6 +67,10 @@ type AgentServiceClient interface {
 	SwitchCore(ctx context.Context, in *SwitchCoreRequest, opts ...grpc.CallOption) (*SwitchCoreResponse, error)
 	// ReportAccessLogs reports access logs
 	ReportAccessLogs(ctx context.Context, in *AccessLogReport, opts ...grpc.CallOption) (*AccessLogResponse, error)
+	// GetApplyBatch fetches hybrid config-center apply artifacts for current revision.
+	GetApplyBatch(ctx context.Context, in *ApplyBatchRequest, opts ...grpc.CallOption) (*ApplyBatchResponse, error)
+	// ReportApplyRun reports apply run result for hybrid config-center batch.
+	ReportApplyRun(ctx context.Context, in *ApplyRunReport, opts ...grpc.CallOption) (*ApplyRunResponse, error)
 }
 
 type agentServiceClient struct {
@@ -198,6 +204,26 @@ func (c *agentServiceClient) ReportAccessLogs(ctx context.Context, in *AccessLog
 	return out, nil
 }
 
+func (c *agentServiceClient) GetApplyBatch(ctx context.Context, in *ApplyBatchRequest, opts ...grpc.CallOption) (*ApplyBatchResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ApplyBatchResponse)
+	err := c.cc.Invoke(ctx, AgentService_GetApplyBatch_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) ReportApplyRun(ctx context.Context, in *ApplyRunReport, opts ...grpc.CallOption) (*ApplyRunResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ApplyRunResponse)
+	err := c.cc.Invoke(ctx, AgentService_ReportApplyRun_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AgentServiceServer is the server API for AgentService service.
 // All implementations must embed UnimplementedAgentServiceServer
 // for forward compatibility.
@@ -230,6 +256,10 @@ type AgentServiceServer interface {
 	SwitchCore(context.Context, *SwitchCoreRequest) (*SwitchCoreResponse, error)
 	// ReportAccessLogs reports access logs
 	ReportAccessLogs(context.Context, *AccessLogReport) (*AccessLogResponse, error)
+	// GetApplyBatch fetches hybrid config-center apply artifacts for current revision.
+	GetApplyBatch(context.Context, *ApplyBatchRequest) (*ApplyBatchResponse, error)
+	// ReportApplyRun reports apply run result for hybrid config-center batch.
+	ReportApplyRun(context.Context, *ApplyRunReport) (*ApplyRunResponse, error)
 	mustEmbedUnimplementedAgentServiceServer()
 }
 
@@ -275,6 +305,12 @@ func (UnimplementedAgentServiceServer) SwitchCore(context.Context, *SwitchCoreRe
 }
 func (UnimplementedAgentServiceServer) ReportAccessLogs(context.Context, *AccessLogReport) (*AccessLogResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReportAccessLogs not implemented")
+}
+func (UnimplementedAgentServiceServer) GetApplyBatch(context.Context, *ApplyBatchRequest) (*ApplyBatchResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetApplyBatch not implemented")
+}
+func (UnimplementedAgentServiceServer) ReportApplyRun(context.Context, *ApplyRunReport) (*ApplyRunResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReportApplyRun not implemented")
 }
 func (UnimplementedAgentServiceServer) mustEmbedUnimplementedAgentServiceServer() {}
 func (UnimplementedAgentServiceServer) testEmbeddedByValue()                      {}
@@ -502,6 +538,42 @@ func _AgentService_ReportAccessLogs_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AgentService_GetApplyBatch_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ApplyBatchRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).GetApplyBatch(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_GetApplyBatch_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).GetApplyBatch(ctx, req.(*ApplyBatchRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_ReportApplyRun_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ApplyRunReport)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).ReportApplyRun(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_ReportApplyRun_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).ReportApplyRun(ctx, req.(*ApplyRunReport))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AgentService_ServiceDesc is the grpc.ServiceDesc for AgentService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -552,6 +624,14 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReportAccessLogs",
 			Handler:    _AgentService_ReportAccessLogs_Handler,
+		},
+		{
+			MethodName: "GetApplyBatch",
+			Handler:    _AgentService_GetApplyBatch_Handler,
+		},
+		{
+			MethodName: "ReportApplyRun",
+			Handler:    _AgentService_ReportApplyRun_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

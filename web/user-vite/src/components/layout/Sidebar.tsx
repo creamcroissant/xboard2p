@@ -17,6 +17,7 @@ import {
   Cog,
   Shuffle,
   ListChecks,
+  GitCompare,
 } from "lucide-react";
 import { ROUTES, ADMIN_ROUTES } from "@/lib/constants";
 import { useAuth } from "@/providers/AuthProvider";
@@ -53,6 +54,7 @@ const adminNavigationItems = [
   { to: ADMIN_ROUTES.KNOWLEDGE, labelKey: "admin.nav.knowledge", icon: BookOpen },
   { to: ADMIN_ROUTES.ACCESS_LOGS, labelKey: "admin.nav.accessLogs", icon: ListChecks },
   { to: ADMIN_ROUTES.FORWARDING, labelKey: "admin.nav.forwarding", icon: Shuffle },
+  { to: ADMIN_ROUTES.CONFIG_CENTER, labelKey: "admin.nav.configCenter", icon: GitCompare },
   { to: ADMIN_ROUTES.SYSTEM, labelKey: "admin.nav.system", icon: Cog },
 ];
 

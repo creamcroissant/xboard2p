@@ -62,6 +62,18 @@
     "password": "密码",
     "confirmPassword": "确认密码",
     "forgotPassword": "忘记密码?",
+    "forgotPasswordSubtitle": "通过邮箱验证码重置账户密码",
+    "forgotPasswordCode": "邮箱验证码",
+    "forgotPasswordCodePlaceholder": "请输入验证码",
+    "forgotPasswordSendCode": "发送验证码",
+    "forgotPasswordSending": "发送中...",
+    "forgotPasswordSubmitting": "提交中...",
+    "forgotPasswordSubmit": "重置密码",
+    "forgotPasswordCodeSent": "验证码已发送到您的邮箱",
+    "forgotPasswordResetSuccess": "密码重置成功，请重新登录",
+    "forgotPasswordEmailRequired": "请输入邮箱",
+    "forgotPasswordCodeRequired": "请输入验证码",
+    "forgotPasswordPasswordRequired": "请输入密码",
     "noAccount": "还没有账号?",
     "hasAccount": "已有账号?",
     "rememberMe": "记住我",
@@ -166,6 +178,7 @@
       "notices": "公告",
       "knowledge": "知识库",
       "forwarding": "转发规则",
+      "configCenter": "配置中心",
       "accessLogs": "访问日志",
       "system": "系统"
     },
@@ -200,14 +213,24 @@
       "minutesAgo": "{{count}}分钟前",
       "hoursAgo": "{{count}}小时前",
       "daysAgo": "{{count}}天前",
-      "createSuccess": "节点创建成功",
-      "createError": "创建失败",
+      "updateSuccess": "节点更新成功",
+      "updateError": "节点更新失败",
       "deleteSuccess": "节点删除成功",
       "deleteError": "删除失败",
       "refreshSuccess": "刷新成功",
       "loadError": "加载节点列表失败",
-      "validationError": "验证错误",
-      "nameHostRequired": "名称和主机地址为必填项"
+      "nameHostRequired": "名称和主机地址为必填项",
+      "deploy": {
+        "title": "一键部署命令",
+        "description": "请在目标机器执行以下命令完成 Agent 安装与对接",
+        "command": "部署命令",
+        "copy": "复制命令",
+        "copySuccess": "部署命令已复制",
+        "copyError": "复制部署命令失败",
+        "missingAddress": "未配置 Agent 对接地址，请先到 系统设置 -> 节点通信 中配置。",
+        "missingCommunicationKey": "通信密钥不可用，请检查 系统设置 -> 节点通信。",
+        "unavailable": "部署命令不可用"
+      }
     },
     "users": {
       "title": "用户管理",
@@ -533,6 +556,138 @@
         "download": "下行 {{value}}"
       }
     },
+    "configCenter": {
+      "title": "配置中心",
+      "subtitle": "统一管理 Hybrid Inbound 的期望配置、发布与漂移观测",
+      "actions": {
+        "import": "从 Applied 导入",
+        "createSpec": "新建 Spec",
+        "apply": "发布到 Agent",
+        "history": "历史"
+      },
+      "tabs": {
+        "specs": "Spec 管理",
+        "diff": "差异对比",
+        "drift": "漂移状态",
+        "snapshot": "Applied 快照"
+      },
+      "filters": {
+        "title": "筛选条件",
+        "description": "选择 Agent 与核心后查看对应配置中心数据"
+      },
+      "specs": {
+        "title": "Spec 列表",
+        "description": "共 {{count}} 条记录，最新期望 revision：{{revision}}",
+        "createTitle": "创建 Spec",
+        "editTitle": "编辑 Spec",
+        "historyTitle": "Spec 变更历史"
+      },
+      "apply": {
+        "targetRevision": "目标 revision",
+        "previousRevision": "上一 revision（可选）"
+      },
+      "diff": {
+        "title": "文本与语义差异",
+        "description": "对比 Desired 与 Applied 的文本和语义差异",
+        "text": "文本 Diff",
+        "semantic": "语义 Diff",
+        "desired": "Desired",
+        "applied": "Applied",
+        "unified": "Unified Diff"
+      },
+      "drift": {
+        "activeTitle": "当前漂移",
+        "activeDescription": "展示当前仍处于漂移状态的条目",
+        "recoveredTitle": "已恢复记录",
+        "recoveredDescription": "展示已经从漂移恢复的条目"
+      },
+      "snapshot": {
+        "title": "Applied 快照",
+        "description": "展示 Agent 上报的配置文件清单与 inbound 索引",
+        "inventoryTitle": "配置文件 Inventory",
+        "inboundTitle": "Inbound 索引"
+      },
+      "import": {
+        "title": "从 Applied 导入 Spec",
+        "overwriteExisting": "覆盖已有 Spec"
+      },
+      "fields": {
+        "agentHost": "Agent 主机",
+        "selectedHost": "当前主机",
+        "coreType": "核心类型",
+        "tag": "Tag",
+        "revision": "Revision",
+        "enabled": "启用",
+        "updatedAt": "更新时间",
+        "createdAt": "创建时间",
+        "changeNote": "变更说明",
+        "operator": "操作人",
+        "semanticSpec": "语义 Spec（JSON）",
+        "coreSpecific": "Core Specific（JSON）",
+        "filename": "文件名",
+        "driftType": "漂移类型",
+        "fieldDiffs": "字段差异",
+        "source": "来源",
+        "parseStatus": "解析状态",
+        "lastSeenAt": "最近上报",
+        "protocol": "协议",
+        "listen": "监听地址",
+        "port": "端口"
+      },
+      "status": {
+        "enabled": "已启用",
+        "disabled": "已禁用"
+      },
+      "source": {
+        "legacy": "legacy",
+        "managed": "managed",
+        "merged": "merged"
+      },
+      "placeholders": {
+        "selectHost": "请选择 Agent 主机",
+        "noHost": "未选择主机",
+        "optional": "可选",
+        "specTag": "例如：inbound-web"
+      },
+      "empty": {
+        "noHostTitle": "请选择 Agent 主机",
+        "noHostDescription": "选择主机后可查看并管理配置中心内容。",
+        "noSpecTitle": "暂无 Spec",
+        "noSpecDescription": "创建第一条 Spec 开始管理期望配置。",
+        "noSemanticDiff": "暂无语义差异",
+        "noDriftTitle": "暂无漂移",
+        "noDriftDescription": "当前 Desired 与 Applied 状态一致。",
+        "noRecoveryTitle": "暂无恢复记录",
+        "noRecoveryDescription": "当前没有漂移恢复历史。",
+        "noInventoryTitle": "暂无 Inventory",
+        "noInventoryDescription": "Agent 尚未上报配置文件清单。",
+        "noInboundIndexTitle": "暂无 Inbound 索引",
+        "noInboundIndexDescription": "Agent 尚未上报 Inbound 索引数据。",
+        "noHistoryTitle": "暂无历史",
+        "noHistoryDescription": "当前 Spec 暂无历史版本。"
+      },
+      "messages": {
+        "selectHostFirst": "请先选择 Agent 主机",
+        "requiredFields": "请填写必填字段",
+        "invalidJson": "JSON 格式无效",
+        "invalidTargetRevision": "目标 revision 必须是大于 0 的数字",
+        "hostLoadFailed": "加载 Agent 主机失败",
+        "specLoadFailed": "加载 Spec 列表失败",
+        "historyLoadFailed": "加载 Spec 历史失败",
+        "snapshotLoadFailed": "加载 Applied 快照失败",
+        "driftLoadFailed": "加载漂移状态失败",
+        "recoveryLoadFailed": "加载恢复记录失败",
+        "textDiffFailed": "加载文本 Diff 失败",
+        "semanticDiffFailed": "加载语义 Diff 失败",
+        "specSaved": "Spec 创建成功",
+        "specUpdated": "Spec 更新成功",
+        "specSaveFailed": "保存 Spec 失败",
+        "importSuccess": "导入完成，新增 {{count}} 条 Spec",
+        "importFailed": "导入 Spec 失败",
+        "applyStarted": "发布任务已创建",
+        "applyFailed": "创建发布任务失败"
+      }
+    },
     "system": {
       "title": "系统设置",
       "description": "查看系统状态和配置",
@@ -580,6 +735,7 @@
           "injectMeta": "注入订阅信息",
           "injectProtocol": "注入协议信息",
           "communicationKey": "通信密钥",
+          "agentGrpcAddress": "Agent 对接地址",
           "pullInterval": "拉取间隔",
           "pushInterval": "上报间隔",
           "deviceLimitMode": "设备限制模式",
@@ -605,6 +761,7 @@
           "subscribeUrls": "https://a.example.com, https://b.example.com",
           "subscribePath": "subscribe",
           "resetCron": "0 0 1 * *",
+          "agentGrpcAddress": "例如：127.0.0.1:50051",
           "pullInterval": "例如：60",
           "pushInterval": "例如：60",
           "smtpHost": "smtp.example.com",
@@ -625,6 +782,7 @@
           "injectMeta": "在订阅中注入流量与到期信息",
           "injectProtocol": "在订阅中注入协议与版本信息",
           "communicationKey": "用于 Agent 与 Panel 通信",
+          "agentGrpcAddress": "用于一键部署命令的 Agent gRPC 对接地址",
           "pullInterval": "单位：秒",
           "pushInterval": "单位：秒",
           "deviceLimitMode": "严格模式将限制设备数量",

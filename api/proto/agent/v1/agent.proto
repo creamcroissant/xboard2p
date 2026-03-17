@@ -10,6 +10,7 @@ import "agent/v1/traffic.proto";
 import "agent/v1/forwarding.proto";
 import "agent/v1/core.proto";
 import "agent/v1/access_log.proto";
+import "agent/v1/config_center.proto";
 
 // AgentService defines the communication interface between Agent and Panel
 // Panel acts as the gRPC server, Agent connects as client
@@ -50,4 +51,10 @@ service AgentService {
 
   // ReportAccessLogs reports access logs
   rpc ReportAccessLogs(AccessLogReport) returns (AccessLogResponse);
+
+  // GetApplyBatch fetches hybrid config-center apply artifacts for current revision.
+  rpc GetApplyBatch(ApplyBatchRequest) returns (ApplyBatchResponse);
+
+  // ReportApplyRun reports apply run result for hybrid config-center batch.
+  rpc ReportApplyRun(ApplyRunReport) returns (ApplyRunResponse);
 }

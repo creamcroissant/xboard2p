@@ -28,3 +28,69 @@ type StatUserTopFilter struct {
 	EndAt       int64
 	Limit       int
 }
+
+// InboundSpecFilter constrains inbound spec listing queries.
+type InboundSpecFilter struct {
+	AgentHostID *int64
+	CoreType    *string
+	Tag         *string
+	Enabled     *bool
+	Limit       int
+	Offset      int
+}
+
+// DesiredArtifactFilter constrains artifact listing queries.
+type DesiredArtifactFilter struct {
+	AgentHostID     int64
+	CoreType        *string
+	DesiredRevision *int64
+	SourceTag       *string
+	Filename        *string
+	ExcludeContent  bool
+	Limit           int
+	Offset          int
+}
+
+// ApplyRunFilter constrains apply run listing queries.
+type ApplyRunFilter struct {
+	AgentHostID *int64
+	CoreType    *string
+	Status      *string
+	Limit       int
+	Offset      int
+}
+
+// AgentConfigInventoryFilter constrains inventory listing queries.
+type AgentConfigInventoryFilter struct {
+	AgentHostID *int64
+	CoreType    *string
+	Source      *string
+	Filename    *string
+	ParseStatus *string
+	Limit       int
+	Offset      int
+}
+
+// InboundIndexFilter constrains inbound index listing queries.
+type InboundIndexFilter struct {
+	AgentHostID *int64
+	CoreType    *string
+	Source      *string
+	Tag         *string
+	Protocol    *string
+	Filename    *string
+	Limit       int
+	Offset      int
+}
+
+// DriftStateFilter constrains drift listing queries.
+type DriftStateFilter struct {
+	AgentHostID *int64
+	CoreType    *string
+	Status      *string
+	DriftType   *string
+	Tag         *string
+	Filename    *string
+	Limit       int
+	Offset      int
+}

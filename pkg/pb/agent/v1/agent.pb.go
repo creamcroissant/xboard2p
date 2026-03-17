@@ -24,7 +24,7 @@ var File_agent_v1_agent_proto protoreflect.FileDescriptor
 
 const file_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
-	"\x14agent/v1/agent.proto\x12\bagent.v1\x1a\x15agent/v1/status.proto\x1a\x15agent/v1/config.proto\x1a\x16agent/v1/traffic.proto\x1a\x19agent/v1/forwarding.proto\x1a\x13agent/v1/core.proto\x1a\x19agent/v1/access_log.proto2\xe5\x06\n" +
+	"\x14agent/v1/agent.proto\x12\bagent.v1\x1a\x15agent/v1/status.proto\x1a\x15agent/v1/config.proto\x1a\x16agent/v1/traffic.proto\x1a\x19agent/v1/forwarding.proto\x1a\x13agent/v1/core.proto\x1a\x19agent/v1/access_log.proto\x1a\x1cagent/v1/config_center.proto2\xf9\a\n" +
 	"\fAgentService\x12D\n" +
 	"\tHeartbeat\x12\x1a.agent.v1.HeartbeatRequest\x1a\x1b.agent.v1.HeartbeatResponse\x12@\n" +
 	"\fReportStatus\x12\x16.agent.v1.StatusReport\x1a\x18.agent.v1.StatusResponse\x12>\n" +
@@ -38,7 +38,9 @@ const file_agent_v1_agent_proto_rawDesc = "" +
 	"\bGetCores\x12\x19.agent.v1.GetCoresRequest\x1a\x1a.agent.v1.GetCoresResponse\x12G\n" +
 	"\n" +
 	"SwitchCore\x12\x1b.agent.v1.SwitchCoreRequest\x1a\x1c.agent.v1.SwitchCoreResponse\x12J\n" +
-	"\x10ReportAccessLogs\x12\x19.agent.v1.AccessLogReport\x1a\x1b.agent.v1.AccessLogResponseB:Z8github.com/creamcroissant/xboard/pkg/pb/agent/v1;agentv1b\x06proto3"
+	"\x10ReportAccessLogs\x12\x19.agent.v1.AccessLogReport\x1a\x1b.agent.v1.AccessLogResponse\x12J\n" +
+	"\rGetApplyBatch\x12\x1b.agent.v1.ApplyBatchRequest\x1a\x1c.agent.v1.ApplyBatchResponse\x12F\n" +
+	"\x0eReportApplyRun\x12\x18.agent.v1.ApplyRunReport\x1a\x1a.agent.v1.ApplyRunResponseB:Z8github.com/creamcroissant/xboard/pkg/pb/agent/v1;agentv1b\x06proto3"
 
 var file_agent_v1_agent_proto_goTypes = []any{
 	(*HeartbeatRequest)(nil),        // 0: agent.v1.HeartbeatRequest
@@ -52,17 +54,21 @@ var file_agent_v1_agent_proto_goTypes = []any{
 	(*GetCoresRequest)(nil),         // 8: agent.v1.GetCoresRequest
 	(*SwitchCoreRequest)(nil),       // 9: agent.v1.SwitchCoreRequest
 	(*AccessLogReport)(nil),         // 10: agent.v1.AccessLogReport
-	(*HeartbeatResponse)(nil),       // 11: agent.v1.HeartbeatResponse
-	(*StatusResponse)(nil),          // 12: agent.v1.StatusResponse
-	(*ConfigResponse)(nil),          // 13: agent.v1.ConfigResponse
-	(*UsersResponse)(nil),           // 14: agent.v1.UsersResponse
-	(*TrafficResponse)(nil),         // 15: agent.v1.TrafficResponse
-	(*AliveResponse)(nil),           // 16: agent.v1.AliveResponse
-	(*StatusCommand)(nil),           // 17: agent.v1.StatusCommand
-	(*ForwardingRulesResponse)(nil), // 18: agent.v1.ForwardingRulesResponse
-	(*GetCoresResponse)(nil),        // 19: agent.v1.GetCoresResponse
-	(*SwitchCoreResponse)(nil),      // 20: agent.v1.SwitchCoreResponse
-	(*AccessLogResponse)(nil),       // 21: agent.v1.AccessLogResponse
+	(*ApplyBatchRequest)(nil),       // 11: agent.v1.ApplyBatchRequest
+	(*ApplyRunReport)(nil),          // 12: agent.v1.ApplyRunReport
+	(*HeartbeatResponse)(nil),       // 13: agent.v1.HeartbeatResponse
+	(*StatusResponse)(nil),          // 14: agent.v1.StatusResponse
+	(*ConfigResponse)(nil),          // 15: agent.v1.ConfigResponse
+	(*UsersResponse)(nil),           // 16: agent.v1.UsersResponse
+	(*TrafficResponse)(nil),         // 17: agent.v1.TrafficResponse
+	(*AliveResponse)(nil),           // 18: agent.v1.AliveResponse
+	(*StatusCommand)(nil),           // 19: agent.v1.StatusCommand
+	(*ForwardingRulesResponse)(nil), // 20: agent.v1.ForwardingRulesResponse
+	(*GetCoresResponse)(nil),        // 21: agent.v1.GetCoresResponse
+	(*SwitchCoreResponse)(nil),      // 22: agent.v1.SwitchCoreResponse
+	(*AccessLogResponse)(nil),       // 23: agent.v1.AccessLogResponse
+	(*ApplyBatchResponse)(nil),      // 24: agent.v1.ApplyBatchResponse
+	(*ApplyRunResponse)(nil),        // 25: agent.v1.ApplyRunResponse
 }
 var file_agent_v1_agent_proto_depIdxs = []int32{
 	0,  // 0: agent.v1.AgentService.Heartbeat:input_type -> agent.v1.HeartbeatRequest
@@ -77,20 +83,24 @@ var file_agent_v1_agent_proto_depIdxs = []int32{
 	8,  // 9: agent.v1.AgentService.GetCores:input_type -> agent.v1.GetCoresRequest
 	9,  // 10: agent.v1.AgentService.SwitchCore:input_type -> agent.v1.SwitchCoreRequest
 	10, // 11: agent.v1.AgentService.ReportAccessLogs:input_type -> agent.v1.AccessLogReport
-	11, // 12: agent.v1.AgentService.Heartbeat:output_type -> agent.v1.HeartbeatResponse
-	12, // 13: agent.v1.AgentService.ReportStatus:output_type -> agent.v1.StatusResponse
-	13, // 14: agent.v1.AgentService.GetConfig:output_type -> agent.v1.ConfigResponse
-	14, // 15: agent.v1.AgentService.GetUsers:output_type -> agent.v1.UsersResponse
-	15, // 16: agent.v1.AgentService.ReportTraffic:output_type -> agent.v1.TrafficResponse
-	16, // 17: agent.v1.AgentService.ReportAlive:output_type -> agent.v1.AliveResponse
-	17, // 18: agent.v1.AgentService.StatusStream:output_type -> agent.v1.StatusCommand
-	18, // 19: agent.v1.AgentService.GetForwardingRules:output_type -> agent.v1.ForwardingRulesResponse
-	12, // 20: agent.v1.AgentService.ReportForwardingStatus:output_type -> agent.v1.StatusResponse
-	19, // 21: agent.v1.AgentService.GetCores:output_type -> agent.v1.GetCoresResponse
-	20, // 22: agent.v1.AgentService.SwitchCore:output_type -> agent.v1.SwitchCoreResponse
-	21, // 23: agent.v1.AgentService.ReportAccessLogs:output_type -> agent.v1.AccessLogResponse
-	12, // [12:24] is the sub-list for method output_type
-	0,  // [0:12] is the sub-list for method input_type
+	11, // 12: agent.v1.AgentService.GetApplyBatch:input_type -> agent.v1.ApplyBatchRequest
+	12, // 13: agent.v1.AgentService.ReportApplyRun:input_type -> agent.v1.ApplyRunReport
+	13, // 14: agent.v1.AgentService.Heartbeat:output_type -> agent.v1.HeartbeatResponse
+	14, // 15: agent.v1.AgentService.ReportStatus:output_type -> agent.v1.StatusResponse
+	15, // 16: agent.v1.AgentService.GetConfig:output_type -> agent.v1.ConfigResponse
+	16, // 17: agent.v1.AgentService.GetUsers:output_type -> agent.v1.UsersResponse
+	17, // 18: agent.v1.AgentService.ReportTraffic:output_type -> agent.v1.TrafficResponse
+	18, // 19: agent.v1.AgentService.ReportAlive:output_type -> agent.v1.AliveResponse
+	19, // 20: agent.v1.AgentService.StatusStream:output_type -> agent.v1.StatusCommand
+	20, // 21: agent.v1.AgentService.GetForwardingRules:output_type -> agent.v1.ForwardingRulesResponse
+	14, // 22: agent.v1.AgentService.ReportForwardingStatus:output_type -> agent.v1.StatusResponse
+	21, // 23: agent.v1.AgentService.GetCores:output_type -> agent.v1.GetCoresResponse
+	22, // 24: agent.v1.AgentService.SwitchCore:output_type -> agent.v1.SwitchCoreResponse
+	23, // 25: agent.v1.AgentService.ReportAccessLogs:output_type -> agent.v1.AccessLogResponse
+	24, // 26: agent.v1.AgentService.GetApplyBatch:output_type -> agent.v1.ApplyBatchResponse
+	25, // 27: agent.v1.AgentService.ReportApplyRun:output_type -> agent.v1.ApplyRunResponse
+	14, // [14:28] is the sub-list for method output_type
+	0,  // [0:14] is the sub-list for method input_type
 	0,  // [0:0] is the sub-list for extension type_name
 	0,  // [0:0] is the sub-list for extension extendee
 	0,  // [0:0] is the sub-list for field type_name
@@ -107,6 +117,7 @@ func file_agent_v1_agent_proto_init() {
 	file_agent_v1_forwarding_proto_init()
 	file_agent_v1_core_proto_init()
 	file_agent_v1_access_log_proto_init()
+	file_agent_v1_config_center_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

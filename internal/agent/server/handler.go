@@ -11,8 +11,8 @@ import (
 
 // Handler handles HTTP requests for the Agent API.
 type Handler struct {
-	protoMgr   *protocol.Manager
-	authToken  string
+	protoMgr  *protocol.Manager
+	authToken string
 }
 
 // NewHandler creates a new Handler.
@@ -108,6 +108,7 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 // ApplyConfigRequest is the request body for applying a configuration.
 type ApplyConfigRequest struct {
 	Filename string `json:"filename"`
+	CoreType string `json:"core_type"`
 	Content  string `json:"content"`
 }
 
@@ -129,13 +130,13 @@ func (h *Handler) ApplyConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.protoMgr.ApplyConfig(r.Context(), []byte(req.Content)); err != nil {
+	if err := h.protoMgr.ApplyConfigWithCore(r.Context(), req.CoreType, req.Filename, []byte(req.Content)); err != nil {
 		h.errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	h.jsonResponse(w, http.StatusOK, map[string]string{
-		"status": "ok",
+		"status":  "ok",
 		"message": "configuration applied successfully",
 	})
 }
@@ -171,7 +172,7 @@ func (h *Handler) ApplyTemplate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.jsonResponse(w, http.StatusOK, map[string]string{
-		"status": "ok",
+		"status":  "ok",
 		"message": "template applied successfully",
 	})
 }
@@ -191,7 +192,7 @@ func (h *Handler) DeleteConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.jsonResponse(w, http.StatusOK, map[string]string{
-		"status": "ok",
+		"status":  "ok",
 		"message": "configuration removed successfully",
 	})
 }
@@ -219,7 +220,7 @@ func (h *Handler) ReloadService(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.jsonResponse(w, http.StatusOK, map[string]string{
-		"status": "ok",
+		"status":  "ok",
 		"message": "service reloaded successfully",
 	})
 }

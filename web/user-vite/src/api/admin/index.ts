@@ -82,3 +82,20 @@ export {
   getSystemConfig,
   updateSystemConfig,
 } from "./system";
+
+// Config Center API
+export {
+  listConfigCenterSpecs,
+  createConfigCenterSpec,
+  updateConfigCenterSpec,
+  getConfigCenterSpecHistory,
+  importConfigCenterSpecsFromApplied,
+  listConfigCenterArtifacts,
+  getConfigCenterTextDiff,
+  getConfigCenterSemanticDiff,
+  createConfigCenterApplyRun,
+  listConfigCenterApplyRuns,
+  listConfigCenterAppliedSnapshot,
+  listConfigCenterDriftStates,
+  listConfigCenterRecoveryStates,
+} from "./configCenter";

@@ -205,6 +205,7 @@ type AgentHost struct {
 	Host            string   // 服务器 IP 或域名
 	Token           string   // Agent 认证令牌
 	Status          int      // 0: 离线, 1: 在线, 2: 警告
+	ProvisionStatus int      // 0: active, 1: pending
 	TemplateID      int64    // Config Template ID
 	CoreVersion     string   // 核心版本 (如 "1.10.0")
 	Capabilities    []string // 支持的能力 (如 ["reality", "multiplex"])
@@ -274,7 +275,7 @@ type KnowledgeVisibleFilter struct {
 // StatUserRecord captures aggregated traffic usage per user per interval.
 type StatUserRecord struct {
 	UserID      int64
-	AgentHostID int64   // Source agent host ID for multi-node aggregation
+	AgentHostID int64 // Source agent host ID for multi-node aggregation
 	ServerRate  float64
 	RecordAt    int64
 	RecordType  int // 0: hourly, 1: daily, 2: monthly
@@ -419,7 +420,7 @@ type ForwardingRule struct {
 	Name          string // 规则名称
 	Protocol      string // tcp/udp/both
 	ListenPort    int    // 本地监听端口
-	TargetAddress string // 目标地址 (IP 或域名)
+	TargetAddress string // 目标地址 (仅 IP)
 	TargetPort    int    // 目标端口
 	Enabled       bool   // 是否启用
 	Priority      int    // 优先级（越小越优先）
@@ -508,4 +509,106 @@ type AccessLogStats struct {
 	TotalCount    int64
 	TotalUpload   int64
 	TotalDownload int64
+}
+
+// InboundSpec represents desired inbound configuration at tag granularity.
+type InboundSpec struct {
+	ID              int64
+	AgentHostID     int64
+	CoreType        string
+	Tag             string
+	Enabled         bool
+	SemanticSpec    json.RawMessage
+	CoreSpecific    json.RawMessage
+	DesiredRevision int64
+	CreatedBy       int64
+	UpdatedBy       int64
+	CreatedAt       int64
+	UpdatedAt       int64
+}
+
+// InboundSpecRevision stores immutable snapshots for spec changes.
+type InboundSpecRevision struct {
+	ID         int64
+	SpecID     int64
+	Revision   int64
+	Snapshot   json.RawMessage
+	ChangeNote string
+	OperatorID int64
+	CreatedAt  int64
+}
+
+// DesiredArtifact is a deployable rendered config file for a revision.
+type DesiredArtifact struct {
+	ID              int64
+	AgentHostID     int64
+	CoreType        string
+	DesiredRevision int64
+	Filename        string
+	SourceTag       string
+	Content         []byte
+	ContentHash     string
+	GeneratedAt     int64
+}
+
+// ApplyRun tracks release/apply lifecycle for a target revision.
+type ApplyRun struct {
+	RunID            string
+	AgentHostID      int64
+	CoreType         string
+	TargetRevision   int64
+	Status           string
+	ErrorMessage     string
+	PreviousRevision int64
+	RollbackRevision int64
+	OperatorID       int64
+	StartedAt        int64
+	FinishedAt       int64
+}
+
+// AgentConfigInventory is file-level applied observation reported by agents.
+type AgentConfigInventory struct {
+	ID          int64
+	AgentHostID int64
+	CoreType    string
+	Source      string
+	Filename    string
+	HashApplied string
+	ParseStatus string
+	ParseError  string
+	LastSeenAt  int64
+}
+
+// InboundIndex is semantic inbound index parsed from applied files.
+type InboundIndex struct {
+	ID          int64
+	AgentHostID int64
+	CoreType    string
+	Source      string
+	Filename    string
+	Tag         string
+	Protocol    string
+	Listen      string
+	Port        int
+	TLS         json.RawMessage
+	Transport   json.RawMessage
+	Multiplex   json.RawMessage
+	LastSeenAt  int64
+}
+
+// DriftState tracks desired-applied mismatch status.
+type DriftState struct {
+	ID              int64
+	AgentHostID     int64
+	CoreType        string
+	Filename        string
+	Tag             string
+	DesiredRevision int64
+	DesiredHash     string
+	AppliedHash     string
+	DriftType       string
+	Status          string
+	Detail          json.RawMessage
+	FirstDetectedAt int64
+	LastChangedAt   int64
 }

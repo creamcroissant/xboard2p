@@ -141,8 +141,17 @@ type ServerConfig struct {
 }
 
 type ProtocolConfig struct {
-	// ConfigDir is the directory containing sing-box config files
+	// ConfigDir is the primary configuration directory for backward compatibility.
 	ConfigDir string `yaml:"config_dir"`
+
+	// LegacyConfigDir is the legacy configuration directory.
+	LegacyConfigDir string `yaml:"legacy_config_dir"`
+
+	// ManagedConfigDir is the managed configuration directory.
+	ManagedConfigDir string `yaml:"managed_config_dir"`
+
+	// MergeOutputFile is the merged output filename for single-file core mode.
+	MergeOutputFile string `yaml:"merge_output_file"`
 
 	// SubscribeDir is the directory containing client subscription files
 	SubscribeDir string `yaml:"subscribe_dir"`
@@ -301,7 +310,23 @@ func applyDefaults(cfg *Config) error {
 
 	// Protocol defaults
 	if cfg.Protocol.ConfigDir == "" {
-		cfg.Protocol.ConfigDir = "/etc/sing-box/conf"
+		switch {
+		case cfg.Protocol.ManagedConfigDir != "":
+			cfg.Protocol.ConfigDir = cfg.Protocol.ManagedConfigDir
+		case cfg.Protocol.LegacyConfigDir != "":
+			cfg.Protocol.ConfigDir = cfg.Protocol.LegacyConfigDir
+		default:
+			cfg.Protocol.ConfigDir = "/etc/sing-box/conf"
+		}
+	}
+	if cfg.Protocol.LegacyConfigDir == "" {
+		cfg.Protocol.LegacyConfigDir = cfg.Protocol.ConfigDir
+	}
+	if cfg.Protocol.ManagedConfigDir == "" {
+		cfg.Protocol.ManagedConfigDir = cfg.Protocol.ConfigDir
+	}
+	if cfg.Protocol.MergeOutputFile == "" {
+		cfg.Protocol.MergeOutputFile = "config.json"
 	}
 	if cfg.Protocol.SubscribeDir == "" {
 		cfg.Protocol.SubscribeDir = "/etc/sing-box/subscribe"

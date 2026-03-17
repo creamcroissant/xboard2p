@@ -121,13 +121,15 @@ func (x *HeartbeatResponse) GetServerTime() int64 {
 
 // StatusReport contains system and network metrics
 type StatusReport struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Timestamp     int64                  `protobuf:"varint,1,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	System        *SystemMetrics         `protobuf:"bytes,2,opt,name=system,proto3" json:"system,omitempty"`
-	Network       *NetworkMetrics        `protobuf:"bytes,3,opt,name=network,proto3" json:"network,omitempty"`
-	Protocols     []*ProtocolState       `protobuf:"bytes,4,rep,name=protocols,proto3" json:"protocols,omitempty"`
-	ClientConfigs *ClientConfigReport    `protobuf:"bytes,5,opt,name=client_configs,json=clientConfigs,proto3" json:"client_configs,omitempty"` // Client configurations from subscribe directory
-	Instances     []*CoreInstance        `protobuf:"bytes,6,rep,name=instances,proto3" json:"instances,omitempty"`                              // Core instances on agent
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Timestamp     int64                   `protobuf:"varint,1,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	System        *SystemMetrics          `protobuf:"bytes,2,opt,name=system,proto3" json:"system,omitempty"`
+	Network       *NetworkMetrics         `protobuf:"bytes,3,opt,name=network,proto3" json:"network,omitempty"`
+	Protocols     []*ProtocolState        `protobuf:"bytes,4,rep,name=protocols,proto3" json:"protocols,omitempty"`
+	ClientConfigs *ClientConfigReport     `protobuf:"bytes,5,opt,name=client_configs,json=clientConfigs,proto3" json:"client_configs,omitempty"` // Client configurations from subscribe directory
+	Instances     []*CoreInstance         `protobuf:"bytes,6,rep,name=instances,proto3" json:"instances,omitempty"`                              // Core instances on agent
+	Inventory     []*ConfigInventoryEntry `protobuf:"bytes,7,rep,name=inventory,proto3" json:"inventory,omitempty"`                              // Applied config file inventory
+	InboundIndex  []*InboundIndexEntry    `protobuf:"bytes,8,rep,name=inbound_index,json=inboundIndex,proto3" json:"inbound_index,omitempty"`    // Parsed inbound semantic index
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -200,6 +202,20 @@ func (x *StatusReport) GetClientConfigs() *ClientConfigReport {
 func (x *StatusReport) GetInstances() []*CoreInstance {
 	if x != nil {
 		return x.Instances
+	}
+	return nil
+}
+
+func (x *StatusReport) GetInventory() []*ConfigInventoryEntry {
+	if x != nil {
+		return x.Inventory
+	}
+	return nil
+}
+
+func (x *StatusReport) GetInboundIndex() []*InboundIndexEntry {
+	if x != nil {
+		return x.InboundIndex
 	}
 	return nil
 }
@@ -1192,6 +1208,224 @@ func (x *StatusCommand) GetPayload() []byte {
 	return nil
 }
 
+// ConfigInventoryEntry describes an applied config file discovered on agent.
+type ConfigInventoryEntry struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Source        string                 `protobuf:"bytes,1,opt,name=source,proto3" json:"source,omitempty"` // legacy | managed | merged
+	Filename      string                 `protobuf:"bytes,2,opt,name=filename,proto3" json:"filename,omitempty"`
+	CoreType      string                 `protobuf:"bytes,3,opt,name=core_type,json=coreType,proto3" json:"core_type,omitempty"`          // sing-box | xray
+	ContentHash   string                 `protobuf:"bytes,4,opt,name=content_hash,json=contentHash,proto3" json:"content_hash,omitempty"` // applied file hash
+	ParseStatus   string                 `protobuf:"bytes,5,opt,name=parse_status,json=parseStatus,proto3" json:"parse_status,omitempty"` // ok | parse_error
+	ParseError    string                 `protobuf:"bytes,6,opt,name=parse_error,json=parseError,proto3" json:"parse_error,omitempty"`
+	LastSeenAt    int64                  `protobuf:"varint,7,opt,name=last_seen_at,json=lastSeenAt,proto3" json:"last_seen_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConfigInventoryEntry) Reset() {
+	*x = ConfigInventoryEntry{}
+	mi := &file_agent_v1_status_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConfigInventoryEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConfigInventoryEntry) ProtoMessage() {}
+
+func (x *ConfigInventoryEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_status_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConfigInventoryEntry.ProtoReflect.Descriptor instead.
+func (*ConfigInventoryEntry) Descriptor() ([]byte, []int) {
+	return file_agent_v1_status_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ConfigInventoryEntry) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+func (x *ConfigInventoryEntry) GetFilename() string {
+	if x != nil {
+		return x.Filename
+	}
+	return ""
+}
+
+func (x *ConfigInventoryEntry) GetCoreType() string {
+	if x != nil {
+		return x.CoreType
+	}
+	return ""
+}
+
+func (x *ConfigInventoryEntry) GetContentHash() string {
+	if x != nil {
+		return x.ContentHash
+	}
+	return ""
+}
+
+func (x *ConfigInventoryEntry) GetParseStatus() string {
+	if x != nil {
+		return x.ParseStatus
+	}
+	return ""
+}
+
+func (x *ConfigInventoryEntry) GetParseError() string {
+	if x != nil {
+		return x.ParseError
+	}
+	return ""
+}
+
+func (x *ConfigInventoryEntry) GetLastSeenAt() int64 {
+	if x != nil {
+		return x.LastSeenAt
+	}
+	return 0
+}
+
+// InboundIndexEntry describes parsed inbound semantics from applied files.
+type InboundIndexEntry struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Source        string                 `protobuf:"bytes,1,opt,name=source,proto3" json:"source,omitempty"` // legacy | managed | merged
+	Filename      string                 `protobuf:"bytes,2,opt,name=filename,proto3" json:"filename,omitempty"`
+	CoreType      string                 `protobuf:"bytes,3,opt,name=core_type,json=coreType,proto3" json:"core_type,omitempty"` // sing-box | xray
+	Tag           string                 `protobuf:"bytes,4,opt,name=tag,proto3" json:"tag,omitempty"`
+	Protocol      string                 `protobuf:"bytes,5,opt,name=protocol,proto3" json:"protocol,omitempty"`
+	Listen        string                 `protobuf:"bytes,6,opt,name=listen,proto3" json:"listen,omitempty"`
+	Port          int32                  `protobuf:"varint,7,opt,name=port,proto3" json:"port,omitempty"`
+	Tls           string                 `protobuf:"bytes,8,opt,name=tls,proto3" json:"tls,omitempty"`              // JSON
+	Transport     string                 `protobuf:"bytes,9,opt,name=transport,proto3" json:"transport,omitempty"`  // JSON
+	Multiplex     string                 `protobuf:"bytes,10,opt,name=multiplex,proto3" json:"multiplex,omitempty"` // JSON
+	LastSeenAt    int64                  `protobuf:"varint,11,opt,name=last_seen_at,json=lastSeenAt,proto3" json:"last_seen_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InboundIndexEntry) Reset() {
+	*x = InboundIndexEntry{}
+	mi := &file_agent_v1_status_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InboundIndexEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InboundIndexEntry) ProtoMessage() {}
+
+func (x *InboundIndexEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_status_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InboundIndexEntry.ProtoReflect.Descriptor instead.
+func (*InboundIndexEntry) Descriptor() ([]byte, []int) {
+	return file_agent_v1_status_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *InboundIndexEntry) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+func (x *InboundIndexEntry) GetFilename() string {
+	if x != nil {
+		return x.Filename
+	}
+	return ""
+}
+
+func (x *InboundIndexEntry) GetCoreType() string {
+	if x != nil {
+		return x.CoreType
+	}
+	return ""
+}
+
+func (x *InboundIndexEntry) GetTag() string {
+	if x != nil {
+		return x.Tag
+	}
+	return ""
+}
+
+func (x *InboundIndexEntry) GetProtocol() string {
+	if x != nil {
+		return x.Protocol
+	}
+	return ""
+}
+
+func (x *InboundIndexEntry) GetListen() string {
+	if x != nil {
+		return x.Listen
+	}
+	return ""
+}
+
+func (x *InboundIndexEntry) GetPort() int32 {
+	if x != nil {
+		return x.Port
+	}
+	return 0
+}
+
+func (x *InboundIndexEntry) GetTls() string {
+	if x != nil {
+		return x.Tls
+	}
+	return ""
+}
+
+func (x *InboundIndexEntry) GetTransport() string {
+	if x != nil {
+		return x.Transport
+	}
+	return ""
+}
+
+func (x *InboundIndexEntry) GetMultiplex() string {
+	if x != nil {
+		return x.Multiplex
+	}
+	return ""
+}
+
+func (x *InboundIndexEntry) GetLastSeenAt() int64 {
+	if x != nil {
+		return x.LastSeenAt
+	}
+	return 0
+}
+
 // ClientConfigReport contains client configurations parsed from subscribe directory
 type ClientConfigReport struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1203,7 +1437,7 @@ type ClientConfigReport struct {
 
 func (x *ClientConfigReport) Reset() {
 	*x = ClientConfigReport{}
-	mi := &file_agent_v1_status_proto_msgTypes[15]
+	mi := &file_agent_v1_status_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1215,7 +1449,7 @@ func (x *ClientConfigReport) String() string {
 func (*ClientConfigReport) ProtoMessage() {}
 
 func (x *ClientConfigReport) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_status_proto_msgTypes[15]
+	mi := &file_agent_v1_status_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1228,7 +1462,7 @@ func (x *ClientConfigReport) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientConfigReport.ProtoReflect.Descriptor instead.
 func (*ClientConfigReport) Descriptor() ([]byte, []int) {
-	return file_agent_v1_status_proto_rawDescGZIP(), []int{15}
+	return file_agent_v1_status_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ClientConfigReport) GetConfigs() []*ClientConfig {
@@ -1294,7 +1528,7 @@ type ClientConfig struct {
 
 func (x *ClientConfig) Reset() {
 	*x = ClientConfig{}
-	mi := &file_agent_v1_status_proto_msgTypes[16]
+	mi := &file_agent_v1_status_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1306,7 +1540,7 @@ func (x *ClientConfig) String() string {
 func (*ClientConfig) ProtoMessage() {}
 
 func (x *ClientConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_status_proto_msgTypes[16]
+	mi := &file_agent_v1_status_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1319,7 +1553,7 @@ func (x *ClientConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientConfig.ProtoReflect.Descriptor instead.
 func (*ClientConfig) Descriptor() ([]byte, []int) {
-	return file_agent_v1_status_proto_rawDescGZIP(), []int{16}
+	return file_agent_v1_status_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ClientConfig) GetName() string {
@@ -1535,14 +1769,16 @@ const file_agent_v1_status_proto_rawDesc = "" +
 	"\x11HeartbeatResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x1f\n" +
 	"\vserver_time\x18\x02 \x01(\x03R\n" +
-	"serverTime\"\xc3\x02\n" +
+	"serverTime\"\xc3\x03\n" +
 	"\fStatusReport\x12\x1c\n" +
 	"\ttimestamp\x18\x01 \x01(\x03R\ttimestamp\x12/\n" +
 	"\x06system\x18\x02 \x01(\v2\x17.agent.v1.SystemMetricsR\x06system\x122\n" +
 	"\anetwork\x18\x03 \x01(\v2\x18.agent.v1.NetworkMetricsR\anetwork\x125\n" +
 	"\tprotocols\x18\x04 \x03(\v2\x17.agent.v1.ProtocolStateR\tprotocols\x12C\n" +
 	"\x0eclient_configs\x18\x05 \x01(\v2\x1c.agent.v1.ClientConfigReportR\rclientConfigs\x124\n" +
-	"\tinstances\x18\x06 \x03(\v2\x16.agent.v1.CoreInstanceR\tinstances\"\xa9\x01\n" +
+	"\tinstances\x18\x06 \x03(\v2\x16.agent.v1.CoreInstanceR\tinstances\x12<\n" +
+	"\tinventory\x18\a \x03(\v2\x1e.agent.v1.ConfigInventoryEntryR\tinventory\x12@\n" +
+	"\rinbound_index\x18\b \x03(\v2\x1b.agent.v1.InboundIndexEntryR\finboundIndex\"\xa9\x01\n" +
 	"\rProtocolState\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12\x18\n" +
@@ -1632,7 +1868,31 @@ const file_agent_v1_status_proto_rawDesc = "" +
 	"\x17report_interval_seconds\x18\x04 \x01(\x05R\x15reportIntervalSeconds\"C\n" +
 	"\rStatusCommand\x12\x18\n" +
 	"\acommand\x18\x01 \x01(\tR\acommand\x12\x18\n" +
-	"\apayload\x18\x02 \x01(\fR\apayload\"i\n" +
+	"\apayload\x18\x02 \x01(\fR\apayload\"\xf0\x01\n" +
+	"\x14ConfigInventoryEntry\x12\x16\n" +
+	"\x06source\x18\x01 \x01(\tR\x06source\x12\x1a\n" +
+	"\bfilename\x18\x02 \x01(\tR\bfilename\x12\x1b\n" +
+	"\tcore_type\x18\x03 \x01(\tR\bcoreType\x12!\n" +
+	"\fcontent_hash\x18\x04 \x01(\tR\vcontentHash\x12!\n" +
+	"\fparse_status\x18\x05 \x01(\tR\vparseStatus\x12\x1f\n" +
+	"\vparse_error\x18\x06 \x01(\tR\n" +
+	"parseError\x12 \n" +
+	"\flast_seen_at\x18\a \x01(\x03R\n" +
+	"lastSeenAt\"\xae\x02\n" +
+	"\x11InboundIndexEntry\x12\x16\n" +
+	"\x06source\x18\x01 \x01(\tR\x06source\x12\x1a\n" +
+	"\bfilename\x18\x02 \x01(\tR\bfilename\x12\x1b\n" +
+	"\tcore_type\x18\x03 \x01(\tR\bcoreType\x12\x10\n" +
+	"\x03tag\x18\x04 \x01(\tR\x03tag\x12\x1a\n" +
+	"\bprotocol\x18\x05 \x01(\tR\bprotocol\x12\x16\n" +
+	"\x06listen\x18\x06 \x01(\tR\x06listen\x12\x12\n" +
+	"\x04port\x18\a \x01(\x05R\x04port\x12\x10\n" +
+	"\x03tls\x18\b \x01(\tR\x03tls\x12\x1c\n" +
+	"\ttransport\x18\t \x01(\tR\ttransport\x12\x1c\n" +
+	"\tmultiplex\x18\n" +
+	" \x01(\tR\tmultiplex\x12 \n" +
+	"\flast_seen_at\x18\v \x01(\x03R\n" +
+	"lastSeenAt\"i\n" +
 	"\x12ClientConfigReport\x120\n" +
 	"\aconfigs\x18\x01 \x03(\v2\x16.agent.v1.ClientConfigR\aconfigs\x12!\n" +
 	"\fcontent_hash\x18\x02 \x01(\tR\vcontentHash\"\xd9\a\n" +
@@ -1686,48 +1946,52 @@ func file_agent_v1_status_proto_rawDescGZIP() []byte {
 	return file_agent_v1_status_proto_rawDescData
 }
 
-var file_agent_v1_status_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_agent_v1_status_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_agent_v1_status_proto_goTypes = []any{
-	(*HeartbeatRequest)(nil),   // 0: agent.v1.HeartbeatRequest
-	(*HeartbeatResponse)(nil),  // 1: agent.v1.HeartbeatResponse
-	(*StatusReport)(nil),       // 2: agent.v1.StatusReport
-	(*ProtocolState)(nil),      // 3: agent.v1.ProtocolState
-	(*ProtocolDetails)(nil),    // 4: agent.v1.ProtocolDetails
-	(*TransportConfig)(nil),    // 5: agent.v1.TransportConfig
-	(*TLSConfig)(nil),          // 6: agent.v1.TLSConfig
-	(*RealityConfig)(nil),      // 7: agent.v1.RealityConfig
-	(*MultiplexConfig)(nil),    // 8: agent.v1.MultiplexConfig
-	(*BrutalConfig)(nil),       // 9: agent.v1.BrutalConfig
-	(*ProtocolUserInfo)(nil),   // 10: agent.v1.ProtocolUserInfo
-	(*SystemMetrics)(nil),      // 11: agent.v1.SystemMetrics
-	(*NetworkMetrics)(nil),     // 12: agent.v1.NetworkMetrics
-	(*StatusResponse)(nil),     // 13: agent.v1.StatusResponse
-	(*StatusCommand)(nil),      // 14: agent.v1.StatusCommand
-	(*ClientConfigReport)(nil), // 15: agent.v1.ClientConfigReport
-	(*ClientConfig)(nil),       // 16: agent.v1.ClientConfig
-	nil,                        // 17: agent.v1.ClientConfig.RawConfigsEntry
-	(*CoreInstance)(nil),       // 18: agent.v1.CoreInstance
+	(*HeartbeatRequest)(nil),     // 0: agent.v1.HeartbeatRequest
+	(*HeartbeatResponse)(nil),    // 1: agent.v1.HeartbeatResponse
+	(*StatusReport)(nil),         // 2: agent.v1.StatusReport
+	(*ProtocolState)(nil),        // 3: agent.v1.ProtocolState
+	(*ProtocolDetails)(nil),      // 4: agent.v1.ProtocolDetails
+	(*TransportConfig)(nil),      // 5: agent.v1.TransportConfig
+	(*TLSConfig)(nil),            // 6: agent.v1.TLSConfig
+	(*RealityConfig)(nil),        // 7: agent.v1.RealityConfig
+	(*MultiplexConfig)(nil),      // 8: agent.v1.MultiplexConfig
+	(*BrutalConfig)(nil),         // 9: agent.v1.BrutalConfig
+	(*ProtocolUserInfo)(nil),     // 10: agent.v1.ProtocolUserInfo
+	(*SystemMetrics)(nil),        // 11: agent.v1.SystemMetrics
+	(*NetworkMetrics)(nil),       // 12: agent.v1.NetworkMetrics
+	(*StatusResponse)(nil),       // 13: agent.v1.StatusResponse
+	(*StatusCommand)(nil),        // 14: agent.v1.StatusCommand
+	(*ConfigInventoryEntry)(nil), // 15: agent.v1.ConfigInventoryEntry
+	(*InboundIndexEntry)(nil),    // 16: agent.v1.InboundIndexEntry
+	(*ClientConfigReport)(nil),   // 17: agent.v1.ClientConfigReport
+	(*ClientConfig)(nil),         // 18: agent.v1.ClientConfig
+	nil,                          // 19: agent.v1.ClientConfig.RawConfigsEntry
+	(*CoreInstance)(nil),         // 20: agent.v1.CoreInstance
 }
 var file_agent_v1_status_proto_depIdxs = []int32{
 	11, // 0: agent.v1.StatusReport.system:type_name -> agent.v1.SystemMetrics
 	12, // 1: agent.v1.StatusReport.network:type_name -> agent.v1.NetworkMetrics
 	3,  // 2: agent.v1.StatusReport.protocols:type_name -> agent.v1.ProtocolState
-	15, // 3: agent.v1.StatusReport.client_configs:type_name -> agent.v1.ClientConfigReport
-	18, // 4: agent.v1.StatusReport.instances:type_name -> agent.v1.CoreInstance
-	4,  // 5: agent.v1.ProtocolState.details:type_name -> agent.v1.ProtocolDetails
-	5,  // 6: agent.v1.ProtocolDetails.transport:type_name -> agent.v1.TransportConfig
-	6,  // 7: agent.v1.ProtocolDetails.tls:type_name -> agent.v1.TLSConfig
-	10, // 8: agent.v1.ProtocolDetails.users:type_name -> agent.v1.ProtocolUserInfo
-	8,  // 9: agent.v1.ProtocolDetails.multiplex:type_name -> agent.v1.MultiplexConfig
-	7,  // 10: agent.v1.TLSConfig.reality:type_name -> agent.v1.RealityConfig
-	9,  // 11: agent.v1.MultiplexConfig.brutal:type_name -> agent.v1.BrutalConfig
-	16, // 12: agent.v1.ClientConfigReport.configs:type_name -> agent.v1.ClientConfig
-	17, // 13: agent.v1.ClientConfig.raw_configs:type_name -> agent.v1.ClientConfig.RawConfigsEntry
-	14, // [14:14] is the sub-list for method output_type
-	14, // [14:14] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	17, // 3: agent.v1.StatusReport.client_configs:type_name -> agent.v1.ClientConfigReport
+	20, // 4: agent.v1.StatusReport.instances:type_name -> agent.v1.CoreInstance
+	15, // 5: agent.v1.StatusReport.inventory:type_name -> agent.v1.ConfigInventoryEntry
+	16, // 6: agent.v1.StatusReport.inbound_index:type_name -> agent.v1.InboundIndexEntry
+	4,  // 7: agent.v1.ProtocolState.details:type_name -> agent.v1.ProtocolDetails
+	5,  // 8: agent.v1.ProtocolDetails.transport:type_name -> agent.v1.TransportConfig
+	6,  // 9: agent.v1.ProtocolDetails.tls:type_name -> agent.v1.TLSConfig
+	10, // 10: agent.v1.ProtocolDetails.users:type_name -> agent.v1.ProtocolUserInfo
+	8,  // 11: agent.v1.ProtocolDetails.multiplex:type_name -> agent.v1.MultiplexConfig
+	7,  // 12: agent.v1.TLSConfig.reality:type_name -> agent.v1.RealityConfig
+	9,  // 13: agent.v1.MultiplexConfig.brutal:type_name -> agent.v1.BrutalConfig
+	18, // 14: agent.v1.ClientConfigReport.configs:type_name -> agent.v1.ClientConfig
+	19, // 15: agent.v1.ClientConfig.raw_configs:type_name -> agent.v1.ClientConfig.RawConfigsEntry
+	16, // [16:16] is the sub-list for method output_type
+	16, // [16:16] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_agent_v1_status_proto_init() }
@@ -1742,7 +2006,7 @@ func file_agent_v1_status_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agent_v1_status_proto_rawDesc), len(file_agent_v1_status_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   18,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

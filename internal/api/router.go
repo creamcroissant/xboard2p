@@ -88,6 +88,9 @@ type Services struct {
 	AgentCore           service.AgentCoreService
 	Forwarding          service.ForwardingService
 	AccessLog           service.AccessLogService
+	InboundSpec         service.InboundSpecService
+	DriftAndDiff        service.DriftAndDiffService
+	ApplyOrchestrator   service.ApplyOrchestratorService
 	Plan                service.PlanService
 	Server              service.ServerService
 	Subscription        service.SubscriptionService
@@ -356,7 +359,7 @@ func registerAPIRoutes(root chi.Router, services Services) {
 
 func registerV2Routes(api chi.Router, services Services) {
 	api.Route("/v2", func(v2 chi.Router) {
-		registerV2AdminRoutes(v2, services.Config, services.Auth, services.AdminPath, services.Plan, services.AdminPlan, services.AdminUser, services.AdminServer, services.AdminStat, services.AdminNodeStat, services.AdminSystem, services.AdminSystemSettings, services.AdminNotice, services.AdminKnowledge, services.Invite, services.AgentHost, services.AgentCore, services.Forwarding, services.AccessLog, services.I18n)
+		registerV2AdminRoutes(v2, services.Config, services.Auth, services.AdminPath, services.Plan, services.AdminPlan, services.AdminUser, services.AdminServer, services.AdminStat, services.AdminNodeStat, services.AdminSystem, services.AdminSystemSettings, services.AdminNotice, services.AdminKnowledge, services.Invite, services.AgentHost, services.AgentCore, services.Forwarding, services.AccessLog, services.InboundSpec, services.DriftAndDiff, services.ApplyOrchestrator, services.I18n)
 		registerV2UserRoutes(v2, services.User, services.Auth, services.I18n)
 		registerV2PassportRoutes(v2, services.Auth, services.Verify, services.Invite, services.Password, services.Register, services.MailLink, services.I18n)
 		registerV2ServerRoutes(v2, services.ServerAuth, services.ServerNode, services.Telemetry, services.Traffic, services.TrafficQueue, services.I18n)
@@ -373,7 +376,7 @@ func registerV2GuestRoutes(v2 chi.Router, i18nManager *i18n.Manager) {
 	})
 }
 
-func registerV2AdminRoutes(v2 chi.Router, configService service.ConfigService, auth service.AuthService, adminPath service.AdminPathService, plan service.PlanService, adminPlan service.AdminPlanService, adminUser service.AdminUserService, adminServer service.AdminServerService, adminStat service.AdminStatService, adminNodeStat service.AdminNodeStatService, adminSystem service.AdminSystemService, adminSystemSettings service.AdminSystemSettingsService, adminNotice service.AdminNoticeService, adminKnowledge service.AdminKnowledgeService, inviteService service.InviteService, agentHost service.AgentHostService, agentCore service.AgentCoreService, forwarding service.ForwardingService, accessLog service.AccessLogService, i18nManager *i18n.Manager) {
+func registerV2AdminRoutes(v2 chi.Router, configService service.ConfigService, auth service.AuthService, adminPath service.AdminPathService, plan service.PlanService, adminPlan service.AdminPlanService, adminUser service.AdminUserService, adminServer service.AdminServerService, adminStat service.AdminStatService, adminNodeStat service.AdminNodeStatService, adminSystem service.AdminSystemService, adminSystemSettings service.AdminSystemSettingsService, adminNotice service.AdminNoticeService, adminKnowledge service.AdminKnowledgeService, inviteService service.InviteService, agentHost service.AgentHostService, agentCore service.AgentCoreService, forwarding service.ForwardingService, accessLog service.AccessLogService, inboundSpec service.InboundSpecService, driftAndDiff service.DriftAndDiffService, applyOrchestrator service.ApplyOrchestratorService, i18nManager *i18n.Manager) {
 	adminHandler := handler.NewAdminHandler(configService)
 	adminPlanHandler := handler.NewAdminPlanHandler(plan, adminPlan, i18nManager)
 	adminUserHandler := handler.NewAdminUserHandler(adminUser)
@@ -389,6 +392,10 @@ func registerV2AdminRoutes(v2 chi.Router, configService service.ConfigService, a
 	adminForwardingHandler := handler.NewAdminForwardingHandler(forwarding, i18nManager)
 	adminAgentCoreHandler := handler.NewAdminAgentCoreHandler(agentCore, i18nManager)
 	adminAccessLogHandler := handler.NewAdminAccessLogHandler(accessLog)
+	adminConfigCenterSpecHandler := handler.NewAdminConfigCenterSpecHandler(inboundSpec, i18nManager)
+	adminConfigCenterDiffHandler := handler.NewAdminConfigCenterDiffHandler(driftAndDiff, i18nManager)
+	adminConfigCenterDriftHandler := handler.NewAdminConfigCenterDriftHandler(driftAndDiff, i18nManager)
+	adminConfigCenterApplyHandler := handler.NewAdminConfigCenterApplyHandler(applyOrchestrator, i18nManager)
 
 	v2.Route("/{securePath}", func(admin chi.Router) {
 		admin.Use(middleware.AdminGuard(auth, adminPath))
@@ -472,6 +479,29 @@ func registerV2AdminRoutes(v2 chi.Router, configService service.ConfigService, a
 			logs.Get("/stats", adminAccessLogHandler.GetStats)
 			logs.Post("/cleanup", adminAccessLogHandler.Cleanup)
 		})
+
+		// Config center spec endpoints
+		admin.Route("/config-center/specs", func(specs chi.Router) {
+			specs.Get("/", adminConfigCenterSpecHandler.ListSpecs)
+			specs.Post("/", adminConfigCenterSpecHandler.Create)
+			specs.Put("/{id:[0-9]+}", adminConfigCenterSpecHandler.Update)
+			specs.Get("/{id:[0-9]+}/history", adminConfigCenterSpecHandler.GetHistory)
+			specs.Post("/import-from-applied", adminConfigCenterSpecHandler.ImportFromApplied)
+		})
+
+		// Config center artifact/diff endpoints
+		admin.Get("/config-center/artifacts", adminConfigCenterDiffHandler.ListArtifacts)
+		admin.Get("/config-center/diff/text", adminConfigCenterDiffHandler.GetTextDiff)
+		admin.Get("/config-center/diff/semantic", adminConfigCenterDiffHandler.GetSemanticDiff)
+
+		// Config center drift observability endpoints
+		admin.Get("/config-center/snapshot", adminConfigCenterDriftHandler.ListAppliedSnapshot)
+		admin.Get("/config-center/drift", adminConfigCenterDriftHandler.ListDriftStates)
+		admin.Get("/config-center/recover", adminConfigCenterDriftHandler.ListRecoveryStates)
+
+		// Config center apply run endpoints
+		admin.Post("/config-center/apply-runs", adminConfigCenterApplyHandler.CreateApplyRun)
+		admin.Get("/config-center/apply-runs", adminConfigCenterApplyHandler.ListApplyRuns)
 
 		// 已移除的商业化/占位模块不再挂载，避免 404/501 噪声。
 		// mountHandler(admin, "/coupon", adminHandler)
@@ -611,8 +641,8 @@ func registerV1AgentRoutes(v1 chi.Router, agentHost service.AgentHostService, i1
 	agentHostHandler := handler.NewAgentHostHandler(agentHost, i18nManager)
 	v1.Route("/agent", func(agent chi.Router) {
 		// Status reporting from agent (no auth middleware, token in query param)
+		agent.Post("/register", agentHostHandler.Register)
 		agent.Post("/status", agentHostHandler.ReportStatus)
 		agent.Post("/heartbeat", agentHostHandler.Heartbeat)
-		agent.Post("/register", agentHostHandler.Register)
 	})
 }

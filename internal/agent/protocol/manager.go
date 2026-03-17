@@ -22,8 +22,17 @@ import (
 
 // Config 定义协议管理器的配置。
 type Config struct {
-	// ConfigDir 是 sing-box 配置文件所在目录
+	// ConfigDir 是兼容旧配置的主目录（优先指向 managed）。
 	ConfigDir string `yaml:"config_dir"`
+
+	// LegacyConfigDir 是历史配置目录。
+	LegacyConfigDir string `yaml:"legacy_config_dir"`
+
+	// ManagedConfigDir 是托管配置目录。
+	ManagedConfigDir string `yaml:"managed_config_dir"`
+
+	// MergeOutputFile 是单文件核心模式下的 merged 输出文件名。
+	MergeOutputFile string `yaml:"merge_output_file"`
 
 	// ServiceName 是 sing-box 服务名称
 	ServiceName string `yaml:"service_name"`
@@ -44,10 +53,13 @@ type Config struct {
 // DefaultConfig 返回默认配置。
 func DefaultConfig() Config {
 	return Config{
-		ConfigDir:   "/etc/sing-box/conf",
-		ServiceName: "sing-box",
-		ValidateCmd: "",
-		AutoRestart: true,
+		ConfigDir:        "/etc/sing-box/conf",
+		LegacyConfigDir:  "/etc/sing-box/conf",
+		ManagedConfigDir: "/etc/sing-box/conf",
+		MergeOutputFile:  "config.json",
+		ServiceName:      "sing-box",
+		ValidateCmd:      "",
+		AutoRestart:      true,
 	}
 }
 
@@ -72,6 +84,28 @@ func NewManager(cfg Config, initSys initsys.InitSystem) *Manager {
 	if initSys == nil {
 		initSys = initsys.Detect()
 	}
+	if strings.TrimSpace(cfg.ConfigDir) == "" {
+		if strings.TrimSpace(cfg.ManagedConfigDir) != "" {
+			cfg.ConfigDir = cfg.ManagedConfigDir
+		} else if strings.TrimSpace(cfg.LegacyConfigDir) != "" {
+			cfg.ConfigDir = cfg.LegacyConfigDir
+		} else {
+			cfg.ConfigDir = "/etc/sing-box/conf"
+		}
+	}
+	cfg.ConfigDir = strings.TrimSpace(cfg.ConfigDir)
+	if strings.TrimSpace(cfg.ManagedConfigDir) == "" {
+		cfg.ManagedConfigDir = cfg.ConfigDir
+	}
+	cfg.ManagedConfigDir = strings.TrimSpace(cfg.ManagedConfigDir)
+	if strings.TrimSpace(cfg.LegacyConfigDir) == "" {
+		cfg.LegacyConfigDir = cfg.ConfigDir
+	}
+	cfg.LegacyConfigDir = strings.TrimSpace(cfg.LegacyConfigDir)
+	if strings.TrimSpace(cfg.MergeOutputFile) == "" {
+		cfg.MergeOutputFile = "config.json"
+	}
+	cfg.MergeOutputFile = strings.TrimSpace(cfg.MergeOutputFile)
 	return &Manager{
 		cfg:      cfg,
 		init:     initSys,
@@ -86,39 +120,15 @@ func (m *Manager) InitSystemType() string {
 
 // ListConfigs 返回所有协议配置文件。
 func (m *Manager) ListConfigs() ([]ConfigFile, error) {
-	pattern := filepath.Join(m.cfg.ConfigDir, "*.json")
-	files, err := filepath.Glob(pattern)
+	dir, err := m.dirForSource("current")
 	if err != nil {
-		return nil, fmt.Errorf("glob config files: %w", err)
+		return nil, err
 	}
-
-	configs := make([]ConfigFile, 0, len(files))
-	for _, f := range files {
-		info, err := os.Stat(f)
-		if err != nil {
-			continue
-		}
-
-		content, err := os.ReadFile(f)
-		if err != nil {
-			continue
-		}
-
-		hash := md5.Sum(content)
-		configs = append(configs, ConfigFile{
-			Filename:    filepath.Base(f),
-			ModTime:     info.ModTime(),
-			Size:        info.Size(),
-			ContentHash: hex.EncodeToString(hash[:]),
-		})
+	files, err := m.listConfigFiles(dir)
+	if err != nil {
+		return nil, err
 	}
-
-	// 按文件名排序
-	sort.Slice(configs, func(i, j int) bool {
-		return configs[i].Filename < configs[j].Filename
-	})
-
-	return configs, nil
+	return m.buildConfigFiles(files), nil
 }
 
 // ListInbounds 仅返回 inbound 相关配置文件。
@@ -137,41 +147,68 @@ func (m *Manager) ListInbounds() ([]ConfigFile, error) {
 	return inbounds, nil
 }
 
+// ListConfigsBySource 按来源返回配置文件。
+func (m *Manager) ListConfigsBySource(source string) ([]ConfigFile, error) {
+	dir, err := m.dirForSource(source)
+	if err != nil {
+		return nil, err
+	}
+	files, err := m.listConfigFiles(dir)
+	if err != nil {
+		return nil, err
+	}
+	return m.buildConfigFiles(files), nil
+}
+
 // ReadConfig 读取指定配置文件内容。
 func (m *Manager) ReadConfig(filename string) ([]byte, error) {
+	return m.ReadConfigFromSource("current", filename)
+}
+
+// ReadConfigFromSource 按来源读取配置文件内容。
+func (m *Manager) ReadConfigFromSource(source, filename string) ([]byte, error) {
 	name, err := sanitizeFilename(filename)
 	if err != nil {
 		return nil, err
 	}
-	path := filepath.Join(m.cfg.ConfigDir, name)
+	dir, err := m.dirForSource(source)
+	if err != nil {
+		return nil, err
+	}
+	path := filepath.Join(dir, name)
 	return os.ReadFile(path)
 }
 
 // WriteConfig 写入配置文件。
 func (m *Manager) WriteConfig(filename string, content []byte) error {
+	return m.WriteConfigToSource("current", filename, content)
+}
+
+// WriteConfigToSource 按来源写入配置文件。
+func (m *Manager) WriteConfigToSource(source, filename string, content []byte) error {
 	name, err := sanitizeFilename(filename)
 	if err != nil {
 		return err
 	}
-	// 确保配置目录存在
-	if err := os.MkdirAll(m.cfg.ConfigDir, 0755); err != nil {
+	dir, err := m.dirForSource(source)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
 	}
 
-	path := filepath.Join(m.cfg.ConfigDir, name)
+	path := filepath.Join(dir, name)
 
-	// 校验 JSON 格式
 	if !json.Valid(content) {
 		return fmt.Errorf("invalid JSON content")
 	}
 
-	// 美化 JSON 输出
 	var prettyJSON bytes.Buffer
 	if err := json.Indent(&prettyJSON, content, "", "  "); err != nil {
 		return fmt.Errorf("format JSON: %w", err)
 	}
 
-	// 写入配置文件
 	if err := os.WriteFile(path, prettyJSON.Bytes(), 0644); err != nil {
 		return fmt.Errorf("write config file: %w", err)
 	}
@@ -181,11 +218,20 @@ func (m *Manager) WriteConfig(filename string, content []byte) error {
 
 // DeleteConfig 删除配置文件。
 func (m *Manager) DeleteConfig(filename string) error {
+	return m.DeleteConfigFromSource("current", filename)
+}
+
+// DeleteConfigFromSource 按来源删除配置文件。
+func (m *Manager) DeleteConfigFromSource(source, filename string) error {
 	name, err := sanitizeFilename(filename)
 	if err != nil {
 		return err
 	}
-	path := filepath.Join(m.cfg.ConfigDir, name)
+	dir, err := m.dirForSource(source)
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(dir, name)
 	return os.Remove(path)
 }
 
@@ -208,16 +254,40 @@ func (m *Manager) CreateFromTemplate(filename, tmplContent string, vars map[stri
 
 // ValidateConfig 校验当前配置（若未配置校验命令则跳过）。
 func (m *Manager) ValidateConfig(ctx context.Context) error {
+	dir, err := m.dirForSource("current")
+	if err != nil {
+		return err
+	}
+	return m.ValidateConfigInDir(ctx, dir)
+}
+
+// ValidateConfigInDir 在指定目录校验配置。
+func (m *Manager) ValidateConfigInDir(ctx context.Context, dir string) error {
 	if m.cfg.ValidateCmd == "" {
 		return nil
 	}
 
-	cmd := strings.ReplaceAll(m.cfg.ValidateCmd, "{config_dir}", m.cfg.ConfigDir)
+	cmd := strings.ReplaceAll(m.cfg.ValidateCmd, "{config_dir}", dir)
+	cmd = strings.ReplaceAll(cmd, "{legacy_config_dir}", m.cfg.LegacyConfigDir)
+	cmd = strings.ReplaceAll(cmd, "{managed_config_dir}", m.cfg.ManagedConfigDir)
 	return runCommand(ctx, cmd)
 }
 
 // ReloadService 重载或重启 sing-box 服务。
 func (m *Manager) ReloadService(ctx context.Context) error {
+	validateDir, err := m.dirForSource("current")
+	if err != nil {
+		return err
+	}
+	return m.reloadServiceWithValidationDir(ctx, validateDir)
+}
+
+// ReloadServiceWithValidationDir 在指定目录完成校验后重载或重启服务。
+func (m *Manager) ReloadServiceWithValidationDir(ctx context.Context, dir string) error {
+	return m.reloadServiceWithValidationDir(ctx, dir)
+}
+
+func (m *Manager) reloadServiceWithValidationDir(ctx context.Context, validateDir string) error {
 	// 执行预处理钩子
 	if m.cfg.PreHook != "" {
 		if err := runCommand(ctx, m.cfg.PreHook); err != nil {
@@ -225,8 +295,7 @@ func (m *Manager) ReloadService(ctx context.Context) error {
 		}
 	}
 
-	// 校验配置（如启用校验命令）
-	if err := m.ValidateConfig(ctx); err != nil {
+	if err := m.ValidateConfigInDir(ctx, validateDir); err != nil {
 		return fmt.Errorf("config validation failed: %w", err)
 	}
 
@@ -252,15 +321,60 @@ func (m *Manager) ServiceStatus(ctx context.Context) (bool, error) {
 	return m.init.Status(ctx, m.cfg.ServiceName)
 }
 
-// ApplyConfig 写入主配置并重载服务。
-func (m *Manager) ApplyConfig(ctx context.Context, content []byte) error {
-	// 默认写入主配置文件，暂不支持多配置合并
-	const defaultFilename = "config.json"
+// ApplyConfig 写入指定配置并重载服务。
+func (m *Manager) ApplyConfig(ctx context.Context, filename string, content []byte) error {
+	targetFilename := strings.TrimSpace(filename)
+	if targetFilename == "" {
+		targetFilename = "config.json"
+	}
+	if strings.TrimSpace(targetFilename) == "" {
+		return fmt.Errorf("filename is required")
+	}
 
-	if err := m.WriteConfig(defaultFilename, content); err != nil {
+	validateDir, err := m.dirForSource("current")
+	if err != nil {
 		return err
 	}
-	return m.ReloadService(ctx)
+	if err := m.WriteConfigToSource("current", targetFilename, content); err != nil {
+		return err
+	}
+	return m.reloadServiceWithValidationDir(ctx, validateDir)
+}
+
+// ApplyConfigWithCore 在指定核心模式下写入配置并重载服务。
+func (m *Manager) ApplyConfigWithCore(ctx context.Context, coreType, filename string, content []byte) error {
+	rawCore := strings.TrimSpace(coreType)
+	if rawCore == "" {
+		return m.ApplyConfig(ctx, filename, content)
+	}
+	normalizedCore := normalizeCoreType(rawCore)
+	if normalizedCore == "" {
+		return fmt.Errorf("invalid core_type")
+	}
+
+	targetFilename := strings.TrimSpace(filename)
+	targetSource := "managed"
+	if normalizedCore == "xray" {
+		targetSource = "merged"
+		targetFilename = strings.TrimSpace(m.cfg.MergeOutputFile)
+		if targetFilename == "" {
+			targetFilename = "config.json"
+		}
+	} else if targetFilename == "" {
+		targetFilename = "config.json"
+	}
+	if strings.TrimSpace(targetFilename) == "" {
+		return fmt.Errorf("filename is required")
+	}
+
+	validateDir, err := m.dirForCore(normalizedCore)
+	if err != nil {
+		return err
+	}
+	if err := m.WriteConfigToSource(targetSource, targetFilename, content); err != nil {
+		return err
+	}
+	return m.reloadServiceWithValidationDir(ctx, validateDir)
 }
 
 // ApplyFromTemplate 根据模板生成配置并重载服务。
@@ -317,14 +431,100 @@ func sanitizeFilename(filename string) (string, error) {
 	return base, nil
 }
 
-// ListConfigsWithDetails 返回带解析详情的配置文件列表。
-func (m *Manager) ListConfigsWithDetails() ([]parser.ConfigFileWithDetails, error) {
-	pattern := filepath.Join(m.cfg.ConfigDir, "*.json")
+func normalizeCoreType(coreType string) string {
+	switch strings.ToLower(strings.TrimSpace(coreType)) {
+	case "xray":
+		return "xray"
+	case "sing-box", "singbox", "sing_box":
+		return "sing-box"
+	default:
+		return ""
+	}
+}
+
+// SanitizeFilename normalizes and validates config filenames for safe local writes.
+func SanitizeFilename(filename string) (string, error) {
+	return sanitizeFilename(filename)
+}
+
+// NormalizeCoreType converts core aliases to canonical values (sing-box/xray).
+func NormalizeCoreType(coreType string) string {
+	return normalizeCoreType(coreType)
+}
+
+func (m *Manager) dirForSource(source string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "managed":
+		if strings.TrimSpace(m.cfg.ManagedConfigDir) == "" {
+			return "", fmt.Errorf("managed config dir is required")
+		}
+		return m.cfg.ManagedConfigDir, nil
+	case "legacy":
+		if strings.TrimSpace(m.cfg.LegacyConfigDir) == "" {
+			return "", fmt.Errorf("legacy config dir is required")
+		}
+		return m.cfg.LegacyConfigDir, nil
+	case "merged":
+		if strings.TrimSpace(m.cfg.ManagedConfigDir) == "" {
+			return "", fmt.Errorf("managed config dir is required")
+		}
+		return m.cfg.ManagedConfigDir, nil
+	case "current", "":
+		if strings.TrimSpace(m.cfg.ConfigDir) == "" {
+			return "", fmt.Errorf("config dir is required")
+		}
+		return m.cfg.ConfigDir, nil
+	default:
+		return "", fmt.Errorf("invalid source")
+	}
+}
+
+func (m *Manager) dirForCore(coreType string) (string, error) {
+	switch normalizeCoreType(coreType) {
+	case "xray":
+		return m.dirForSource("merged")
+	case "sing-box":
+		return m.dirForSource("managed")
+	default:
+		return m.dirForSource("current")
+	}
+}
+
+func (m *Manager) listConfigFiles(dir string) ([]string, error) {
+	pattern := filepath.Join(dir, "*.json")
 	files, err := filepath.Glob(pattern)
 	if err != nil {
 		return nil, fmt.Errorf("glob config files: %w", err)
 	}
+	return files, nil
+}
 
+func (m *Manager) buildConfigFiles(files []string) []ConfigFile {
+	configs := make([]ConfigFile, 0, len(files))
+	for _, f := range files {
+		info, err := os.Stat(f)
+		if err != nil {
+			continue
+		}
+		content, err := os.ReadFile(f)
+		if err != nil {
+			continue
+		}
+		hash := md5.Sum(content)
+		configs = append(configs, ConfigFile{
+			Filename:    filepath.Base(f),
+			ModTime:     info.ModTime(),
+			Size:        info.Size(),
+			ContentHash: hex.EncodeToString(hash[:]),
+		})
+	}
+	sort.Slice(configs, func(i, j int) bool {
+		return configs[i].Filename < configs[j].Filename
+	})
+	return configs
+}
+
+func (m *Manager) buildConfigsWithDetails(files []string) []parser.ConfigFileWithDetails {
 	results := make([]parser.ConfigFileWithDetails, 0, len(files))
 	for _, f := range files {
 		content, err := os.ReadFile(f)
@@ -334,12 +534,7 @@ func (m *Manager) ListConfigsWithDetails() ([]parser.ConfigFileWithDetails, erro
 
 		hash := md5.Sum(content)
 		filename := filepath.Base(f)
-
-		// 解析配置文件并提取协议
 		protocols := m.registry.ParseAll(filename, content)
-
-		// 仅保留包含 inbound 协议的文件
-		// 跳过 log/route/dns/ntp 等非协议文件
 		if len(protocols) == 0 {
 			continue
 		}
@@ -350,13 +545,36 @@ func (m *Manager) ListConfigsWithDetails() ([]parser.ConfigFileWithDetails, erro
 			Protocols:   protocols,
 		})
 	}
-
-	// 按文件名排序
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].Filename < results[j].Filename
 	})
+	return results
+}
 
-	return results, nil
+// ListConfigsWithDetails 返回带解析详情的配置文件列表。
+func (m *Manager) ListConfigsWithDetails() ([]parser.ConfigFileWithDetails, error) {
+	dir, err := m.dirForSource("current")
+	if err != nil {
+		return nil, err
+	}
+	files, err := m.listConfigFiles(dir)
+	if err != nil {
+		return nil, err
+	}
+	return m.buildConfigsWithDetails(files), nil
+}
+
+// ListConfigsWithDetailsBySource 按来源返回带解析详情的配置文件列表。
+func (m *Manager) ListConfigsWithDetailsBySource(source string) ([]parser.ConfigFileWithDetails, error) {
+	dir, err := m.dirForSource(source)
+	if err != nil {
+		return nil, err
+	}
+	files, err := m.listConfigFiles(dir)
+	if err != nil {
+		return nil, err
+	}
+	return m.buildConfigsWithDetails(files), nil
 }
 
 // GetRegistry 返回协议解析注册表。
@@ -398,12 +616,11 @@ func (m *Manager) InjectUsers(ctx context.Context, users []UserConfig) error {
 		return fmt.Errorf("marshal updated config: %w", err)
 	}
 
-	// 写回配置并重载服务
-	if err := m.WriteConfig(defaultFilename, updatedContent); err != nil {
+	if err := m.ApplyConfig(ctx, defaultFilename, updatedContent); err != nil {
 		return fmt.Errorf("write updated config: %w", err)
 	}
 
-	return m.ReloadService(ctx)
+	return nil
 }
 
 // updateInboundUsers 更新配置中的所有 inbound 用户。
@@ -484,12 +701,11 @@ func (m *Manager) InjectUsersXray(ctx context.Context, users []UserConfig) error
 		return fmt.Errorf("marshal updated config: %w", err)
 	}
 
-	// 写回配置并重载服务
-	if err := m.WriteConfig(defaultFilename, updatedContent); err != nil {
+	if err := m.ApplyConfig(ctx, defaultFilename, updatedContent); err != nil {
 		return fmt.Errorf("write updated config: %w", err)
 	}
 
-	return m.ReloadService(ctx)
+	return nil
 }
 
 // updateXrayInboundUsers 更新 Xray 配置中的 inbound 用户。
@@ -562,13 +778,19 @@ func (m *Manager) DetectCoreType() string {
 	if err != nil {
 		return "unknown"
 	}
+	return detectCoreTypeFromContent(content)
+}
 
+func detectCoreTypeFromContent(content []byte) string {
 	var config map[string]any
 	if err := json.Unmarshal(content, &config); err != nil {
 		return "unknown"
 	}
 
-	// 检查 Xray 特有字段
+	return detectCoreTypeFromObject(config)
+}
+
+func detectCoreTypeFromObject(config map[string]any) string {
 	if _, hasAPI := config["api"]; hasAPI {
 		return "xray"
 	}
@@ -576,15 +798,12 @@ func (m *Manager) DetectCoreType() string {
 		return "xray"
 	}
 
-	// 检查 Sing-box 特有字段
 	if _, hasExperimental := config["experimental"]; hasExperimental {
 		return "sing-box"
 	}
 
-	// 检查 inbound 结构
 	if inbounds, ok := config["inbounds"].([]any); ok && len(inbounds) > 0 {
 		if inbound, ok := inbounds[0].(map[string]any); ok {
-			// Xray 使用 "protocol" 字段，Sing-box 使用 "type" 字段
 			if _, hasProtocol := inbound["protocol"]; hasProtocol {
 				return "xray"
 			}

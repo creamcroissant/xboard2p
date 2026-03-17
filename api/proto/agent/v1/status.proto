@@ -25,6 +25,8 @@ message StatusReport {
   repeated ProtocolState protocols = 4;
   ClientConfigReport client_configs = 5;  // Client configurations from subscribe directory
   repeated CoreInstance instances = 6;    // Core instances on agent
+  repeated ConfigInventoryEntry inventory = 7;    // Applied config file inventory
+  repeated InboundIndexEntry inbound_index = 8;   // Parsed inbound semantic index
 }
 
 message ProtocolState {
@@ -142,6 +144,32 @@ message StatusResponse {
 message StatusCommand {
   string command = 1;   // Command type: "reload", "restart", "update_config", etc.
   bytes payload = 2;    // Optional command payload
+}
+
+// ConfigInventoryEntry describes an applied config file discovered on agent.
+message ConfigInventoryEntry {
+  string source = 1;       // legacy | managed | merged
+  string filename = 2;
+  string core_type = 3;    // sing-box | xray
+  string content_hash = 4; // applied file hash
+  string parse_status = 5; // ok | parse_error
+  string parse_error = 6;
+  int64 last_seen_at = 7;
+}
+
+// InboundIndexEntry describes parsed inbound semantics from applied files.
+message InboundIndexEntry {
+  string source = 1;       // legacy | managed | merged
+  string filename = 2;
+  string core_type = 3;    // sing-box | xray
+  string tag = 4;
+  string protocol = 5;
+  string listen = 6;
+  int32 port = 7;
+  string tls = 8;          // JSON
+  string transport = 9;    // JSON
+  string multiplex = 10;   // JSON
+  int64 last_seen_at = 11;
 }
 
 // ClientConfigReport contains client configurations parsed from subscribe directory

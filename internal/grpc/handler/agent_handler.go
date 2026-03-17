@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -30,6 +31,8 @@ type AgentHandler struct {
 	forwardingService  service.ForwardingService
 	accessLogService   service.AccessLogService
 	settingsService    service.AdminSystemSettingsService
+	inventoryIngest    service.InventoryIngestService
+	applyOrchestrator  service.ApplyOrchestratorService
 	logger             *slog.Logger
 }
 
@@ -43,6 +46,8 @@ func NewAgentHandler(
 	forwardingService service.ForwardingService,
 	accessLogService service.AccessLogService,
 	settingsService service.AdminSystemSettingsService,
+	inventoryIngest service.InventoryIngestService,
+	applyOrchestrator service.ApplyOrchestratorService,
 	logger *slog.Logger,
 ) *AgentHandler {
 	return &AgentHandler{
@@ -54,6 +59,8 @@ func NewAgentHandler(
 		forwardingService:  forwardingService,
 		accessLogService:   accessLogService,
 		settingsService:    settingsService,
+		inventoryIngest:    inventoryIngest,
+		applyOrchestrator:  applyOrchestrator,
 		logger:             logger,
 	}
 }
@@ -178,6 +185,9 @@ func (h *AgentHandler) ReportStatus(ctx context.Context, req *agentv1.StatusRepo
 		}
 	}
 
+	// 处理 inventory/index 新模型入库（过渡期不影响 legacy 链路）
+	h.ingestInventoryReport(ctx, agentHost, req.GetTimestamp(), req.Inventory, req.InboundIndex, "unary")
+
 	h.logger.Debug("status report received",
 		"agent_host_id", agentHost.ID,
 		"cpu_usage", req.System.GetCpuUsage(),
@@ -286,10 +296,10 @@ func (h *AgentHandler) GetUsers(ctx context.Context, req *agentv1.UsersRequest) 
 		}
 
 		pbUsers[i] = &agentv1.UserInfo{
-			UserId: int64(u.ID),
-			Uuid:   u.UUID,
-			Email:       u.Email,
-			Enabled:     true,
+			UserId:  int64(u.ID),
+			Uuid:    u.UUID,
+			Email:   u.Email,
+			Enabled: true,
 			// Limiter 信息可在 NodeUser 可用时补充
 			SpeedLimit:  speedLimit,
 			DeviceLimit: deviceLimit,
@@ -542,6 +552,105 @@ func (h *AgentHandler) ReportAccessLogs(ctx context.Context, req *agentv1.Access
 	}, nil
 }
 
+// GetApplyBatch 为 Agent 获取目标 revision 的发布批次。
+func (h *AgentHandler) GetApplyBatch(ctx context.Context, req *agentv1.ApplyBatchRequest) (*agentv1.ApplyBatchResponse, error) {
+	agentHost, err := getAgentHost(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "missing request")
+	}
+	if h.applyOrchestrator == nil {
+		return nil, status.Error(codes.FailedPrecondition, "apply orchestrator service not available")
+	}
+
+	result, err := h.applyOrchestrator.GetApplyBatch(ctx, service.GetApplyBatchRequest{
+		AgentHostID:     agentHost.ID,
+		CoreType:        req.GetCoreType(),
+		CurrentRevision: req.GetCurrentRevision(),
+	})
+	if err != nil {
+		h.logger.Error("failed to fetch apply batch",
+			"agent_host_id", agentHost.ID,
+			"core_type", req.GetCoreType(),
+			"current_revision", req.GetCurrentRevision(),
+			"error", err,
+		)
+		return nil, mapApplyOrchestratorGRPCError(err)
+	}
+
+	if result.NotModified {
+		return &agentv1.ApplyBatchResponse{
+			Success:          true,
+			NotModified:      true,
+			RunId:            "",
+			CoreType:         result.CoreType,
+			TargetRevision:   result.TargetRevision,
+			PreviousRevision: result.PreviousRevision,
+		}, nil
+	}
+
+	pbArtifacts := make([]*agentv1.ApplyArtifact, 0, len(result.Artifacts))
+	for _, artifact := range result.Artifacts {
+		pbArtifacts = append(pbArtifacts, &agentv1.ApplyArtifact{
+			Filename:    artifact.Filename,
+			SourceTag:   artifact.SourceTag,
+			Content:     artifact.Content,
+			ContentHash: artifact.ContentHash,
+		})
+	}
+
+	return &agentv1.ApplyBatchResponse{
+		Success:          true,
+		NotModified:      false,
+		RunId:            result.RunID,
+		CoreType:         result.CoreType,
+		TargetRevision:   result.TargetRevision,
+		PreviousRevision: result.PreviousRevision,
+		Artifacts:        pbArtifacts,
+	}, nil
+}
+
+// ReportApplyRun 处理 Agent 上报的发布回执。
+func (h *AgentHandler) ReportApplyRun(ctx context.Context, req *agentv1.ApplyRunReport) (*agentv1.ApplyRunResponse, error) {
+	agentHost, err := getAgentHost(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "missing request")
+	}
+	if h.applyOrchestrator == nil {
+		return nil, status.Error(codes.FailedPrecondition, "apply orchestrator service not available")
+	}
+
+	err = h.applyOrchestrator.ReportApplyResult(ctx, service.ReportApplyResultRequest{
+		AgentHostID:      agentHost.ID,
+		RunID:            req.GetRunId(),
+		CoreType:         req.GetCoreType(),
+		TargetRevision:   req.GetTargetRevision(),
+		Success:          req.GetSuccess(),
+		Status:           req.GetStatus(),
+		ErrorMessage:     req.GetErrorMessage(),
+		RollbackRevision: req.GetRollbackRevision(),
+		FinishedAt:       req.GetFinishedAt(),
+	})
+	if err != nil {
+		h.logger.Error("failed to report apply run result",
+			"agent_host_id", agentHost.ID,
+			"run_id", req.GetRunId(),
+			"error", err,
+		)
+		return nil, mapApplyOrchestratorGRPCError(err)
+	}
+
+	return &agentv1.ApplyRunResponse{
+		Success: true,
+		Message: "apply run accepted",
+	}, nil
+}
+
 // StatusStream 处理双向流的实时状态更新。
 func (h *AgentHandler) StatusStream(stream grpc.BidiStreamingServer[agentv1.StatusReport, agentv1.StatusCommand]) error {
 	ctx := stream.Context()
@@ -635,12 +744,47 @@ func (h *AgentHandler) StatusStream(stream grpc.BidiStreamingServer[agentv1.Stat
 			}
 		}
 
+		// 处理流式 inventory/index 新模型入库（过渡期不影响 legacy 链路）
+		h.ingestInventoryReport(ctx, agentHost, report.GetTimestamp(), report.Inventory, report.InboundIndex, "stream")
+
 		// 可选：向 Agent 回传命令
 		// 当前未发送任何命令
 		// 如需发送待处理命令，可在此处实现：
 		// if err := stream.Send(&agentv1.StatusCommand{Command: "reload"}); err != nil {
 		//     return err
 		// }
+	}
+}
+
+func (h *AgentHandler) ingestInventoryReport(
+	ctx context.Context,
+	agentHost *repository.AgentHost,
+	reportedAt int64,
+	inventory []*agentv1.ConfigInventoryEntry,
+	inboundIndex []*agentv1.InboundIndexEntry,
+	source string,
+) {
+	if h.inventoryIngest == nil || (len(inventory) == 0 && len(inboundIndex) == 0) {
+		return
+	}
+	inventoryEntries := convertInventoryEntries(inventory)
+	inboundIndexEntries := convertInboundIndexEntries(inboundIndex)
+	if len(inventoryEntries) == 0 && len(inboundIndexEntries) == 0 {
+		return
+	}
+	if err := h.inventoryIngest.IngestReport(ctx, service.IngestInventoryReportRequest{
+		AgentHostID:  agentHost.ID,
+		ReportedAt:   reportedAt,
+		Inventory:    inventoryEntries,
+		InboundIndex: inboundIndexEntries,
+	}); err != nil {
+		h.logger.Error("failed to ingest inventory report",
+			"source", source,
+			"agent_host_id", agentHost.ID,
+			"inventory_count", len(inventoryEntries),
+			"inbound_index_count", len(inboundIndexEntries),
+			"error", err,
+		)
 	}
 }
 
@@ -651,6 +795,25 @@ func getAgentHost(ctx context.Context) (*repository.AgentHost, error) {
 		return nil, status.Error(codes.Unauthenticated, "no agent host in context")
 	}
 	return agentHost, nil
+}
+
+func mapApplyOrchestratorGRPCError(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, service.ErrApplyOrchestratorInvalidRequest):
+		return status.Error(codes.InvalidArgument, err.Error())
+	case errors.Is(err, service.ErrApplyOrchestratorNotConfigured):
+		return status.Error(codes.FailedPrecondition, err.Error())
+	case errors.Is(err, service.ErrApplyOrchestratorNotFound):
+		return status.Error(codes.NotFound, err.Error())
+	case errors.Is(err, service.ErrApplyOrchestratorPermissionDenied):
+		return status.Error(codes.PermissionDenied, err.Error())
+	case errors.Is(err, service.ErrApplyOrchestratorInvalidState):
+		return status.Error(codes.FailedPrecondition, err.Error())
+	default:
+		return status.Error(codes.Internal, "apply orchestrator operation failed")
+	}
 }
 
 // convertProtocolDetails 将 protobuf 的协议详情转换为服务层结构。
@@ -728,4 +891,52 @@ func convertProtocolDetails(pbDetails []*agentv1.ProtocolDetails) []service.Prot
 	}
 
 	return details
+}
+
+func convertInventoryEntries(entries []*agentv1.ConfigInventoryEntry) []service.InventoryReportEntry {
+	if len(entries) == 0 {
+		return nil
+	}
+	result := make([]service.InventoryReportEntry, 0, len(entries))
+	for _, entry := range entries {
+		if entry == nil {
+			continue
+		}
+		result = append(result, service.InventoryReportEntry{
+			Source:      entry.GetSource(),
+			Filename:    entry.GetFilename(),
+			CoreType:    entry.GetCoreType(),
+			ContentHash: entry.GetContentHash(),
+			ParseStatus: entry.GetParseStatus(),
+			ParseError:  entry.GetParseError(),
+			LastSeenAt:  entry.GetLastSeenAt(),
+		})
+	}
+	return result
+}
+
+func convertInboundIndexEntries(entries []*agentv1.InboundIndexEntry) []service.InboundIndexReportEntry {
+	if len(entries) == 0 {
+		return nil
+	}
+	result := make([]service.InboundIndexReportEntry, 0, len(entries))
+	for _, entry := range entries {
+		if entry == nil {
+			continue
+		}
+		result = append(result, service.InboundIndexReportEntry{
+			Source:     entry.GetSource(),
+			Filename:   entry.GetFilename(),
+			CoreType:   entry.GetCoreType(),
+			Tag:        entry.GetTag(),
+			Protocol:   entry.GetProtocol(),
+			Listen:     entry.GetListen(),
+			Port:       int(entry.GetPort()),
+			TLS:        json.RawMessage(entry.GetTls()),
+			Transport:  json.RawMessage(entry.GetTransport()),
+			Multiplex:  json.RawMessage(entry.GetMultiplex()),
+			LastSeenAt: entry.GetLastSeenAt(),
+		})
+	}
+	return result
 }

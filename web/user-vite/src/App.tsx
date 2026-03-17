@@ -3,11 +3,12 @@ import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { useAuth } from "@/providers/AuthProvider";
 import { AppLayout } from "@/components/layout";
 import { Loading } from "@/components/ui";
-import { ROUTES, ADMIN_ROUTES } from "@/lib/constants";
+import { ROUTES, ADMIN_ROUTES, ADMIN_AUTH_ROUTES } from "@/lib/constants";
 
 // Lazy load pages
 const Login = lazy(() => import("@/pages/auth/Login"));
 const Register = lazy(() => import("@/pages/auth/Register"));
+const ForgotPassword = lazy(() => import("@/pages/auth/ForgotPassword"));
 const Install = lazy(() => import("@/pages/install"));
 const Dashboard = lazy(() => import("@/pages/dashboard"));
 const Servers = lazy(() => import("@/pages/servers"));
@@ -26,6 +27,17 @@ const AdminKnowledge = lazy(() => import("@/pages/admin/knowledge"));
 const AdminSystem = lazy(() => import("@/pages/admin/system"));
 const AdminForwarding = lazy(() => import("@/pages/admin/forwarding"));
 const AdminAccessLogs = lazy(() => import("@/pages/admin/access-logs"));
+const AdminConfigCenter = lazy(() => import("@/pages/admin/config-center"));
+
+const adminAuthAliases = [
+  { adminPath: ADMIN_AUTH_ROUTES.LOGIN, defaultPath: ROUTES.LOGIN, component: Login },
+  { adminPath: ADMIN_AUTH_ROUTES.REGISTER, defaultPath: ROUTES.REGISTER, component: Register },
+  {
+    adminPath: ADMIN_AUTH_ROUTES.FORGOT_PASSWORD,
+    defaultPath: ROUTES.FORGOT_PASSWORD,
+    component: ForgotPassword,
+  },
+];
 
 // Route guard for authenticated routes
 function RequireAuth() {
@@ -76,7 +88,7 @@ function RequireAdminAuth() {
   }
 
   if (!isAuthenticated) {
-    return <Navigate to={ROUTES.LOGIN} replace />;
+    return <Navigate to={ADMIN_AUTH_ROUTES.LOGIN} replace />;
   }
 
   if (!isAdmin) {
@@ -107,8 +119,13 @@ export default function App() {
 
       {/* Public routes */}
       <Route element={<PublicRoute />}>
-        <Route path={ROUTES.LOGIN} element={<Login />} />
-        <Route path={ROUTES.REGISTER} element={<Register />} />
+        {adminAuthAliases.map(({ defaultPath, component: Component }) => (
+          <Route key={defaultPath} path={defaultPath} element={<Component />} />
+        ))}
+        {adminAuthAliases.map(
+          ({ adminPath, defaultPath, component: Component }) =>
+            adminPath !== defaultPath && <Route key={adminPath} path={adminPath} element={<Component />} />
+        )}
       </Route>
 
       {/* Protected routes */}
@@ -132,6 +149,7 @@ export default function App() {
         <Route path={ADMIN_ROUTES.SYSTEM} element={<AdminSystem />} />
         <Route path={ADMIN_ROUTES.FORWARDING} element={<AdminForwarding />} />
         <Route path={ADMIN_ROUTES.ACCESS_LOGS} element={<AdminAccessLogs />} />
+        <Route path={ADMIN_ROUTES.CONFIG_CENTER} element={<AdminConfigCenter />} />
       </Route>
 
       {/* 404 */}

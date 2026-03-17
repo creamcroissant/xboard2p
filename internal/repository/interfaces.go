@@ -32,6 +32,13 @@ type Store interface {
 	AgentCoreInstances() AgentCoreInstanceRepository
 	AgentCoreSwitchLogs() AgentCoreSwitchLogRepository
 	AccessLogs() AccessLogRepository
+	InboundSpecs() InboundSpecRepository
+	InboundSpecRevisions() InboundSpecRevisionRepository
+	DesiredArtifacts() DesiredArtifactRepository
+	ApplyRuns() ApplyRunRepository
+	AgentConfigInventories() AgentConfigInventoryRepository
+	InboundIndexes() InboundIndexRepository
+	DriftStates() DriftStateRepository
 }
 
 // UserRepository 定义用户相关数据访问方法。
@@ -442,4 +449,64 @@ type AccessLogRepository interface {
 	Count(ctx context.Context, filter AccessLogFilter) (int64, error)
 	DeleteByRetentionDays(ctx context.Context, days int) (int64, error)
 	GetStats(ctx context.Context, filter AccessLogFilter) (*AccessLogStats, error)
+}
+
+// InboundSpecRepository manages desired inbound specs.
+type InboundSpecRepository interface {
+	Create(ctx context.Context, spec *InboundSpec) error
+	Update(ctx context.Context, spec *InboundSpec) error
+	Delete(ctx context.Context, id int64) error
+	FindByID(ctx context.Context, id int64) (*InboundSpec, error)
+	FindByHostCoreTag(ctx context.Context, agentHostID int64, coreType, tag string) (*InboundSpec, error)
+	List(ctx context.Context, filter InboundSpecFilter) ([]*InboundSpec, error)
+	Count(ctx context.Context, filter InboundSpecFilter) (int64, error)
+}
+
+// InboundSpecRevisionRepository manages immutable spec revisions.
+type InboundSpecRevisionRepository interface {
+	Create(ctx context.Context, revision *InboundSpecRevision) error
+	FindBySpecAndRevision(ctx context.Context, specID int64, revision int64) (*InboundSpecRevision, error)
+	ListBySpecID(ctx context.Context, specID int64, limit, offset int) ([]*InboundSpecRevision, error)
+	GetMaxRevision(ctx context.Context, specID int64) (int64, error)
+}
+
+// DesiredArtifactRepository manages rendered artifact files.
+type DesiredArtifactRepository interface {
+	CreateBatch(ctx context.Context, artifacts []*DesiredArtifact) error
+	DeleteByHostCoreRevision(ctx context.Context, agentHostID int64, coreType string, desiredRevision int64) error
+	List(ctx context.Context, filter DesiredArtifactFilter) ([]*DesiredArtifact, error)
+	Count(ctx context.Context, filter DesiredArtifactFilter) (int64, error)
+	GetLatestRevision(ctx context.Context, agentHostID int64, coreType string) (int64, error)
+	FindByHostCoreRevisionFilename(ctx context.Context, agentHostID int64, coreType string, desiredRevision int64, filename string) (*DesiredArtifact, error)
+}
+
+// ApplyRunRepository manages apply lifecycle records.
+type ApplyRunRepository interface {
+	Create(ctx context.Context, run *ApplyRun) error
+	UpdateStatus(ctx context.Context, runID, status, errorMessage string, rollbackRevision int64, finishedAt int64) error
+	FindByRunID(ctx context.Context, runID string) (*ApplyRun, error)
+	List(ctx context.Context, filter ApplyRunFilter) ([]*ApplyRun, error)
+	Count(ctx context.Context, filter ApplyRunFilter) (int64, error)
+}
+
+// AgentConfigInventoryRepository manages applied file inventory.
+type AgentConfigInventoryRepository interface {
+	UpsertBatch(ctx context.Context, inventories []*AgentConfigInventory) error
+	List(ctx context.Context, filter AgentConfigInventoryFilter) ([]*AgentConfigInventory, error)
+	DeleteStaleByHostCoreBefore(ctx context.Context, agentHostID int64, coreType string, beforeLastSeenAt int64) error
+}
+
+// InboundIndexRepository manages parsed inbound semantic index.
+type InboundIndexRepository interface {
+	UpsertBatch(ctx context.Context, indexes []*InboundIndex) error
+	List(ctx context.Context, filter InboundIndexFilter) ([]*InboundIndex, error)
+	DeleteStaleByHostCoreBefore(ctx context.Context, agentHostID int64, coreType string, beforeLastSeenAt int64) error
+}
+
+// DriftStateRepository manages desired-applied drift records.
+type DriftStateRepository interface {
+	Upsert(ctx context.Context, drift *DriftState) error
+	MarkRecoveredByHostCore(ctx context.Context, agentHostID int64, coreType string, recoveredAt int64) error
+	List(ctx context.Context, filter DriftStateFilter) ([]*DriftState, error)
+	Count(ctx context.Context, filter DriftStateFilter) (int64, error)
 }

@@ -3,6 +3,7 @@ package parser
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 )
@@ -69,14 +70,20 @@ func (r *Registry) Parse(filename string, content []byte) ([]ProtocolDetails, er
 		return nil, fmt.Errorf("invalid JSON in file: %s", filename)
 	}
 
+	var parseErrs []error
 	for _, p := range r.parsers {
 		if p.CanParse(content) {
 			details, err := p.Parse(filename, content)
 			if err != nil {
-				continue // 继续尝试下一个解析器
+				parseErrs = append(parseErrs, fmt.Errorf("%s parser: %w", p.Name(), err))
+				continue
 			}
 			return details, nil
 		}
+	}
+
+	if len(parseErrs) > 0 {
+		return nil, errors.Join(parseErrs...)
 	}
 
 	// 未匹配到解析器则返回空结果（可能是 outbounds 或 routes 配置）

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync/atomic"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/creamcroissant/xboard/internal/agent/api"
 	"github.com/creamcroissant/xboard/internal/agent/capability"
 	"github.com/creamcroissant/xboard/internal/agent/config"
+	"github.com/creamcroissant/xboard/internal/agent/configcenter"
 	"github.com/creamcroissant/xboard/internal/agent/core"
 	"github.com/creamcroissant/xboard/internal/agent/forwarding"
 	agentgrpc "github.com/creamcroissant/xboard/internal/agent/grpc"
@@ -42,6 +44,10 @@ type Agent struct {
 	grpcServer *agentgrpc.Server
 	subParse   *subscribe.Parser    // Subscribe directory parser
 	capDet     *capability.Detector // Capability detector
+
+	batchApplier     *configcenter.AgentBatchApplier
+	inventoryScanner *configcenter.AgentInventoryScanner
+	applyRevision    atomic.Int64
 
 	configETag     string
 	usersETag      string
@@ -89,12 +95,15 @@ func New(cfg *config.Config) (*Agent, error) {
 
 	// Initialize protocol manager
 	protoCfg := protocol.Config{
-		ConfigDir:   cfg.Protocol.ConfigDir,
-		ServiceName: cfg.Protocol.ServiceName,
-		ValidateCmd: cfg.Protocol.ValidateCmd,
-		AutoRestart: cfg.Protocol.AutoRestart,
-		PreHook:     cfg.Protocol.PreHook,
-		PostHook:    cfg.Protocol.PostHook,
+		ConfigDir:        cfg.Protocol.ConfigDir,
+		LegacyConfigDir:  cfg.Protocol.LegacyConfigDir,
+		ManagedConfigDir: cfg.Protocol.ManagedConfigDir,
+		MergeOutputFile:  cfg.Protocol.MergeOutputFile,
+		ServiceName:      cfg.Protocol.ServiceName,
+		ValidateCmd:      cfg.Protocol.ValidateCmd,
+		AutoRestart:      cfg.Protocol.AutoRestart,
+		PreHook:          cfg.Protocol.PreHook,
+		PostHook:         cfg.Protocol.PostHook,
 	}
 	protoMgr := protocol.NewManager(protoCfg, initSys)
 
@@ -238,6 +247,23 @@ func New(cfg *config.Config) (*Agent, error) {
 
 	agent.access = access.NewManager(agent.grpc, agent.coreMgr, slog.Default())
 
+	agent.inventoryScanner, err = configcenter.NewAgentInventoryScanner(cfg.Protocol, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	applyCoreType := protocol.NormalizeCoreType(cfg.Protocol.ServiceName)
+	if applyCoreType == "" {
+		applyCoreType = protocol.NormalizeCoreType(protoMgr.DetectCoreType())
+	}
+	if applyCoreType == "" {
+		return nil, fmt.Errorf("unable to determine apply core type from protocol.service_name or current config")
+	}
+	agent.batchApplier, err = configcenter.NewAgentBatchApplier(cfg.Protocol, applyCoreType, agent.grpc, protoMgr, slog.Default())
+	if err != nil {
+		return nil, err
+	}
+
 	return agent, nil
 }
 
@@ -345,6 +371,8 @@ func (a *Agent) sync(ctx context.Context) {
 }
 
 func (a *Agent) syncGRPC(ctx context.Context) {
+	a.syncApplyBatch(ctx)
+
 	// NodeID kept for compatibility; gRPC identifies agent host by token
 	nodeID := int32(a.cfg.Panel.NodeID)
 
@@ -360,7 +388,7 @@ func (a *Agent) syncGRPC(ctx context.Context) {
 		slog.Info("Config updated via gRPC", "version", cfgResp.Version)
 		// Apply new config
 		if len(cfgResp.ConfigJson) > 0 {
-			if err := a.protoMgr.ApplyConfig(ctx, cfgResp.ConfigJson); err != nil {
+			if err := a.protoMgr.ApplyConfigWithCore(ctx, "", "config.json", cfgResp.ConfigJson); err != nil {
 				slog.Error("Failed to apply config", "error", err)
 			} else {
 				slog.Info("Successfully applied new config", "version", cfgResp.Version)
@@ -466,7 +494,17 @@ func (a *Agent) reportGRPC(ctx context.Context, stat api.StatusPayload) {
 		statusReport.Instances = buildCoreInstanceReport(a.coreMgr.ListInstances())
 	}
 
-	if configsWithDetails, err := a.protoMgr.ListConfigsWithDetails(); err == nil {
+	if a.inventoryScanner != nil {
+		inventory, inboundIndex, scanErr := a.inventoryScanner.Scan()
+		if scanErr != nil {
+			slog.Error("Failed to scan config inventory", "error", scanErr)
+		} else {
+			statusReport.Inventory = inventory
+			statusReport.InboundIndex = inboundIndex
+		}
+	}
+
+	if configsWithDetails, err := a.protoMgr.ListConfigsWithDetailsBySource("managed"); err == nil {
 		// Check global service status
 		running, _ := a.protoMgr.ServiceStatus(ctx)
 
@@ -623,7 +661,9 @@ func (a *Agent) reportGRPC(ctx context.Context, stat api.StatusPayload) {
 	} else {
 		slog.Debug("Reported status via gRPC",
 			"traffic_up", stat.TrafficUpload,
-			"traffic_down", stat.TrafficDownload)
+			"traffic_down", stat.TrafficDownload,
+			"inventory_count", len(statusReport.Inventory),
+			"inbound_index_count", len(statusReport.InboundIndex))
 
 		// Check for interval updates
 		updated := false
@@ -645,6 +685,31 @@ func (a *Agent) reportGRPC(ctx context.Context, stat api.StatusPayload) {
 			}
 		}
 	}
+}
+
+func (a *Agent) syncApplyBatch(ctx context.Context) {
+	if a.batchApplier == nil {
+		return
+	}
+
+	currentRevision := a.getApplyRevision()
+	nextRevision, err := a.batchApplier.SyncOnce(ctx, currentRevision)
+	if err != nil {
+		slog.Error("Failed to sync apply batch", "current_revision", currentRevision, "error", err)
+		return
+	}
+	if nextRevision != currentRevision {
+		a.setApplyRevision(nextRevision)
+		slog.Info("Apply batch synced", "revision", nextRevision)
+	}
+}
+
+func (a *Agent) getApplyRevision() int64 {
+	return a.applyRevision.Load()
+}
+
+func (a *Agent) setApplyRevision(revision int64) {
+	a.applyRevision.Store(revision)
 }
 
 func (a *Agent) reportUserTraffic(ctx context.Context) {

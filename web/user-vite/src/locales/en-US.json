@@ -62,6 +62,18 @@
     "password": "Password",
     "confirmPassword": "Confirm Password",
     "forgotPassword": "Forgot Password?",
+    "forgotPasswordSubtitle": "Reset your account password with email verification",
+    "forgotPasswordCode": "Email verification code",
+    "forgotPasswordCodePlaceholder": "Enter the verification code",
+    "forgotPasswordSendCode": "Send code",
+    "forgotPasswordSending": "Sending...",
+    "forgotPasswordSubmitting": "Submitting...",
+    "forgotPasswordSubmit": "Reset Password",
+    "forgotPasswordCodeSent": "Verification code sent to your email",
+    "forgotPasswordResetSuccess": "Password reset successfully, please login again",
+    "forgotPasswordEmailRequired": "Email is required",
+    "forgotPasswordCodeRequired": "Verification code is required",
+    "forgotPasswordPasswordRequired": "Password is required",
     "noAccount": "Don't have an account?",
     "hasAccount": "Already have an account?",
     "rememberMe": "Remember me",
@@ -160,12 +172,13 @@
   "admin": {
     "nav": {
       "title": "Admin",
-      "agents": "Servers",
+      "agents": "Agents",
       "users": "Users",
       "plans": "Plans",
       "notices": "Notices",
       "knowledge": "Knowledge",
       "forwarding": "Forwarding",
+      "configCenter": "Config Center",
       "accessLogs": "Access Logs",
       "system": "System"
     },
@@ -200,14 +213,24 @@
       "minutesAgo": "{{count}}m ago",
       "hoursAgo": "{{count}}h ago",
       "daysAgo": "{{count}}d ago",
-      "createSuccess": "Node created successfully",
-      "createError": "Failed to create",
+      "updateSuccess": "Node updated successfully",
+      "updateError": "Failed to update node",
       "deleteSuccess": "Node deleted successfully",
       "deleteError": "Failed to delete",
       "refreshSuccess": "Refreshed successfully",
       "loadError": "Failed to load nodes",
-      "validationError": "Validation error",
-      "nameHostRequired": "Name and host are required"
+      "nameHostRequired": "Name and host are required",
+      "deploy": {
+        "title": "One-Click Deploy Command",
+        "description": "Run this command on the target machine to install and connect Agent",
+        "command": "Deploy Command",
+        "copy": "Copy Command",
+        "copySuccess": "Deploy command copied",
+        "copyError": "Failed to copy deploy command",
+        "missingAddress": "Agent endpoint address is not configured. Please set it in System Settings -> Node Communication first.",
+        "missingCommunicationKey": "Communication key is unavailable. Please check System Settings -> Node Communication.",
+        "unavailable": "Deploy command is unavailable"
+      }
     },
     "users": {
       "title": "User Management",
@@ -229,6 +252,8 @@
       "active": "Active",
       "inactive": "Inactive",
       "banned": "Banned",
+      "ban": "Ban",
+      "unban": "Unban",
       "admin": "Admin",
       "createSuccess": "User created successfully",
       "createError": "Failed to create",
@@ -506,6 +531,138 @@
         "download": "Down {{value}}"
       }
     },
+    "configCenter": {
+      "title": "Config Center",
+      "subtitle": "Manage Hybrid Inbound desired config, apply runs, and drift observability in one place",
+      "actions": {
+        "import": "Import from Applied",
+        "createSpec": "Create Spec",
+        "apply": "Apply to Agent",
+        "history": "History"
+      },
+      "tabs": {
+        "specs": "Specs",
+        "diff": "Diff",
+        "drift": "Drift",
+        "snapshot": "Applied Snapshot"
+      },
+      "filters": {
+        "title": "Filters",
+        "description": "Select agent host and core type to view config center data"
+      },
+      "specs": {
+        "title": "Spec List",
+        "description": "{{count}} records, latest desired revision: {{revision}}",
+        "createTitle": "Create Spec",
+        "editTitle": "Edit Spec",
+        "historyTitle": "Spec History"
+      },
+      "apply": {
+        "targetRevision": "Target revision",
+        "previousRevision": "Previous revision (optional)"
+      },
+      "diff": {
+        "title": "Text and Semantic Diff",
+        "description": "Compare Desired and Applied text and semantic differences",
+        "text": "Text Diff",
+        "semantic": "Semantic Diff",
+        "desired": "Desired",
+        "applied": "Applied",
+        "unified": "Unified Diff"
+      },
+      "drift": {
+        "activeTitle": "Active Drift",
+        "activeDescription": "Entries currently in drift status",
+        "recoveredTitle": "Recovered Records",
+        "recoveredDescription": "Entries already recovered from drift"
+      },
+      "snapshot": {
+        "title": "Applied Snapshot",
+        "description": "View inventory files and inbound index reported by agents",
+        "inventoryTitle": "Config Inventory",
+        "inboundTitle": "Inbound Index"
+      },
+      "import": {
+        "title": "Import Spec from Applied",
+        "overwriteExisting": "Overwrite existing specs"
+      },
+      "fields": {
+        "agentHost": "Agent Host",
+        "selectedHost": "Selected Host",
+        "coreType": "Core Type",
+        "tag": "Tag",
+        "revision": "Revision",
+        "enabled": "Enabled",
+        "updatedAt": "Updated At",
+        "createdAt": "Created At",
+        "changeNote": "Change Note",
+        "operator": "Operator",
+        "semanticSpec": "Semantic Spec (JSON)",
+        "coreSpecific": "Core Specific (JSON)",
+        "filename": "Filename",
+        "driftType": "Drift Type",
+        "fieldDiffs": "Field Diffs",
+        "source": "Source",
+        "parseStatus": "Parse Status",
+        "lastSeenAt": "Last Seen",
+        "protocol": "Protocol",
+        "listen": "Listen",
+        "port": "Port"
+      },
+      "status": {
+        "enabled": "Enabled",
+        "disabled": "Disabled"
+      },
+      "source": {
+        "legacy": "legacy",
+        "managed": "managed",
+        "merged": "merged"
+      },
+      "placeholders": {
+        "selectHost": "Select an agent host",
+        "noHost": "No host selected",
+        "optional": "Optional",
+        "specTag": "e.g. inbound-web"
+      },
+      "empty": {
+        "noHostTitle": "Select an Agent Host",
+        "noHostDescription": "Select a host to manage config center resources.",
+        "noSpecTitle": "No Specs",
+        "noSpecDescription": "Create your first spec to manage desired config.",
+        "noSemanticDiff": "No semantic diff",
+        "noDriftTitle": "No Drift",
+        "noDriftDescription": "Desired and Applied are currently aligned.",
+        "noRecoveryTitle": "No Recovery Records",
+        "noRecoveryDescription": "No recovered drift records yet.",
+        "noInventoryTitle": "No Inventory",
+        "noInventoryDescription": "Agent has not reported config inventory yet.",
+        "noInboundIndexTitle": "No Inbound Index",
+        "noInboundIndexDescription": "Agent has not reported inbound index yet.",
+        "noHistoryTitle": "No History",
+        "noHistoryDescription": "This spec has no revision history yet."
+      },
+      "messages": {
+        "selectHostFirst": "Please select an agent host first",
+        "requiredFields": "Please fill required fields",
+        "invalidJson": "Invalid JSON format",
+        "invalidTargetRevision": "Target revision must be a number greater than 0",
+        "hostLoadFailed": "Failed to load agent hosts",
+        "specLoadFailed": "Failed to load spec list",
+        "historyLoadFailed": "Failed to load spec history",
+        "snapshotLoadFailed": "Failed to load applied snapshot",
+        "driftLoadFailed": "Failed to load drift states",
+        "recoveryLoadFailed": "Failed to load recovery records",
+        "textDiffFailed": "Failed to load text diff",
+        "semanticDiffFailed": "Failed to load semantic diff",
+        "specSaved": "Spec created successfully",
+        "specUpdated": "Spec updated successfully",
+        "specSaveFailed": "Failed to save spec",
+        "importSuccess": "Import completed, {{count}} specs created",
+        "importFailed": "Failed to import specs",
+        "applyStarted": "Apply run created",
+        "applyFailed": "Failed to create apply run"
+      }
+    },
     "system": {
       "title": "System Settings",
       "description": "View system status and configuration",
@@ -553,6 +710,7 @@
           "injectMeta": "Inject Subscription Meta",
           "injectProtocol": "Inject Protocol Info",
           "communicationKey": "Communication Key",
+          "agentGrpcAddress": "Agent Endpoint Address",
           "pullInterval": "Pull Interval",
           "pushInterval": "Push Interval",
           "deviceLimitMode": "Device Limit Mode",
@@ -578,6 +736,7 @@
           "subscribeUrls": "https://a.example.com, https://b.example.com",
           "subscribePath": "subscribe",
           "resetCron": "0 0 1 * *",
+          "agentGrpcAddress": "e.g. 127.0.0.1:50051",
           "pullInterval": "e.g. 60",
           "pushInterval": "e.g. 60",
           "smtpHost": "smtp.example.com",
@@ -598,6 +757,7 @@
           "injectMeta": "Include traffic and expiry info in subscriptions",
           "injectProtocol": "Include protocol and version info in subscriptions",
           "communicationKey": "Used for Agent-Panel communication",
+          "agentGrpcAddress": "Agent gRPC target address used in one-click deploy command",
           "pullInterval": "Unit: seconds",
           "pushInterval": "Unit: seconds",
           "deviceLimitMode": "Strict mode enforces device limits",

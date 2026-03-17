@@ -57,3 +57,13 @@ func decodeJSONSlice(s string) ([]string, error) {
 	}
 	return res, nil
 }
+
+func normalizePagination(limit, offset, defaultLimit int) (int, int) {
+	if limit <= 0 {
+		limit = defaultLimit
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return limit, offset
+}

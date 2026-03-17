@@ -1,0 +1,840 @@
+package service
+
+import (
+	"bytes"
+	"context"
+	"crypto/md5"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
+
+	"github.com/creamcroissant/xboard/internal/repository"
+	"github.com/creamcroissant/xboard/internal/template"
+)
+
+var (
+	ErrArtifactCompileInvalidRequest   = errors.New("service: invalid artifact compile request / artifact 编译请求无效")
+	ErrArtifactCompileUnsupportedField = errors.New("service: unsupported artifact field / artifact 字段不受支持")
+)
+
+// ArtifactCompilerService renders desired artifacts from inbound semantic specs.
+type ArtifactCompilerService interface {
+	RenderArtifacts(ctx context.Context, req RenderArtifactsRequest) (*RenderArtifactsResult, error)
+}
+
+// RenderArtifactsRequest defines one rendering batch for host/core/revision.
+type RenderArtifactsRequest struct {
+	AgentHostID     int64
+	CoreType        string
+	DesiredRevision int64
+}
+
+// RenderedArtifactMetadata is trace metadata for one generated artifact.
+type RenderedArtifactMetadata struct {
+	SpecID      int64  `json:"spec_id"`
+	SourceTag   string `json:"source_tag"`
+	Filename    string `json:"filename"`
+	ContentHash string `json:"content_hash"`
+}
+
+// ArtifactRenderWarning is a non-fatal field compatibility warning.
+type ArtifactRenderWarning struct {
+	CoreType string `json:"core_type"`
+	SpecID   int64  `json:"spec_id"`
+	Tag      string `json:"tag"`
+	Field    string `json:"field"`
+	Message  string `json:"message"`
+}
+
+// RenderArtifactsResult contains rendered artifact metadata and warnings.
+type RenderArtifactsResult struct {
+	DesiredRevision int64                      `json:"desired_revision"`
+	ArtifactCount   int                        `json:"artifact_count"`
+	Artifacts       []RenderedArtifactMetadata `json:"artifacts"`
+	Warnings        []ArtifactRenderWarning    `json:"warnings,omitempty"`
+}
+
+// ArtifactUnsupportedFieldError indicates explicit renderer incompatibility.
+type ArtifactUnsupportedFieldError struct {
+	CoreType string `json:"core_type"`
+	SpecID   int64  `json:"spec_id"`
+	Tag      string `json:"tag"`
+	Field    string `json:"field"`
+	Message  string `json:"message"`
+}
+
+func (e *ArtifactUnsupportedFieldError) Error() string {
+	if e == nil {
+		return ErrArtifactCompileUnsupportedField.Error()
+	}
+	return fmt.Sprintf("%s (core=%s spec_id=%d tag=%s field=%s message=%s)",
+		ErrArtifactCompileUnsupportedField.Error(),
+		e.CoreType,
+		e.SpecID,
+		e.Tag,
+		e.Field,
+		e.Message,
+	)
+}
+
+func (e *ArtifactUnsupportedFieldError) Is(target error) bool {
+	return target == ErrArtifactCompileUnsupportedField
+}
+
+type artifactRenderer interface {
+	CoreType() string
+	Render(spec *repository.InboundSpec, semantic *inboundSemanticSpec, semanticObject map[string]any, coreSpecific map[string]any) (*renderedArtifact, []ArtifactRenderWarning, error)
+}
+
+type renderedArtifact struct {
+	Filename string
+	Content  []byte
+}
+
+type artifactCompilerService struct {
+	specs     repository.InboundSpecRepository
+	artifacts repository.DesiredArtifactRepository
+	renderers map[string]artifactRenderer
+}
+
+// NewArtifactCompilerService creates ArtifactCompilerService.
+func NewArtifactCompilerService(
+	specs repository.InboundSpecRepository,
+	artifacts repository.DesiredArtifactRepository,
+) ArtifactCompilerService {
+	service := &artifactCompilerService{
+		specs:     specs,
+		artifacts: artifacts,
+		renderers: map[string]artifactRenderer{},
+	}
+
+	singBoxRenderer := newSingBoxArtifactRenderer()
+	xrayRenderer := newXrayArtifactRenderer()
+	service.renderers[singBoxRenderer.CoreType()] = singBoxRenderer
+	service.renderers[xrayRenderer.CoreType()] = xrayRenderer
+
+	return service
+}
+
+func (s *artifactCompilerService) RenderArtifacts(ctx context.Context, req RenderArtifactsRequest) (*RenderArtifactsResult, error) {
+	if s == nil || s.specs == nil || s.artifacts == nil {
+		return nil, fmt.Errorf("artifact compiler service not configured / artifact 编译服务未配置")
+	}
+	if req.AgentHostID <= 0 {
+		return nil, fmt.Errorf("%w (agent_host_id is required / 不能为空)", ErrArtifactCompileInvalidRequest)
+	}
+	if req.DesiredRevision <= 0 {
+		return nil, fmt.Errorf("%w (desired_revision must be greater than 0 / 必须大于 0)", ErrArtifactCompileInvalidRequest)
+	}
+
+	coreType := normalizeCoreType(req.CoreType)
+	if coreType == "" {
+		return nil, fmt.Errorf("%w (core_type must be sing-box or xray / 必须是 sing-box 或 xray)", ErrArtifactCompileInvalidRequest)
+	}
+	renderer := s.renderers[coreType]
+	if renderer == nil {
+		return nil, fmt.Errorf("%w (renderer not found for core_type=%s / 未找到该核心渲染器)", ErrArtifactCompileInvalidRequest, coreType)
+	}
+
+	specs, err := s.listSpecsByHostAndCore(ctx, req.AgentHostID, coreType)
+	if err != nil {
+		return nil, err
+	}
+	enabledSpecs := make([]*repository.InboundSpec, 0, len(specs))
+	for _, item := range specs {
+		if item == nil || !item.Enabled {
+			continue
+		}
+		enabledSpecs = append(enabledSpecs, item)
+	}
+	if len(enabledSpecs) == 0 {
+		return nil, fmt.Errorf("%w (no enabled inbound specs found / 未找到启用的入站配置)", ErrArtifactCompileInvalidRequest)
+	}
+
+	sort.Slice(enabledSpecs, func(i, j int) bool {
+		leftTag := normalizeTag(enabledSpecs[i].Tag)
+		rightTag := normalizeTag(enabledSpecs[j].Tag)
+		if leftTag == rightTag {
+			return enabledSpecs[i].ID < enabledSpecs[j].ID
+		}
+		return leftTag < rightTag
+	})
+
+	artifacts := make([]*repository.DesiredArtifact, 0, len(enabledSpecs))
+	metadata := make([]RenderedArtifactMetadata, 0, len(enabledSpecs))
+	warnings := make([]ArtifactRenderWarning, 0)
+	filenameSet := make(map[string]struct{}, len(enabledSpecs))
+
+	for _, spec := range enabledSpecs {
+		normalizedSemantic, normalizedCoreSpecific, semantic, err := validateSpecInput(coreType, spec.Tag, spec.SemanticSpec, spec.CoreSpecific)
+		if err != nil {
+			return nil, fmt.Errorf("validate inbound spec for render (spec_id=%d tag=%s): %w", spec.ID, spec.Tag, err)
+		}
+
+		semanticObject, err := artifactDecodeJSONObject(normalizedSemantic)
+		if err != nil {
+			return nil, fmt.Errorf("decode semantic_spec (spec_id=%d tag=%s): %w", spec.ID, spec.Tag, err)
+		}
+		coreSpecificObject, err := artifactDecodeJSONObject(normalizedCoreSpecific)
+		if err != nil {
+			return nil, fmt.Errorf("decode core_specific (spec_id=%d tag=%s): %w", spec.ID, spec.Tag, err)
+		}
+
+		rendered, renderedWarnings, err := renderer.Render(spec, semantic, semanticObject, coreSpecificObject)
+		if err != nil {
+			return nil, err
+		}
+		if rendered == nil {
+			return nil, fmt.Errorf("renderer returned nil artifact (spec_id=%d tag=%s)", spec.ID, spec.Tag)
+		}
+		if strings.TrimSpace(rendered.Filename) == "" {
+			return nil, fmt.Errorf("renderer returned empty filename (spec_id=%d tag=%s)", spec.ID, spec.Tag)
+		}
+		if !artifactValidFilename(rendered.Filename) {
+			return nil, &ArtifactUnsupportedFieldError{
+				CoreType: coreType,
+				SpecID:   spec.ID,
+				Tag:      spec.Tag,
+				Field:    "filename",
+				Message:  "must be a safe .json filename / 必须是安全的 .json 文件名",
+			}
+		}
+		if _, exists := filenameSet[rendered.Filename]; exists {
+			return nil, &ArtifactUnsupportedFieldError{
+				CoreType: coreType,
+				SpecID:   spec.ID,
+				Tag:      spec.Tag,
+				Field:    "filename",
+				Message:  fmt.Sprintf("duplicate artifact filename in one batch: %s / 同批次文件名冲突", rendered.Filename),
+			}
+		}
+		filenameSet[rendered.Filename] = struct{}{}
+
+		hash := md5.Sum(rendered.Content)
+		contentHash := hex.EncodeToString(hash[:])
+
+		artifact := &repository.DesiredArtifact{
+			AgentHostID:     req.AgentHostID,
+			CoreType:        coreType,
+			DesiredRevision: req.DesiredRevision,
+			Filename:        rendered.Filename,
+			SourceTag:       normalizeTag(spec.Tag),
+			Content:         rendered.Content,
+			ContentHash:     contentHash,
+		}
+		artifacts = append(artifacts, artifact)
+		metadata = append(metadata, RenderedArtifactMetadata{
+			SpecID:      spec.ID,
+			SourceTag:   artifact.SourceTag,
+			Filename:    artifact.Filename,
+			ContentHash: artifact.ContentHash,
+		})
+		warnings = append(warnings, renderedWarnings...)
+	}
+
+	if err := s.artifacts.DeleteByHostCoreRevision(ctx, req.AgentHostID, coreType, req.DesiredRevision); err != nil {
+		return nil, err
+	}
+	if err := s.artifacts.CreateBatch(ctx, artifacts); err != nil {
+		return nil, err
+	}
+
+	return &RenderArtifactsResult{
+		DesiredRevision: req.DesiredRevision,
+		ArtifactCount:   len(artifacts),
+		Artifacts:       metadata,
+		Warnings:        warnings,
+	}, nil
+}
+
+func (s *artifactCompilerService) listSpecsByHostAndCore(ctx context.Context, agentHostID int64, coreType string) ([]*repository.InboundSpec, error) {
+	limit := 200
+	offset := 0
+	all := make([]*repository.InboundSpec, 0)
+
+	for {
+		hostID := agentHostID
+		core := coreType
+		items, err := s.specs.List(ctx, repository.InboundSpecFilter{
+			AgentHostID: &hostID,
+			CoreType:    &core,
+			Limit:       limit,
+			Offset:      offset,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if len(items) == 0 {
+			break
+		}
+		all = append(all, items...)
+		if len(items) < limit {
+			break
+		}
+		offset += limit
+	}
+
+	return all, nil
+}
+
+func buildUnifiedInboundFromSemantic(tag string, semantic *inboundSemanticSpec) (template.UnifiedInbound, error) {
+	if semantic == nil {
+		return template.UnifiedInbound{}, fmt.Errorf("semantic spec is nil")
+	}
+
+	inbound := template.UnifiedInbound{
+		Tag:      normalizeTag(firstNonEmpty(tag, semantic.Tag)),
+		Protocol: strings.TrimSpace(semantic.Protocol),
+		Listen:   normalizeListen(semantic.Listen),
+		Port:     semantic.Port,
+	}
+
+	if artifactRawObjectPresent(semantic.TLS) {
+		tlsObject, err := artifactDecodeJSONObject(semantic.TLS)
+		if err != nil {
+			return template.UnifiedInbound{}, fmt.Errorf("parse semantic_spec.tls: %w", err)
+		}
+		inbound.TLS = artifactBuildUnifiedTLS(tlsObject)
+	}
+	if artifactRawObjectPresent(semantic.Transport) {
+		transportObject, err := artifactDecodeJSONObject(semantic.Transport)
+		if err != nil {
+			return template.UnifiedInbound{}, fmt.Errorf("parse semantic_spec.transport: %w", err)
+		}
+		inbound.Transport = artifactBuildUnifiedTransport(transportObject)
+	}
+
+	return inbound, nil
+}
+
+func artifactBuildUnifiedTLS(raw map[string]any) *template.UnifiedTLS {
+	if len(raw) == 0 {
+		return nil
+	}
+	enabledValue, enabledFound := artifactLookupFirst(raw, "enabled")
+	enabled := true
+	if enabledFound {
+		enabled = artifactToBool(enabledValue)
+	}
+
+	tls := &template.UnifiedTLS{
+		Enabled:    enabled,
+		ServerName: artifactStringByKeys(raw, "server_name", "serverName"),
+		ALPN:       artifactStringSliceByKeys(raw, "alpn", "ALPN"),
+		CertPath:   artifactStringByKeys(raw, "cert_path", "certPath", "certificateFile"),
+		KeyPath:    artifactStringByKeys(raw, "key_path", "keyPath", "keyFile"),
+	}
+
+	realityRaw, ok := artifactMapByKeys(raw, "reality", "reality_settings", "realitySettings")
+	if ok {
+		reality := &template.UnifiedReality{
+			Enabled:         artifactToBoolWithDefault(artifactLookupFirstValue(realityRaw, "enabled"), true),
+			PrivateKey:      artifactStringByKeys(realityRaw, "private_key", "privateKey"),
+			PublicKey:       artifactStringByKeys(realityRaw, "public_key", "publicKey"),
+			ShortIDs:        artifactStringSliceByKeys(realityRaw, "short_ids", "shortIds", "short_id", "shortId"),
+			ServerNames:     artifactStringSliceByKeys(realityRaw, "server_names", "serverNames"),
+			HandshakeServer: artifactStringByKeys(realityRaw, "handshake_server", "handshakeServer"),
+			HandshakePort:   artifactIntByKeys(realityRaw, "handshake_port", "handshakePort"),
+			Fingerprint:     artifactStringByKeys(realityRaw, "fingerprint"),
+		}
+
+		if len(reality.ServerNames) == 0 {
+			singleServerName := artifactStringByKeys(realityRaw, "server_name", "serverName")
+			if singleServerName != "" {
+				reality.ServerNames = []string{singleServerName}
+			}
+		}
+		if reality.HandshakeServer == "" {
+			if dest := artifactStringByKeys(realityRaw, "dest"); dest != "" {
+				host, port := artifactSplitHostPort(dest)
+				reality.HandshakeServer = host
+				if reality.HandshakePort == 0 {
+					reality.HandshakePort = port
+				}
+			}
+		}
+
+		tls.Reality = reality
+	}
+
+	if !tls.Enabled && tls.ServerName == "" && len(tls.ALPN) == 0 && tls.CertPath == "" && tls.KeyPath == "" && tls.Reality == nil {
+		return nil
+	}
+	return tls
+}
+
+func artifactBuildUnifiedTransport(raw map[string]any) *template.UnifiedTransport {
+	if len(raw) == 0 {
+		return nil
+	}
+
+	transport := &template.UnifiedTransport{
+		Type:        strings.TrimSpace(artifactStringByKeys(raw, "type", "network")),
+		Path:        artifactStringByKeys(raw, "path"),
+		Host:        artifactStringByKeys(raw, "host"),
+		ServiceName: artifactStringByKeys(raw, "service_name", "serviceName"),
+		Headers:     artifactStringMapByKeys(raw, "headers"),
+	}
+	if transport.Type == "" {
+		transport.Type = "tcp"
+	}
+	if transport.Host == "" {
+		hostCandidates := artifactStringSliceByKeys(raw, "host")
+		if len(hostCandidates) > 0 {
+			transport.Host = hostCandidates[0]
+		}
+	}
+	if len(transport.Headers) == 0 {
+		transport.Headers = nil
+	}
+
+	return transport
+}
+
+func artifactSingleInboundFromPayload(payload []byte) (map[string]any, error) {
+	var document map[string]any
+	if err := json.Unmarshal(payload, &document); err != nil {
+		return nil, err
+	}
+	inboundsRaw, ok := document["inbounds"]
+	if !ok {
+		return nil, fmt.Errorf("render payload missing inbounds")
+	}
+	inboundsArray, ok := inboundsRaw.([]any)
+	if !ok || len(inboundsArray) != 1 {
+		return nil, fmt.Errorf("render payload must contain exactly one inbound")
+	}
+	inbound, ok := artifactToMap(inboundsArray[0])
+	if !ok {
+		return nil, fmt.Errorf("render payload inbound must be object")
+	}
+	return inbound, nil
+}
+
+func artifactMarshalInbound(inbound map[string]any) ([]byte, error) {
+	document := map[string]any{
+		"inbounds": []map[string]any{inbound},
+	}
+	return json.Marshal(document)
+}
+
+func artifactDecodeJSONObject(raw []byte) (map[string]any, error) {
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return map[string]any{}, nil
+	}
+	var object map[string]any
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return nil, err
+	}
+	if object == nil {
+		object = map[string]any{}
+	}
+	return object, nil
+}
+
+func artifactRawObjectPresent(raw []byte) bool {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return false
+	}
+	return string(trimmed) != "{}"
+}
+
+func artifactSemanticUnknownWarnings(coreType string, spec *repository.InboundSpec, semanticObject map[string]any, supported map[string]struct{}) []ArtifactRenderWarning {
+	if len(semanticObject) == 0 {
+		return nil
+	}
+	keys := make([]string, 0)
+	for key := range semanticObject {
+		if _, ok := supported[key]; ok {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	warnings := make([]ArtifactRenderWarning, 0, len(keys))
+	for _, key := range keys {
+		warnings = append(warnings, ArtifactRenderWarning{
+			CoreType: coreType,
+			SpecID:   spec.ID,
+			Tag:      spec.Tag,
+			Field:    fmt.Sprintf("semantic_spec.%s", key),
+			Message:  "field is unsupported and ignored / 字段不受支持，已忽略",
+		})
+	}
+	return warnings
+}
+
+func artifactExtractCoreSection(spec *repository.InboundSpec, coreType string, coreSpecific map[string]any, coreKeys ...string) (map[string]any, []ArtifactRenderWarning, error) {
+	warnings := make([]ArtifactRenderWarning, 0)
+	if len(coreSpecific) == 0 {
+		return nil, warnings, nil
+	}
+
+	knownTop := map[string]struct{}{
+		"core_type": {},
+	}
+	for _, key := range coreKeys {
+		knownTop[key] = struct{}{}
+	}
+
+	unknownTop := make([]string, 0)
+	for key := range coreSpecific {
+		if _, ok := knownTop[key]; ok {
+			continue
+		}
+		unknownTop = append(unknownTop, key)
+	}
+	sort.Strings(unknownTop)
+	for _, key := range unknownTop {
+		warnings = append(warnings, ArtifactRenderWarning{
+			CoreType: coreType,
+			SpecID:   spec.ID,
+			Tag:      spec.Tag,
+			Field:    fmt.Sprintf("core_specific.%s", key),
+			Message:  "field is unsupported and ignored / 字段不受支持，已忽略",
+		})
+	}
+
+	foundKeys := make([]string, 0, 1)
+	for _, key := range coreKeys {
+		if _, ok := coreSpecific[key]; ok {
+			foundKeys = append(foundKeys, key)
+		}
+	}
+
+	if len(foundKeys) == 0 {
+		return nil, warnings, nil
+	}
+	if len(foundKeys) > 1 {
+		return nil, warnings, &ArtifactUnsupportedFieldError{
+			CoreType: coreType,
+			SpecID:   spec.ID,
+			Tag:      spec.Tag,
+			Field:    "core_specific",
+			Message:  fmt.Sprintf("ambiguous core section keys: %s / 核心扩展键冲突", strings.Join(foundKeys, ",")),
+		}
+	}
+
+	sectionRaw := coreSpecific[foundKeys[0]]
+	section, ok := artifactToMap(sectionRaw)
+	if !ok {
+		return nil, warnings, &ArtifactUnsupportedFieldError{
+			CoreType: coreType,
+			SpecID:   spec.ID,
+			Tag:      spec.Tag,
+			Field:    fmt.Sprintf("core_specific.%s", foundKeys[0]),
+			Message:  "must be a JSON object / 必须是 JSON 对象",
+		}
+	}
+
+	return section, warnings, nil
+}
+
+func artifactApplyCoreSection(
+	inbound map[string]any,
+	section map[string]any,
+	reserved map[string]struct{},
+	spec *repository.InboundSpec,
+	coreType string,
+	sectionField string,
+) (string, error) {
+	if len(section) == 0 {
+		return "", nil
+	}
+	customFilename := ""
+
+	keys := make([]string, 0, len(section))
+	for key := range section {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		value := section[key]
+		if key == "filename" {
+			name, ok := value.(string)
+			if !ok {
+				return "", &ArtifactUnsupportedFieldError{
+					CoreType: coreType,
+					SpecID:   spec.ID,
+					Tag:      spec.Tag,
+					Field:    sectionField + ".filename",
+					Message:  "must be a string / 必须是字符串",
+				}
+			}
+			customFilename = strings.TrimSpace(name)
+			continue
+		}
+		if _, exists := reserved[key]; exists {
+			return "", &ArtifactUnsupportedFieldError{
+				CoreType: coreType,
+				SpecID:   spec.ID,
+				Tag:      spec.Tag,
+				Field:    sectionField + "." + key,
+				Message:  "cannot override semantic core field / 不能覆盖语义层核心字段",
+			}
+		}
+		inbound[key] = value
+	}
+
+	return customFilename, nil
+}
+
+var artifactFilenameSanitizer = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
+
+func artifactResolveFilename(spec *repository.InboundSpec, customFilename string) (string, error) {
+	if strings.TrimSpace(customFilename) != "" {
+		if !artifactValidFilename(customFilename) {
+			return "", &ArtifactUnsupportedFieldError{
+				CoreType: spec.CoreType,
+				SpecID:   spec.ID,
+				Tag:      spec.Tag,
+				Field:    "filename",
+				Message:  "must be a safe .json filename / 必须是安全的 .json 文件名",
+			}
+		}
+		return customFilename, nil
+	}
+
+	tag := normalizeTag(spec.Tag)
+	if tag == "" {
+		tag = "inbound"
+	}
+	safeTag := artifactFilenameSanitizer.ReplaceAllString(tag, "_")
+	safeTag = strings.Trim(safeTag, "._-")
+	if safeTag == "" {
+		safeTag = "inbound"
+	}
+	return fmt.Sprintf("inbound-%d-%s.json", spec.ID, safeTag), nil
+}
+
+func artifactValidFilename(filename string) bool {
+	trimmed := strings.TrimSpace(filename)
+	if trimmed == "" {
+		return false
+	}
+	if strings.Contains(trimmed, "/") || strings.Contains(trimmed, `\\`) {
+		return false
+	}
+	if strings.Contains(trimmed, "..") {
+		return false
+	}
+	if !strings.HasSuffix(strings.ToLower(trimmed), ".json") {
+		return false
+	}
+	return true
+}
+
+func artifactLookupFirst(object map[string]any, keys ...string) (any, bool) {
+	for _, key := range keys {
+		value, ok := object[key]
+		if ok {
+			return value, true
+		}
+	}
+	return nil, false
+}
+
+func artifactLookupFirstValue(object map[string]any, keys ...string) any {
+	value, _ := artifactLookupFirst(object, keys...)
+	return value
+}
+
+func artifactStringByKeys(object map[string]any, keys ...string) string {
+	value, ok := artifactLookupFirst(object, keys...)
+	if !ok {
+		return ""
+	}
+	return artifactToString(value)
+}
+
+func artifactIntByKeys(object map[string]any, keys ...string) int {
+	value, ok := artifactLookupFirst(object, keys...)
+	if !ok {
+		return 0
+	}
+	return artifactToInt(value)
+}
+
+func artifactStringSliceByKeys(object map[string]any, keys ...string) []string {
+	value, ok := artifactLookupFirst(object, keys...)
+	if !ok {
+		return nil
+	}
+	return artifactToStringSlice(value)
+}
+
+func artifactMapByKeys(object map[string]any, keys ...string) (map[string]any, bool) {
+	value, ok := artifactLookupFirst(object, keys...)
+	if !ok {
+		return nil, false
+	}
+	mapped, ok := artifactToMap(value)
+	return mapped, ok
+}
+
+func artifactStringMapByKeys(object map[string]any, keys ...string) map[string]string {
+	value, ok := artifactLookupFirst(object, keys...)
+	if !ok {
+		return nil
+	}
+	mapped, ok := artifactToMap(value)
+	if !ok {
+		return nil
+	}
+	result := make(map[string]string, 0)
+	for key, item := range mapped {
+		text := artifactToString(item)
+		if text == "" {
+			continue
+		}
+		result[key] = text
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+func artifactToMap(value any) (map[string]any, bool) {
+	if value == nil {
+		return nil, false
+	}
+	mapped, ok := value.(map[string]any)
+	if ok {
+		return mapped, true
+	}
+	mappedAny, ok := value.(map[string]interface{})
+	if !ok {
+		return nil, false
+	}
+	result := make(map[string]any, len(mappedAny))
+	for key, item := range mappedAny {
+		result[key] = item
+	}
+	return result, true
+}
+
+func artifactToBool(value any) bool {
+	switch item := value.(type) {
+	case bool:
+		return item
+	case string:
+		return strings.EqualFold(strings.TrimSpace(item), "true")
+	case float64:
+		return item != 0
+	case int:
+		return item != 0
+	case int64:
+		return item != 0
+	default:
+		return false
+	}
+}
+
+func artifactToBoolWithDefault(value any, defaultValue bool) bool {
+	if value == nil {
+		return defaultValue
+	}
+	return artifactToBool(value)
+}
+
+func artifactToInt(value any) int {
+	switch item := value.(type) {
+	case int:
+		return item
+	case int8:
+		return int(item)
+	case int16:
+		return int(item)
+	case int32:
+		return int(item)
+	case int64:
+		return int(item)
+	case float64:
+		return int(item)
+	case string:
+		parsed, err := strconv.Atoi(strings.TrimSpace(item))
+		if err != nil {
+			return 0
+		}
+		return parsed
+	default:
+		return 0
+	}
+}
+
+func artifactToString(value any) string {
+	switch item := value.(type) {
+	case string:
+		return strings.TrimSpace(item)
+	case json.Number:
+		return item.String()
+	default:
+		return ""
+	}
+}
+
+func artifactToStringSlice(value any) []string {
+	switch item := value.(type) {
+	case []string:
+		result := make([]string, 0, len(item))
+		for _, part := range item {
+			trimmed := strings.TrimSpace(part)
+			if trimmed == "" {
+				continue
+			}
+			result = append(result, trimmed)
+		}
+		if len(result) == 0 {
+			return nil
+		}
+		return result
+	case []any:
+		result := make([]string, 0, len(item))
+		for _, part := range item {
+			trimmed := artifactToString(part)
+			if trimmed == "" {
+				continue
+			}
+			result = append(result, trimmed)
+		}
+		if len(result) == 0 {
+			return nil
+		}
+		return result
+	case string:
+		trimmed := strings.TrimSpace(item)
+		if trimmed == "" {
+			return nil
+		}
+		return []string{trimmed}
+	default:
+		return nil
+	}
+}
+
+func artifactSplitHostPort(dest string) (string, int) {
+	trimmed := strings.TrimSpace(dest)
+	if trimmed == "" {
+		return "", 0
+	}
+	index := strings.LastIndex(trimmed, ":")
+	if index <= 0 || index >= len(trimmed)-1 {
+		return trimmed, 0
+	}
+	host := strings.TrimSpace(trimmed[:index])
+	portText := strings.TrimSpace(trimmed[index+1:])
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		return trimmed, 0
+	}
+	return host, port
+}

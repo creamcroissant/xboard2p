@@ -344,6 +344,23 @@ func (c *GRPCClient) ReportAccessLogs(ctx context.Context, report *agentv1.Acces
 	})
 }
 
+// GetApplyBatch fetches hybrid config-center apply artifacts for current revision.
+func (c *GRPCClient) GetApplyBatch(ctx context.Context, coreType string, currentRevision int64) (*agentv1.ApplyBatchResponse, error) {
+	return callUnary(ctx, c, CallConfig{}, func(ctx context.Context) (*agentv1.ApplyBatchResponse, error) {
+		return c.client.GetApplyBatch(ctx, &agentv1.ApplyBatchRequest{
+			CoreType:        coreType,
+			CurrentRevision: currentRevision,
+		})
+	})
+}
+
+// ReportApplyRun reports apply run result for hybrid config-center batch.
+func (c *GRPCClient) ReportApplyRun(ctx context.Context, report *agentv1.ApplyRunReport) (*agentv1.ApplyRunResponse, error) {
+	return callUnary(ctx, c, CallConfig{}, func(ctx context.Context) (*agentv1.ApplyRunResponse, error) {
+		return c.client.ReportApplyRun(ctx, report)
+	})
+}
+
 // Client returns the underlying AgentServiceClient for advanced usage
 func (c *GRPCClient) Client() agentv1.AgentServiceClient {
 	return c.client

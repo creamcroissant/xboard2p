@@ -10,69 +10,83 @@ import (
 
 // Store wires SQLite-backed repository implementations.
 type Store struct {
-	db                  *sql.DB
-	users               repository.UserRepository
-	settings            repository.SettingRepository
-	invites             repository.InviteCodeRepository
-	plugins             repository.PluginRepository
-	plans               repository.PlanRepository
-	loginLogs           repository.LoginLogRepository
-	tokens              repository.TokenRepository
-	payments            repository.PaymentRepository
-	servers             repository.ServerRepository
-	groups              repository.ServerGroupRepository
-	routes              repository.ServerRouteRepository
-	statUsers           repository.StatUserRepository
-	statServers         repository.StatServerRepository
-	notices             repository.NoticeRepository
-	knowledge           repository.KnowledgeRepository
-	subLogs             repository.SubscriptionLogRepository
-	agentHosts          repository.AgentHostRepository
-	configTemplates     repository.ConfigTemplateRepository
-	serverClientConfigs repository.ServerClientConfigRepository
-	userTraffic         repository.UserTrafficRepository
-	shortLinks          repository.ShortLinkRepository
-	subscriptionTemplates repository.SubscriptionTemplateRepository
-	forwardingRules     repository.ForwardingRuleRepository
-	forwardingRuleLogs  repository.ForwardingRuleLogRepository
-	userNoticeReads     repository.UserNoticeReadsRepository
-	agentCoreInstances  repository.AgentCoreInstanceRepository
-	agentCoreSwitchLogs repository.AgentCoreSwitchLogRepository
-	accessLogs          repository.AccessLogRepository
+	db                     *sql.DB
+	users                  repository.UserRepository
+	settings               repository.SettingRepository
+	invites                repository.InviteCodeRepository
+	plugins                repository.PluginRepository
+	plans                  repository.PlanRepository
+	loginLogs              repository.LoginLogRepository
+	tokens                 repository.TokenRepository
+	payments               repository.PaymentRepository
+	servers                repository.ServerRepository
+	groups                 repository.ServerGroupRepository
+	routes                 repository.ServerRouteRepository
+	statUsers              repository.StatUserRepository
+	statServers            repository.StatServerRepository
+	notices                repository.NoticeRepository
+	knowledge              repository.KnowledgeRepository
+	subLogs                repository.SubscriptionLogRepository
+	agentHosts             repository.AgentHostRepository
+	configTemplates        repository.ConfigTemplateRepository
+	serverClientConfigs    repository.ServerClientConfigRepository
+	userTraffic            repository.UserTrafficRepository
+	shortLinks             repository.ShortLinkRepository
+	subscriptionTemplates  repository.SubscriptionTemplateRepository
+	forwardingRules        repository.ForwardingRuleRepository
+	forwardingRuleLogs     repository.ForwardingRuleLogRepository
+	userNoticeReads        repository.UserNoticeReadsRepository
+	agentCoreInstances     repository.AgentCoreInstanceRepository
+	agentCoreSwitchLogs    repository.AgentCoreSwitchLogRepository
+	accessLogs             repository.AccessLogRepository
+	inboundSpecs           repository.InboundSpecRepository
+	inboundSpecRevisions   repository.InboundSpecRevisionRepository
+	desiredArtifacts       repository.DesiredArtifactRepository
+	applyRuns              repository.ApplyRunRepository
+	agentConfigInventories repository.AgentConfigInventoryRepository
+	inboundIndexes         repository.InboundIndexRepository
+	driftStates            repository.DriftStateRepository
 }
 
 // NewStore constructs a SQLite-backed repository store.
 func NewStore(db *sql.DB) *Store {
 	return &Store{
-		db:                  db,
-		users:               &userRepo{db: db},
-		settings:            &settingRepo{db: db},
-		invites:             &inviteRepo{db: db},
-		plugins:             &pluginRepo{db: db},
-		plans:               &planRepo{db: db},
-		loginLogs:           &loginLogRepo{db: db},
-		tokens:              &tokenRepo{db: db},
-		payments:            &paymentRepo{db: db},
-		servers:             &serverRepo{db: db},
-		groups:              &serverGroupRepo{db: db},
-		routes:              &serverRouteRepo{db: db},
-		statUsers:           &statUserRepo{db: db},
-		statServers:         &statServerRepo{db: db},
-		notices:             &noticeRepo{db: db},
-		knowledge:           &knowledgeRepo{db: db},
-		subLogs:             &subscriptionLogRepo{db: db},
-		agentHosts:          newAgentHostRepo(db),
-		configTemplates:     newConfigTemplateRepo(db),
-		serverClientConfigs: newServerClientConfigRepo(db),
-		userTraffic:         newUserTrafficRepo(db),
-		shortLinks:          NewShortLinkRepository(db),
-		subscriptionTemplates: newSubscriptionTemplateRepo(db),
-		forwardingRules:     newForwardingRuleRepo(db),
-		forwardingRuleLogs:  newForwardingRuleLogRepo(db),
-		userNoticeReads:     newUserNoticeReadsRepo(db),
-		agentCoreInstances:  newAgentCoreInstanceRepo(db),
-		agentCoreSwitchLogs: newAgentCoreSwitchLogRepo(db),
-		accessLogs:          newAccessLogRepo(db),
+		db:                     db,
+		users:                  &userRepo{db: db},
+		settings:               &settingRepo{db: db},
+		invites:                &inviteRepo{db: db},
+		plugins:                &pluginRepo{db: db},
+		plans:                  &planRepo{db: db},
+		loginLogs:              &loginLogRepo{db: db},
+		tokens:                 &tokenRepo{db: db},
+		payments:               &paymentRepo{db: db},
+		servers:                &serverRepo{db: db},
+		groups:                 &serverGroupRepo{db: db},
+		routes:                 &serverRouteRepo{db: db},
+		statUsers:              &statUserRepo{db: db},
+		statServers:            &statServerRepo{db: db},
+		notices:                &noticeRepo{db: db},
+		knowledge:              &knowledgeRepo{db: db},
+		subLogs:                &subscriptionLogRepo{db: db},
+		agentHosts:             newAgentHostRepo(db),
+		configTemplates:        newConfigTemplateRepo(db),
+		serverClientConfigs:    newServerClientConfigRepo(db),
+		userTraffic:            newUserTrafficRepo(db),
+		shortLinks:             NewShortLinkRepository(db),
+		subscriptionTemplates:  newSubscriptionTemplateRepo(db),
+		forwardingRules:        newForwardingRuleRepo(db),
+		forwardingRuleLogs:     newForwardingRuleLogRepo(db),
+		userNoticeReads:        newUserNoticeReadsRepo(db),
+		agentCoreInstances:     newAgentCoreInstanceRepo(db),
+		agentCoreSwitchLogs:    newAgentCoreSwitchLogRepo(db),
+		accessLogs:             newAccessLogRepo(db),
+		inboundSpecs:           newInboundSpecRepo(db),
+		inboundSpecRevisions:   newInboundSpecRevisionRepo(db),
+		desiredArtifacts:       newDesiredArtifactRepo(db),
+		applyRuns:              newApplyRunRepo(db),
+		agentConfigInventories: newAgentConfigInventoryRepo(db),
+		inboundIndexes:         newInboundIndexRepo(db),
+		driftStates:            newDriftStateRepo(db),
 	}
 }
 
@@ -186,4 +200,32 @@ func (s *Store) AgentCoreSwitchLogs() repository.AgentCoreSwitchLogRepository {
 
 func (s *Store) AccessLogs() repository.AccessLogRepository {
 	return s.accessLogs
+}
+
+func (s *Store) InboundSpecs() repository.InboundSpecRepository {
+	return s.inboundSpecs
+}
+
+func (s *Store) InboundSpecRevisions() repository.InboundSpecRevisionRepository {
+	return s.inboundSpecRevisions
+}
+
+func (s *Store) DesiredArtifacts() repository.DesiredArtifactRepository {
+	return s.desiredArtifacts
+}
+
+func (s *Store) ApplyRuns() repository.ApplyRunRepository {
+	return s.applyRuns
+}
+
+func (s *Store) AgentConfigInventories() repository.AgentConfigInventoryRepository {
+	return s.agentConfigInventories
+}
+
+func (s *Store) InboundIndexes() repository.InboundIndexRepository {
+	return s.inboundIndexes
+}
+
+func (s *Store) DriftStates() repository.DriftStateRepository {
+	return s.driftStates
 }

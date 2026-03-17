@@ -212,6 +212,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 		logger,
 	)
 	accessLogService := service.NewAccessLogService(store)
+	inboundSpecService := service.NewInboundSpecService(store.InboundSpecs(), store.InboundSpecRevisions(), store.InboundIndexes())
+	driftAndDiffService := service.NewDriftAndDiffService(store.DesiredArtifacts(), store.AgentConfigInventories(), store.InboundIndexes(), store.DriftStates())
+	inventoryIngestService := service.NewInventoryIngestService(store.AgentConfigInventories(), store.InboundIndexes())
+	applyOrchestratorService := service.NewApplyOrchestratorService(store.DesiredArtifacts(), store.ApplyRuns())
 	shortLinkService := service.NewShortLinkService(store.ShortLinks(), store.Users(), store.Settings())
 
 	scheduler := job.NewScheduler(logger)
@@ -294,6 +298,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 		AgentCore:           agentCoreService,
 		Forwarding:          forwardingService,
 		AccessLog:           accessLogService,
+		InboundSpec:         inboundSpecService,
+		DriftAndDiff:        driftAndDiffService,
+		ApplyOrchestrator:   applyOrchestratorService,
 		UserSelection:       userServerSelectionService,
 		ShortLink:           shortLinkService,
 		TrafficQueue:        trafficQueue,
@@ -341,6 +348,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 			forwardingService,
 			accessLogService,
 			adminSystemSettingsService,
+			inventoryIngestService,
+			applyOrchestratorService,
 			logger,
 		)
 
