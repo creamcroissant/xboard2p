@@ -249,6 +249,29 @@ export interface CreateAgentHostRequest {
   template_id?: number;
 }
 
+export interface CreateAgentHostResponse {
+  id: number;
+  name: string;
+  host: string;
+  token?: string;
+  host_token?: string;
+  provision_status?: number;
+}
+
+export interface RegisterAgentHostRequest {
+  communication_key: string;
+  hostname: string;
+  advertise_host?: string;
+}
+
+export interface RegisterAgentHostResponse {
+  id: number;
+  name: string;
+  host: string;
+  host_token: string;
+  provision_status: number;
+}
+
 export interface UpdateAgentHostRequest extends Partial<CreateAgentHostRequest> {
   id: number;
 }
