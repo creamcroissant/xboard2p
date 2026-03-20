@@ -4,7 +4,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Plus, RefreshCw, Server } from "lucide-react";
 import { QUERY_KEYS } from "@/lib/constants";
-import { getAgentHosts, createAgentHost, refreshAgentHosts } from "@/api/admin";
+import { getAgentHosts, refreshAgentHosts, updateAgentHost } from "@/api/admin";
+import { fetchSettings, revealKey } from "@/api/admin/settings";
 import { AgentStatusCard } from "@/components/admin";
 import { EmptyState, Loading } from "@/components/ui";
 import { Button } from "@/components/ui/button";
@@ -16,22 +17,40 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, ResponsiveGrid } from "@/components/ui";
-import type { AgentHost, CreateAgentHostRequest } from "@/types";
+import { Card, CardContent, CardHeader, ResponsiveGrid, Input } from "@/components/ui";
+import type { AgentHost, UpdateAgentHostRequest } from "@/types";
 import AgentCorePanel from "./AgentCorePanel";
+
+const DEPLOY_SCRIPT_URL =
+  "https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh";
+
+function sanitizeShellArgument(value: string): string {
+  return value.replace(/[\r\n]/g, "").trim();
+}
+
+function shellEscapeSingleQuoted(value: string): string {
+  const sanitized = sanitizeShellArgument(value);
+  return `'${sanitized.replace(/'/g, `'"'"'`)}'`;
+}
+
+function buildDeployCommand(communicationKey: string, grpcAddress: string): string {
+  return [
+    `curl -fsSL ${DEPLOY_SCRIPT_URL} -o /tmp/agent.sh`,
+    `sudo INSTALL_DIR=/opt/xboard sh /tmp/agent.sh --bootstrap --ref latest -- -k ${shellEscapeSingleQuoted(communicationKey)} -g ${shellEscapeSingleQuoted(grpcAddress)}`,
+  ].join(" && ");
+}
 
 export default function AgentList() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isCorePanelOpen, setIsCorePanelOpen] = useState(false);
+  const [isDeployDialogOpen, setIsDeployDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<AgentHost | null>(null);
-  const [newAgent, setNewAgent] = useState<CreateAgentHostRequest>({
-    name: "",
-    host: "",
-    port: 9527,
-  });
+  const [deployCommand, setDeployCommand] = useState("");
+  const [deployMissingAddress, setDeployMissingAddress] = useState(false);
+  const [editForm, setEditForm] = useState({ name: "", host: "" });
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: QUERY_KEYS.ADMIN_AGENTS,
@@ -39,16 +58,30 @@ export default function AgentList() {
     refetchInterval: 30000,
   });
 
-  const createMutation = useMutation({
-    mutationFn: createAgentHost,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.ADMIN_AGENTS });
+  const deployMutation = useMutation({
+    mutationFn: async () => {
+      const [nodeSettings, keyInfo] = await Promise.all([fetchSettings("node"), revealKey()]);
+      const grpcAddress = (nodeSettings.agent_grpc_address || "").trim();
+      const communicationKey = (keyInfo.key || "").trim();
+      return {
+        grpcAddress,
+        communicationKey,
+      };
+    },
+    onSuccess: ({ grpcAddress, communicationKey }) => {
       setIsDialogOpen(false);
-      setNewAgent({ name: "", host: "", port: 9527 });
-      toast.success(t("admin.agents.createSuccess"));
+      const hasGrpcAddress = grpcAddress.length > 0;
+      const hasCommunicationKey = communicationKey.length > 0;
+      setDeployMissingAddress(!hasGrpcAddress);
+      setDeployCommand(
+        hasGrpcAddress && hasCommunicationKey
+          ? buildDeployCommand(communicationKey, grpcAddress)
+          : ""
+      );
+      setIsDeployDialogOpen(true);
     },
     onError: (err: Error) => {
-      toast.error(t("admin.agents.createError"), { description: err.message });
+      toast.error(t("admin.agents.deploy.title"), { description: err.message });
     },
   });
 
@@ -60,21 +93,26 @@ export default function AgentList() {
     },
   });
 
-  const handleCreate = () => {
-    if (!newAgent.name || !newAgent.host) {
-      toast.warning(t("admin.agents.validationError"), {
-        description: t("admin.agents.nameHostRequired"),
-      });
-      return;
-    }
-    createMutation.mutate(newAgent);
+  const updateMutation = useMutation({
+    mutationFn: (payload: UpdateAgentHostRequest) => updateAgentHost(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.ADMIN_AGENTS });
+      setIsEditDialogOpen(false);
+      setSelectedAgent(null);
+      setEditForm({ name: "", host: "" });
+      toast.success(t("admin.agents.updateSuccess"));
+    },
+    onError: (err: Error) => {
+      toast.error(t("admin.agents.updateError"), { description: err.message });
+    },
+  });
+
+  const handleOpenDeployDialog = () => {
+    deployMutation.mutate();
   };
 
   const handleDialogChange = (open: boolean) => {
     setIsDialogOpen(open);
-    if (!open) {
-      setNewAgent({ name: "", host: "", port: 9527 });
-    }
   };
 
   const handleCorePanelChange = (open: boolean) => {
@@ -84,9 +122,65 @@ export default function AgentList() {
     }
   };
 
+  const handleEditDialogChange = (open: boolean) => {
+    setIsEditDialogOpen(open);
+    if (!open) {
+      setSelectedAgent(null);
+      setEditForm({ name: "", host: "" });
+    }
+  };
+
+  const handleDeployDialogChange = (open: boolean) => {
+    setIsDeployDialogOpen(open);
+    if (!open) {
+      setDeployCommand("");
+      setDeployMissingAddress(false);
+    }
+  };
+
   const handleOpenCorePanel = (agent: AgentHost) => {
     setSelectedAgent(agent);
     setIsCorePanelOpen(true);
+  };
+
+  const handleOpenEditDialog = (agent: AgentHost) => {
+    setSelectedAgent(agent);
+    setEditForm({
+      name: agent.name || "",
+      host: agent.host || "",
+    });
+    setIsEditDialogOpen(true);
+  };
+
+  const handleSaveEdit = () => {
+    if (!selectedAgent) return;
+    const name = editForm.name.trim();
+    const host = editForm.host.trim();
+    if (!name || !host) {
+      toast.warning(t("common.error"), {
+        description: t("admin.agents.nameHostRequired"),
+      });
+      return;
+    }
+    updateMutation.mutate({
+      id: selectedAgent.id,
+      name,
+      host,
+    });
+  };
+
+  const handleCopyDeployCommand = async () => {
+    if (!deployCommand) return;
+    try {
+      await navigator.clipboard.writeText(deployCommand);
+      toast.success(t("common.success"), {
+        description: t("admin.agents.deploy.copySuccess"),
+      });
+    } catch {
+      toast.error(t("common.error"), {
+        description: t("admin.agents.deploy.copyError"),
+      });
+    }
   };
 
   const agents: AgentHost[] = data?.data || [];
@@ -120,9 +214,13 @@ export default function AgentList() {
             <RefreshCw className="mr-2 h-4 w-4" />
             {refreshMutation.isPending ? t("common.loading") : t("common.refresh")}
           </Button>
-          <Button data-testid="admin-agents-add-button" onClick={() => setIsDialogOpen(true)}>
+          <Button
+            data-testid="admin-agents-add-button"
+            onClick={() => setIsDialogOpen(true)}
+            disabled={deployMutation.isPending}
+          >
             <Plus className="mr-2 h-4 w-4" />
-            {t("admin.agents.add")}
+            {deployMutation.isPending ? t("common.loading") : t("admin.agents.add")}
           </Button>
         </div>
       </div>
@@ -136,9 +234,13 @@ export default function AgentList() {
             "Add your first agent to start monitoring your nodes"
           }
           action={
-            <Button data-testid="admin-agents-add-button-empty" onClick={() => setIsDialogOpen(true)}>
+            <Button
+              data-testid="admin-agents-add-button-empty"
+              onClick={() => setIsDialogOpen(true)}
+              disabled={deployMutation.isPending}
+            >
               <Plus className="mr-2 h-4 w-4" />
-              {t("admin.agents.add")}
+              {deployMutation.isPending ? t("common.loading") : t("admin.agents.add")}
             </Button>
           }
           size="lg"
@@ -146,7 +248,12 @@ export default function AgentList() {
       ) : (
         <ResponsiveGrid minColWidth={280} gap={16}>
           {agents.map((agent) => (
-            <AgentStatusCard key={agent.id} agent={agent} onClick={() => handleOpenCorePanel(agent)} />
+            <AgentStatusCard
+              key={agent.id}
+              agent={agent}
+              onClick={() => handleOpenCorePanel(agent)}
+              onEdit={() => handleOpenEditDialog(agent)}
+            />
           ))}
         </ResponsiveGrid>
       )}
@@ -159,13 +266,11 @@ export default function AgentList() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isDialogOpen} onOpenChange={handleDialogChange}>
+      <Dialog open={isEditDialogOpen} onOpenChange={handleEditDialogChange}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("admin.agents.addTitle")}</DialogTitle>
-            <DialogDescription>
-              {t("admin.agents.description", { count: agents.length })}
-            </DialogDescription>
+            <DialogDescription>{t("admin.agents.description", { count: agents.length })}</DialogDescription>
           </DialogHeader>
           <Card className="border-none shadow-none">
             <CardHeader className="px-0 pb-2 text-sm font-medium text-muted-foreground">
@@ -175,64 +280,97 @@ export default function AgentList() {
               <div className="space-y-2">
                 <label className="text-sm font-medium">{t("admin.agents.name")}</label>
                 <Input
-                  value={newAgent.name}
+                  value={editForm.name}
                   onChange={(event) =>
-                    setNewAgent({ ...newAgent, name: event.target.value })
+                    setEditForm((prev) => ({
+                      ...prev,
+                      name: event.target.value,
+                    }))
                   }
                   placeholder={t("admin.agents.namePlaceholder")}
-                  required
                   className="h-10"
                 />
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">{t("admin.agents.host")}</label>
                 <Input
-                  value={newAgent.host}
+                  value={editForm.host}
                   onChange={(event) =>
-                    setNewAgent({ ...newAgent, host: event.target.value })
+                    setEditForm((prev) => ({
+                      ...prev,
+                      host: event.target.value,
+                    }))
                   }
                   placeholder={t("admin.agents.hostPlaceholder")}
-                  required
                   className="h-10"
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">{t("admin.agents.port")}</label>
-                <Input
-                  type="number"
-                  value={String(newAgent.port)}
-                  onChange={(event) =>
-                    setNewAgent({
-                      ...newAgent,
-                      port: parseInt(event.target.value, 10) || 9527,
-                    })
-                  }
-                  placeholder="9527"
-                  className="h-10"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">{t("admin.agents.token")}</label>
-                <Input
-                  value={newAgent.token || ""}
-                  onChange={(event) =>
-                    setNewAgent({ ...newAgent, token: event.target.value })
-                  }
-                  placeholder={t("admin.agents.tokenPlaceholder")}
-                  className="h-10"
-                />
-                <p className="text-xs text-muted-foreground">
-                  {t("admin.agents.tokenDescription")}
-                </p>
-              </div>
+            </CardContent>
+          </Card>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => handleEditDialogChange(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button onClick={handleSaveEdit} disabled={updateMutation.isPending}>
+              {updateMutation.isPending ? t("common.loading") : t("common.save")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isDialogOpen} onOpenChange={handleDialogChange}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("admin.agents.deploy.title")}</DialogTitle>
+            <DialogDescription>{t("admin.agents.deploy.description")}</DialogDescription>
+          </DialogHeader>
+          <Card className="border-none shadow-none">
+            <CardHeader className="px-0 pb-2 text-sm font-medium text-muted-foreground">
+              {t("admin.agents.deploy.title")}
+            </CardHeader>
+            <CardContent className="space-y-4 px-0">
+              <p className="text-sm text-muted-foreground">{t("admin.agents.deploy.description")}</p>
             </CardContent>
           </Card>
           <DialogFooter>
             <Button variant="outline" onClick={() => handleDialogChange(false)}>
               {t("common.cancel")}
             </Button>
-            <Button onClick={handleCreate} disabled={createMutation.isPending}>
-              {createMutation.isPending ? t("common.loading") : t("common.create")}
+            <Button onClick={handleOpenDeployDialog} disabled={deployMutation.isPending}>
+              {deployMutation.isPending ? t("common.loading") : t("common.create")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isDeployDialogOpen} onOpenChange={handleDeployDialogChange}>
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{t("admin.agents.deploy.title")}</DialogTitle>
+            <DialogDescription>{t("admin.agents.deploy.description")}</DialogDescription>
+          </DialogHeader>
+          {deployCommand ? (
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t("admin.agents.deploy.command")}</label>
+              <pre className="max-h-72 overflow-x-auto whitespace-pre-wrap break-all rounded-md border border-border bg-muted p-3 text-xs font-mono">
+                {deployCommand}
+              </pre>
+            </div>
+          ) : (
+            <p className="text-sm text-amber-600">
+              {deployMissingAddress
+                ? t("admin.agents.deploy.missingAddress")
+                : t("admin.agents.deploy.missingCommunicationKey")}
+            </p>
+          )}
+          <DialogFooter>
+            {deployCommand && (
+              <Button type="button" variant="outline" onClick={handleCopyDeployCommand}>
+                {t("admin.agents.deploy.copy")}
+              </Button>
+            )}
+            <Button type="button" onClick={() => handleDeployDialogChange(false)}>
+              {t("common.close")}
             </Button>
           </DialogFooter>
         </DialogContent>

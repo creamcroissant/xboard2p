@@ -1,14 +1,16 @@
 import { useTranslation } from "react-i18next";
-import { ArrowDown, ArrowUp, Clock, Cpu, HardDrive, MemoryStick } from "lucide-react";
+import { ArrowDown, ArrowUp, Clock, Cpu, HardDrive, MemoryStick, Pencil } from "lucide-react";
 import { AgentStatus, type AgentHost } from "@/types";
 import ResourceGauge from "./ResourceGauge";
 import { formatBytes } from "@/lib/format";
 import { Card, CardContent, CardHeader } from "@/components/ui";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 interface AgentStatusCardProps {
   agent: AgentHost;
   onClick?: () => void;
+  onEdit?: () => void;
 }
 
 function formatRelativeTime(
@@ -39,7 +41,7 @@ function getStatusConfig(status: AgentStatus, t: (key: string) => string) {
   }
 }
 
-export default function AgentStatusCard({ agent, onClick }: AgentStatusCardProps) {
+export default function AgentStatusCard({ agent, onClick, onEdit }: AgentStatusCardProps) {
   const { t } = useTranslation();
   const statusConfig = getStatusConfig(agent.status, t);
 
@@ -69,7 +71,24 @@ export default function AgentStatusCard({ agent, onClick }: AgentStatusCardProps
             {agent.host}:{agent.port}
           </span>
         </div>
-        <Badge variant={statusConfig.variant}>{statusConfig.label}</Badge>
+        <div className="flex items-center gap-2">
+          {onEdit && (
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              aria-label={t("common.edit")}
+              onClick={(event) => {
+                event.stopPropagation();
+                onEdit();
+              }}
+            >
+              <Pencil className="h-4 w-4" />
+            </Button>
+          )}
+          <Badge variant={statusConfig.variant}>{statusConfig.label}</Badge>
+        </div>
       </CardHeader>
 
       <CardContent className="space-y-3">

@@ -446,6 +446,208 @@ func (x *SwitchCoreResponse) GetError() string {
 	return ""
 }
 
+// InstallCoreRequest requests controlled core installation or upgrade.
+type InstallCoreRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CoreType      string                 `protobuf:"bytes,1,opt,name=core_type,json=coreType,proto3" json:"core_type,omitempty"`
+	Action        string                 `protobuf:"bytes,2,opt,name=action,proto3" json:"action,omitempty"`
+	Version       string                 `protobuf:"bytes,3,opt,name=version,proto3" json:"version,omitempty"`
+	Channel       string                 `protobuf:"bytes,4,opt,name=channel,proto3" json:"channel,omitempty"`
+	Flavor        string                 `protobuf:"bytes,5,opt,name=flavor,proto3" json:"flavor,omitempty"`
+	Activate      bool                   `protobuf:"varint,6,opt,name=activate,proto3" json:"activate,omitempty"`
+	RequestId     string                 `protobuf:"bytes,7,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InstallCoreRequest) Reset() {
+	*x = InstallCoreRequest{}
+	mi := &file_agent_v1_core_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InstallCoreRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InstallCoreRequest) ProtoMessage() {}
+
+func (x *InstallCoreRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_core_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InstallCoreRequest.ProtoReflect.Descriptor instead.
+func (*InstallCoreRequest) Descriptor() ([]byte, []int) {
+	return file_agent_v1_core_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *InstallCoreRequest) GetCoreType() string {
+	if x != nil {
+		return x.CoreType
+	}
+	return ""
+}
+
+func (x *InstallCoreRequest) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+func (x *InstallCoreRequest) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *InstallCoreRequest) GetChannel() string {
+	if x != nil {
+		return x.Channel
+	}
+	return ""
+}
+
+func (x *InstallCoreRequest) GetFlavor() string {
+	if x != nil {
+		return x.Flavor
+	}
+	return ""
+}
+
+func (x *InstallCoreRequest) GetActivate() bool {
+	if x != nil {
+		return x.Activate
+	}
+	return false
+}
+
+func (x *InstallCoreRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+// InstallCoreResponse reports install or upgrade result.
+type InstallCoreResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Success         bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Changed         bool                   `protobuf:"varint,2,opt,name=changed,proto3" json:"changed,omitempty"`
+	Message         string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	Error           string                 `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
+	CoreType        string                 `protobuf:"bytes,5,opt,name=core_type,json=coreType,proto3" json:"core_type,omitempty"`
+	Version         string                 `protobuf:"bytes,6,opt,name=version,proto3" json:"version,omitempty"`
+	PreviousVersion string                 `protobuf:"bytes,7,opt,name=previous_version,json=previousVersion,proto3" json:"previous_version,omitempty"`
+	Activated       bool                   `protobuf:"varint,8,opt,name=activated,proto3" json:"activated,omitempty"`
+	RolledBack      bool                   `protobuf:"varint,9,opt,name=rolled_back,json=rolledBack,proto3" json:"rolled_back,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *InstallCoreResponse) Reset() {
+	*x = InstallCoreResponse{}
+	mi := &file_agent_v1_core_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InstallCoreResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InstallCoreResponse) ProtoMessage() {}
+
+func (x *InstallCoreResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_core_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InstallCoreResponse.ProtoReflect.Descriptor instead.
+func (*InstallCoreResponse) Descriptor() ([]byte, []int) {
+	return file_agent_v1_core_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *InstallCoreResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *InstallCoreResponse) GetChanged() bool {
+	if x != nil {
+		return x.Changed
+	}
+	return false
+}
+
+func (x *InstallCoreResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *InstallCoreResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *InstallCoreResponse) GetCoreType() string {
+	if x != nil {
+		return x.CoreType
+	}
+	return ""
+}
+
+func (x *InstallCoreResponse) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *InstallCoreResponse) GetPreviousVersion() string {
+	if x != nil {
+		return x.PreviousVersion
+	}
+	return ""
+}
+
+func (x *InstallCoreResponse) GetActivated() bool {
+	if x != nil {
+		return x.Activated
+	}
+	return false
+}
+
+func (x *InstallCoreResponse) GetRolledBack() bool {
+	if x != nil {
+		return x.RolledBack
+	}
+	return false
+}
+
 var File_agent_v1_core_proto protoreflect.FileDescriptor
 
 const file_agent_v1_core_proto_rawDesc = "" +
@@ -486,7 +688,27 @@ const file_agent_v1_core_proto_rawDesc = "" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12&\n" +
 	"\x0fnew_instance_id\x18\x02 \x01(\tR\rnewInstanceId\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage\x12\x14\n" +
-	"\x05error\x18\x04 \x01(\tR\x05errorB:Z8github.com/creamcroissant/xboard/pkg/pb/agent/v1;agentv1b\x06proto3"
+	"\x05error\x18\x04 \x01(\tR\x05error\"\xd0\x01\n" +
+	"\x12InstallCoreRequest\x12\x1b\n" +
+	"\tcore_type\x18\x01 \x01(\tR\bcoreType\x12\x16\n" +
+	"\x06action\x18\x02 \x01(\tR\x06action\x12\x18\n" +
+	"\aversion\x18\x03 \x01(\tR\aversion\x12\x18\n" +
+	"\achannel\x18\x04 \x01(\tR\achannel\x12\x16\n" +
+	"\x06flavor\x18\x05 \x01(\tR\x06flavor\x12\x1a\n" +
+	"\bactivate\x18\x06 \x01(\bR\bactivate\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\a \x01(\tR\trequestId\"\x9a\x02\n" +
+	"\x13InstallCoreResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
+	"\achanged\x18\x02 \x01(\bR\achanged\x12\x18\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\x12\x14\n" +
+	"\x05error\x18\x04 \x01(\tR\x05error\x12\x1b\n" +
+	"\tcore_type\x18\x05 \x01(\tR\bcoreType\x12\x18\n" +
+	"\aversion\x18\x06 \x01(\tR\aversion\x12)\n" +
+	"\x10previous_version\x18\a \x01(\tR\x0fpreviousVersion\x12\x1c\n" +
+	"\tactivated\x18\b \x01(\bR\tactivated\x12\x1f\n" +
+	"\vrolled_back\x18\t \x01(\bR\n" +
+	"rolledBackB:Z8github.com/creamcroissant/xboard/pkg/pb/agent/v1;agentv1b\x06proto3"
 
 var (
 	file_agent_v1_core_proto_rawDescOnce sync.Once
@@ -500,14 +722,16 @@ func file_agent_v1_core_proto_rawDescGZIP() []byte {
 	return file_agent_v1_core_proto_rawDescData
 }
 
-var file_agent_v1_core_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_agent_v1_core_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_agent_v1_core_proto_goTypes = []any{
-	(*CoreInfo)(nil),           // 0: agent.v1.CoreInfo
-	(*CoreInstance)(nil),       // 1: agent.v1.CoreInstance
-	(*GetCoresRequest)(nil),    // 2: agent.v1.GetCoresRequest
-	(*GetCoresResponse)(nil),   // 3: agent.v1.GetCoresResponse
-	(*SwitchCoreRequest)(nil),  // 4: agent.v1.SwitchCoreRequest
-	(*SwitchCoreResponse)(nil), // 5: agent.v1.SwitchCoreResponse
+	(*CoreInfo)(nil),            // 0: agent.v1.CoreInfo
+	(*CoreInstance)(nil),        // 1: agent.v1.CoreInstance
+	(*GetCoresRequest)(nil),     // 2: agent.v1.GetCoresRequest
+	(*GetCoresResponse)(nil),    // 3: agent.v1.GetCoresResponse
+	(*SwitchCoreRequest)(nil),   // 4: agent.v1.SwitchCoreRequest
+	(*SwitchCoreResponse)(nil),  // 5: agent.v1.SwitchCoreResponse
+	(*InstallCoreRequest)(nil),  // 6: agent.v1.InstallCoreRequest
+	(*InstallCoreResponse)(nil), // 7: agent.v1.InstallCoreResponse
 }
 var file_agent_v1_core_proto_depIdxs = []int32{
 	0, // 0: agent.v1.GetCoresResponse.cores:type_name -> agent.v1.CoreInfo
@@ -530,7 +754,7 @@ func file_agent_v1_core_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agent_v1_core_proto_rawDesc), len(file_agent_v1_core_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

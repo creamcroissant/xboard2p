@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"text/template"
 	"time"
 
@@ -40,7 +41,10 @@ type Config struct {
 	// ValidateCmd 是应用配置前执行的校验命令
 	ValidateCmd string `yaml:"validate_cmd"`
 
-	// AutoRestart 控制配置变更后是否重启服务
+	// ServiceAction controls whether changes trigger reload/restart/none.
+	ServiceAction string `yaml:"service_action"`
+
+	// AutoRestart 是旧字段兼容映射：true -> reload, false -> none。
 	AutoRestart bool `yaml:"auto_restart"`
 
 	// PreHook 是应用配置前执行的钩子命令
@@ -59,6 +63,7 @@ func DefaultConfig() Config {
 		MergeOutputFile:  "config.json",
 		ServiceName:      "sing-box",
 		ValidateCmd:      "",
+		ServiceAction:    string(ReloadServiceAction),
 		AutoRestart:      true,
 	}
 }
@@ -77,6 +82,7 @@ type Manager struct {
 	cfg      Config
 	init     initsys.InitSystem
 	registry *parser.Registry
+	applyMu  sync.Mutex
 }
 
 // NewManager 创建协议管理器实例。
@@ -200,16 +206,12 @@ func (m *Manager) WriteConfigToSource(source, filename string, content []byte) e
 
 	path := filepath.Join(dir, name)
 
-	if !json.Valid(content) {
-		return fmt.Errorf("invalid JSON content")
+	formattedContent, err := formatConfigContent(content)
+	if err != nil {
+		return err
 	}
 
-	var prettyJSON bytes.Buffer
-	if err := json.Indent(&prettyJSON, content, "", "  "); err != nil {
-		return fmt.Errorf("format JSON: %w", err)
-	}
-
-	if err := os.WriteFile(path, prettyJSON.Bytes(), 0644); err != nil {
+	if err := os.WriteFile(path, formattedContent, 0644); err != nil {
 		return fmt.Errorf("write config file: %w", err)
 	}
 
@@ -237,19 +239,11 @@ func (m *Manager) DeleteConfigFromSource(source, filename string) error {
 
 // CreateFromTemplate 根据模板生成配置文件。
 func (m *Manager) CreateFromTemplate(filename, tmplContent string, vars map[string]any) error {
-	// 解析模板
-	tmpl, err := template.New("config").Funcs(templateFuncs()).Parse(tmplContent)
+	content, err := renderTemplateContent(tmplContent, vars)
 	if err != nil {
-		return fmt.Errorf("parse template: %w", err)
+		return err
 	}
-
-	// 执行模板渲染
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, vars); err != nil {
-		return fmt.Errorf("execute template: %w", err)
-	}
-
-	return m.WriteConfig(filename, buf.Bytes())
+	return m.WriteConfig(filename, content)
 }
 
 // ValidateConfig 校验当前配置（若未配置校验命令则跳过）。
@@ -288,6 +282,11 @@ func (m *Manager) ReloadServiceWithValidationDir(ctx context.Context, dir string
 }
 
 func (m *Manager) reloadServiceWithValidationDir(ctx context.Context, validateDir string) error {
+	action, err := normalizeServiceAction(m.cfg)
+	if err != nil {
+		return err
+	}
+
 	// 执行预处理钩子
 	if m.cfg.PreHook != "" {
 		if err := runCommand(ctx, m.cfg.PreHook); err != nil {
@@ -299,98 +298,85 @@ func (m *Manager) reloadServiceWithValidationDir(ctx context.Context, validateDi
 		return fmt.Errorf("config validation failed: %w", err)
 	}
 
-	// 按需重启服务
-	if m.cfg.AutoRestart {
+	switch action {
+	case ReloadServiceAction:
+		if err := m.init.Reload(ctx, m.cfg.ServiceName); err != nil {
+			return fmt.Errorf("reload service: %w", err)
+		}
+	case RestartServiceAction:
 		if err := m.init.Restart(ctx, m.cfg.ServiceName); err != nil {
 			return fmt.Errorf("restart service: %w", err)
 		}
+	case NoneServiceAction:
+		// no-op
+		return m.runPostHook(ctx)
+	default:
+		return fmt.Errorf("invalid service_action %q", action)
 	}
 
-	// 执行后置钩子
+	return m.runPostHook(ctx)
+}
+
+// ServiceStatus 返回 sing-box 服务是否运行中。
+func (m *Manager) runPostHook(ctx context.Context) error {
 	if m.cfg.PostHook != "" {
 		if err := runCommand(ctx, m.cfg.PostHook); err != nil {
 			return fmt.Errorf("post-hook failed: %w", err)
 		}
 	}
-
 	return nil
 }
 
-// ServiceStatus 返回 sing-box 服务是否运行中。
+func (m *Manager) validateServiceAction() error {
+	_, err := normalizeServiceAction(m.cfg)
+	return err
+}
+
 func (m *Manager) ServiceStatus(ctx context.Context) (bool, error) {
 	return m.init.Status(ctx, m.cfg.ServiceName)
 }
 
 // ApplyConfig 写入指定配置并重载服务。
 func (m *Manager) ApplyConfig(ctx context.Context, filename string, content []byte) error {
-	targetFilename := strings.TrimSpace(filename)
-	if targetFilename == "" {
-		targetFilename = "config.json"
-	}
-	if strings.TrimSpace(targetFilename) == "" {
-		return fmt.Errorf("filename is required")
-	}
-
-	validateDir, err := m.dirForSource("current")
-	if err != nil {
-		return err
-	}
-	if err := m.WriteConfigToSource("current", targetFilename, content); err != nil {
-		return err
-	}
-	return m.reloadServiceWithValidationDir(ctx, validateDir)
+	return m.applyPatchWithCore(ctx, "", filename, content)
 }
 
 // ApplyConfigWithCore 在指定核心模式下写入配置并重载服务。
 func (m *Manager) ApplyConfigWithCore(ctx context.Context, coreType, filename string, content []byte) error {
-	rawCore := strings.TrimSpace(coreType)
-	if rawCore == "" {
-		return m.ApplyConfig(ctx, filename, content)
-	}
-	normalizedCore := normalizeCoreType(rawCore)
-	if normalizedCore == "" {
-		return fmt.Errorf("invalid core_type")
-	}
-
-	targetFilename := strings.TrimSpace(filename)
-	targetSource := "managed"
-	if normalizedCore == "xray" {
-		targetSource = "merged"
-		targetFilename = strings.TrimSpace(m.cfg.MergeOutputFile)
-		if targetFilename == "" {
-			targetFilename = "config.json"
-		}
-	} else if targetFilename == "" {
-		targetFilename = "config.json"
-	}
-	if strings.TrimSpace(targetFilename) == "" {
-		return fmt.Errorf("filename is required")
-	}
-
-	validateDir, err := m.dirForCore(normalizedCore)
-	if err != nil {
-		return err
-	}
-	if err := m.WriteConfigToSource(targetSource, targetFilename, content); err != nil {
-		return err
-	}
-	return m.reloadServiceWithValidationDir(ctx, validateDir)
+	return m.applyPatchWithCore(ctx, coreType, filename, content)
 }
 
 // ApplyFromTemplate 根据模板生成配置并重载服务。
 func (m *Manager) ApplyFromTemplate(ctx context.Context, filename, tmpl string, vars map[string]any) error {
-	if err := m.CreateFromTemplate(filename, tmpl, vars); err != nil {
+	content, err := renderTemplateContent(tmpl, vars)
+	if err != nil {
 		return err
 	}
-	return m.ReloadService(ctx)
+	return m.applyPatchWithCore(ctx, "", filename, content)
 }
 
 // RemoveConfig 删除配置并重载服务。
 func (m *Manager) RemoveConfig(ctx context.Context, filename string) error {
-	if err := m.DeleteConfig(filename); err != nil {
+	if err := m.validateServiceAction(); err != nil {
 		return err
 	}
-	return m.ReloadService(ctx)
+	targetFilename, err := defaultPatchFilename(filename)
+	if err != nil {
+		return err
+	}
+	if _, err := m.ReadConfig(targetFilename); err != nil {
+		return err
+	}
+	_, err = m.ExecuteStagedApply(ctx, StagedApplyRequest{
+		Mode: StagedApplyModePatch,
+		PatchOperations: []StagedApplyPatchOperation{
+			{
+				Type:     StagedApplyPatchOperationDelete,
+				Filename: targetFilename,
+			},
+		},
+	})
+	return err
 }
 
 // templateFuncs 返回模板函数集合。
@@ -412,6 +398,73 @@ func templateFuncs() template.FuncMap {
 	}
 }
 
+func formatConfigContent(content []byte) ([]byte, error) {
+	if !json.Valid(content) {
+		return nil, fmt.Errorf("invalid JSON content")
+	}
+
+	var prettyJSON bytes.Buffer
+	if err := json.Indent(&prettyJSON, content, "", "  "); err != nil {
+		return nil, fmt.Errorf("format JSON: %w", err)
+	}
+	return prettyJSON.Bytes(), nil
+}
+
+func renderTemplateContent(tmplContent string, vars map[string]any) ([]byte, error) {
+	tmpl, err := template.New("config").Funcs(templateFuncs()).Parse(tmplContent)
+	if err != nil {
+		return nil, fmt.Errorf("parse template: %w", err)
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, vars); err != nil {
+		return nil, fmt.Errorf("execute template: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
+func defaultPatchFilename(filename string) (string, error) {
+	targetFilename := strings.TrimSpace(filename)
+	if targetFilename == "" {
+		targetFilename = "config.json"
+	}
+	return sanitizeFilename(targetFilename)
+}
+
+func patchFilenameForCore(_ Config, _ string, filename string) (string, error) {
+	return defaultPatchFilename(filename)
+}
+
+func (m *Manager) applyPatchWithCore(ctx context.Context, coreType, filename string, content []byte) error {
+	if err := m.validateServiceAction(); err != nil {
+		return err
+	}
+	normalizedCore, err := normalizeStagedApplyCoreType(coreType)
+	if err != nil {
+		return err
+	}
+	targetFilename, err := patchFilenameForCore(m.cfg, normalizedCore, filename)
+	if err != nil {
+		return err
+	}
+	formattedContent, err := formatConfigContent(content)
+	if err != nil {
+		return err
+	}
+	_, err = m.ExecuteStagedApply(ctx, StagedApplyRequest{
+		Mode:     StagedApplyModePatch,
+		CoreType: normalizedCore,
+		PatchOperations: []StagedApplyPatchOperation{
+			{
+				Type:     StagedApplyPatchOperationUpsert,
+				Filename: targetFilename,
+				Content:  formattedContent,
+			},
+		},
+	})
+	return err
+}
+
 func sanitizeFilename(filename string) (string, error) {
 	trimmed := strings.TrimSpace(filename)
 	if trimmed == "" {
@@ -426,6 +479,9 @@ func sanitizeFilename(filename string) (string, error) {
 	}
 	base := filepath.Base(cleaned)
 	if base != cleaned {
+		return "", fmt.Errorf("invalid filename")
+	}
+	if !strings.HasSuffix(strings.ToLower(base), ".json") {
 		return "", fmt.Errorf("invalid filename")
 	}
 	return base, nil

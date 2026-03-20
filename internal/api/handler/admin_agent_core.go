@@ -179,6 +179,17 @@ type SwitchCoreRequest struct {
 	ZeroDowntime     *bool           `json:"zero_downtime"`
 }
 
+// InstallCoreRequest 定义核心安装/升级请求体。
+type InstallCoreRequest struct {
+	CoreType  string `json:"core_type"`
+	Action    string `json:"action"`
+	Version   string `json:"version"`
+	Channel   string `json:"channel"`
+	Flavor    string `json:"flavor"`
+	Activate  bool   `json:"activate"`
+	RequestID string `json:"request_id"`
+}
+
 // SwitchCore 处理 POST /api/v2/admin/agent-hosts/{id}/core-switch。
 func (h *AdminAgentCoreHandler) SwitchCore(w http.ResponseWriter, r *http.Request) {
 	adminID, ok := h.requireAdmin(w, r)
@@ -216,6 +227,48 @@ func (h *AdminAgentCoreHandler) SwitchCore(w http.ResponseWriter, r *http.Reques
 	})
 	if err != nil {
 		h.respondServiceError(r.Context(), w, "admin.agent_core.switch", err)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]any{"data": result})
+}
+
+// InstallCore 处理 POST /api/v2/admin/agent-hosts/{id}/core-install。
+func (h *AdminAgentCoreHandler) InstallCore(w http.ResponseWriter, r *http.Request) {
+	adminID, ok := h.requireAdmin(w, r)
+	if !ok {
+		return
+	}
+	if h.cores == nil {
+		RespondErrorI18nAction(r.Context(), w, http.StatusServiceUnavailable, "admin.agent_core.install", "error.service_unavailable", h.i18n)
+		return
+	}
+
+	agentHostID, err := parseInt64(chi.URLParam(r, "id"))
+	if err != nil || agentHostID <= 0 {
+		RespondErrorI18nAction(r.Context(), w, http.StatusBadRequest, "admin.agent_core.install", "error.bad_request", h.i18n)
+		return
+	}
+
+	var req InstallCoreRequest
+	if err := decodeJSON(r, &req); err != nil {
+		RespondErrorI18nAction(r.Context(), w, http.StatusBadRequest, "admin.agent_core.install", "error.bad_request", h.i18n)
+		return
+	}
+
+	result, err := h.cores.InstallCore(r.Context(), service.InstallCoreRequest{
+		AgentHostID: agentHostID,
+		CoreType:    req.CoreType,
+		Action:      req.Action,
+		Version:     req.Version,
+		Channel:     req.Channel,
+		Flavor:      req.Flavor,
+		Activate:    req.Activate,
+		RequestID:   req.RequestID,
+		OperatorID:  &adminID,
+	})
+	if err != nil {
+		h.respondServiceError(r.Context(), w, "admin.agent_core.install", err)
 		return
 	}
 
@@ -334,6 +387,9 @@ func (h *AdminAgentCoreHandler) respondServiceError(ctx context.Context, w http.
 	if errors.Is(err, service.ErrNotFound) {
 		status = http.StatusNotFound
 		key = "error.not_found"
+	} else if errors.Is(err, service.ErrBadRequest) {
+		status = http.StatusBadRequest
+		key = "error.bad_request"
 	} else if errors.Is(err, service.ErrNotImplemented) {
 		status = http.StatusNotImplemented
 		key = "error.bad_request"

@@ -29,6 +29,7 @@ type Config struct {
 type TimeoutConfig struct {
 	Default time.Duration
 	Connect time.Duration
+	Install time.Duration
 }
 
 // TLSConfig 保存 TLS 设置。
@@ -66,6 +67,9 @@ func NewAgentClient(cfg Config) (*AgentClient, error) {
 	}
 	if cfg.Timeout.Connect == 0 {
 		cfg.Timeout.Connect = 5 * time.Second
+	}
+	if cfg.Timeout.Install == 0 {
+		cfg.Timeout.Install = 5 * time.Minute
 	}
 
 	opts := []grpc.DialOption{
@@ -142,10 +146,13 @@ func (c *AgentClient) Close() error {
 }
 
 func (c *AgentClient) call(ctx context.Context, fn func(context.Context) error) error {
+	return c.callWithTimeout(ctx, c.config.Timeout.Default, fn)
+}
+
+func (c *AgentClient) callWithTimeout(ctx context.Context, timeout time.Duration, fn func(context.Context) error) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	timeout := c.config.Timeout.Default
 	callCtx := ctx
 	var cancel context.CancelFunc
 	if timeout > 0 {
@@ -157,8 +164,12 @@ func (c *AgentClient) call(ctx context.Context, fn func(context.Context) error) 
 }
 
 func callUnary[T any](ctx context.Context, c *AgentClient, fn func(context.Context) (*T, error)) (*T, error) {
+	return callUnaryWithTimeout(ctx, c, c.config.Timeout.Default, fn)
+}
+
+func callUnaryWithTimeout[T any](ctx context.Context, c *AgentClient, timeout time.Duration, fn func(context.Context) (*T, error)) (*T, error) {
 	var resp *T
-	err := c.call(ctx, func(inner context.Context) error {
+	err := c.callWithTimeout(ctx, timeout, func(inner context.Context) error {
 		var err error
 		resp, err = fn(inner)
 		return err
@@ -183,6 +194,16 @@ func (c *AgentClient) SwitchCore(ctx context.Context, req *agentv1.SwitchCoreReq
 	}
 	return callUnary(ctx, c, func(ctx context.Context) (*agentv1.SwitchCoreResponse, error) {
 		return c.client.SwitchCore(ctx, req)
+	})
+}
+
+// InstallCore 请求 Agent 进行受控核心安装或升级。
+func (c *AgentClient) InstallCore(ctx context.Context, req *agentv1.InstallCoreRequest) (*agentv1.InstallCoreResponse, error) {
+	if req == nil {
+		req = &agentv1.InstallCoreRequest{}
+	}
+	return callUnaryWithTimeout(ctx, c, c.config.Timeout.Install, func(ctx context.Context) (*agentv1.InstallCoreResponse, error) {
+		return c.client.InstallCore(ctx, req)
 	})
 }
 

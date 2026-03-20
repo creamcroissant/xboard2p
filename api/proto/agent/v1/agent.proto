@@ -49,6 +49,9 @@ service AgentService {
   // SwitchCore requests core switch
   rpc SwitchCore(SwitchCoreRequest) returns (SwitchCoreResponse);
 
+  // InstallCore requests controlled core installation or upgrade
+  rpc InstallCore(InstallCoreRequest) returns (InstallCoreResponse);
+
   // ReportAccessLogs reports access logs
   rpc ReportAccessLogs(AccessLogReport) returns (AccessLogResponse);
 

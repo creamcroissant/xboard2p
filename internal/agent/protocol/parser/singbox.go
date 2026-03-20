@@ -24,9 +24,21 @@ func (p *SingBoxParser) CanParse(content []byte) bool {
 		return false
 	}
 
-	// sing-box 使用 "inbounds" 数组
-	_, hasInbounds := raw["inbounds"]
-	return hasInbounds
+	inboundsRaw, hasInbounds := raw["inbounds"]
+	if !hasInbounds {
+		return false
+	}
+
+	var inbounds []map[string]json.RawMessage
+	if err := json.Unmarshal(inboundsRaw, &inbounds); err != nil {
+		return false
+	}
+	for _, inbound := range inbounds {
+		if _, hasType := inbound["type"]; hasType {
+			return true
+		}
+	}
+	return false
 }
 
 // Parse 解析 sing-box 配置并提取协议详情。
@@ -138,9 +150,9 @@ type singBoxTransport struct {
 }
 
 type singBoxMultiplex struct {
-	Enabled bool              `json:"enabled"`
-	Padding bool              `json:"padding"`
-	Brutal  *singBoxBrutal    `json:"brutal"`
+	Enabled bool           `json:"enabled"`
+	Padding bool           `json:"padding"`
+	Brutal  *singBoxBrutal `json:"brutal"`
 }
 
 type singBoxBrutal struct {

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -16,11 +16,13 @@ import { QUERY_KEYS } from "@/lib/constants";
 import {
   createConfigCenterApplyRun,
   createConfigCenterSpec,
+  getConfigCenterApplyRunDetail,
   getConfigCenterSemanticDiff,
   getConfigCenterSpecHistory,
   getConfigCenterTextDiff,
   importConfigCenterSpecsFromApplied,
   listConfigCenterAppliedSnapshot,
+  listConfigCenterApplyRuns,
   listConfigCenterDriftStates,
   listConfigCenterRecoveryStates,
   listConfigCenterSpecs,
@@ -31,6 +33,8 @@ import { formatDateTime } from "@/lib/format";
 import type {
   AgentHost,
   ConfigCenterAppliedSnapshot,
+  ConfigCenterApplyRun,
+  ConfigCenterApplyRunDetail,
   ConfigCenterCoreType,
   ConfigCenterSpec,
   ConfigCenterSpecRevision,
@@ -72,6 +76,7 @@ import {
   TabsTrigger,
   Textarea,
 } from "@/components/ui";
+import { isAdminApiError } from "@/api/admin/client";
 
 type CoreTypeOption = ConfigCenterCoreType;
 
@@ -160,6 +165,75 @@ function formatDriftVariant(driftType: string): "danger" | "warning" | "secondar
   }
 }
 
+function formatApplyStatusVariant(
+  status: string
+): "success" | "warning" | "danger" | "secondary" {
+  switch (status) {
+    case "success":
+      return "success";
+    case "failed":
+    case "rolled_back":
+      return "danger";
+    case "applying":
+      return "warning";
+    default:
+      return "secondary";
+  }
+}
+
+function formatAdminErrorDetails(error: unknown): string | undefined {
+  if (!isAdminApiError(error) || !error.details || typeof error.details !== "object") {
+    return undefined;
+  }
+
+  const details = error.details as {
+    violations?: Array<{ field?: string; message?: string }>;
+    conflict?: {
+      kind?: string;
+      field?: string;
+      value?: string;
+      existing_spec_id?: number;
+      existing_tag?: string;
+    };
+  };
+
+  if (Array.isArray(details.violations) && details.violations.length > 0) {
+    return details.violations
+      .map((item) => {
+        const field = item.field?.trim();
+        const message = item.message?.trim();
+        if (field && message) {
+          return `${field}: ${message}`;
+        }
+        return field || message || "";
+      })
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  if (details.conflict) {
+    const parts = [
+      details.conflict.kind,
+      details.conflict.field,
+      details.conflict.value,
+      details.conflict.existing_tag,
+      details.conflict.existing_spec_id ? `spec_id=${details.conflict.existing_spec_id}` : undefined,
+    ].filter(Boolean);
+    if (parts.length > 0) {
+      return parts.join(" | ");
+    }
+  }
+
+  return undefined;
+}
+
+function formatQueryErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+  return "Request failed";
+}
+
 export default function ConfigCenterPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -167,6 +241,8 @@ export default function ConfigCenterPage() {
   const [selectedHostId, setSelectedHostId] = useState<number | null>(null);
   const [selectedCoreType, setSelectedCoreType] = useState<CoreTypeOption>("sing-box");
   const [selectedSpec, setSelectedSpec] = useState<ConfigCenterSpec | null>(null);
+  const [activeTab, setActiveTab] = useState("specs");
+  const [activeDiffTab, setActiveDiffTab] = useState("text");
 
   const [isSpecDialogOpen, setIsSpecDialogOpen] = useState(false);
   const [isHistoryDialogOpen, setIsHistoryDialogOpen] = useState(false);
@@ -177,6 +253,8 @@ export default function ConfigCenterPage() {
   const [applyForm, setApplyForm] = useState<ApplyFormState>(defaultApplyFormState);
 
   const [historyTarget, setHistoryTarget] = useState<ConfigCenterSpec | null>(null);
+  const [selectedApplyRunId, setSelectedApplyRunId] = useState<string>("");
+  const [selectedApplyRun, setSelectedApplyRun] = useState<ConfigCenterApplyRun | null>(null);
 
   const [diffFilename, setDiffFilename] = useState("");
   const [diffTag, setDiffTag] = useState("");
@@ -277,7 +355,7 @@ export default function ConfigCenterPage() {
         filename: diffFilename.trim() || undefined,
         tag: diffTag.trim() || undefined,
       }),
-    enabled: selectedHostId !== null,
+    enabled: selectedHostId !== null && Boolean(diffFilename.trim() || diffTag.trim()),
   });
 
   const semanticDiffQuery = useQuery({
@@ -298,6 +376,39 @@ export default function ConfigCenterPage() {
     enabled: selectedHostId !== null,
   });
 
+  const applyRunsQuery = useQuery({
+    queryKey: [
+      ...QUERY_KEYS.ADMIN_CONFIG_CENTER_APPLY_RUNS,
+      selectedHostId,
+      selectedCoreType,
+    ],
+    queryFn: () =>
+      listConfigCenterApplyRuns({
+        agent_host_id: selectedHostId ?? 0,
+        core_type: selectedCoreType,
+        limit: 20,
+        offset: 0,
+      }),
+    enabled: selectedHostId !== null,
+  });
+
+  const applyDetailQuery = useQuery({
+    queryKey: [
+      ...QUERY_KEYS.ADMIN_CONFIG_CENTER_APPLY_RUNS,
+      "detail",
+      selectedApplyRunId,
+      diffTag,
+      diffFilename,
+    ],
+    queryFn: () =>
+      getConfigCenterApplyRunDetail(selectedApplyRunId, {
+        include_text: Boolean(diffTag.trim() || diffFilename.trim()),
+        text_tag: diffTag.trim() || undefined,
+        text_file: diffFilename.trim() || undefined,
+      }),
+    enabled: selectedHostId !== null && selectedApplyRunId.trim().length > 0,
+  });
+
   const selectedHost = useMemo<AgentHost | null>(() => {
     const hosts = hostQuery.data?.data ?? [];
     return hosts.find((host) => host.id === selectedHostId) ?? null;
@@ -308,11 +419,38 @@ export default function ConfigCenterPage() {
   const driftStates = driftQuery.data?.data ?? [];
   const recoveryStates = recoveryQuery.data?.data ?? [];
   const historyItems = historyQuery.data?.data ?? [];
+  const applyRuns = applyRunsQuery.data?.data ?? [];
+  const applyDetail = applyDetailQuery.data as ConfigCenterApplyRunDetail | undefined;
 
   const latestDesiredRevision = useMemo(() => {
     if (specs.length === 0) return 0;
     return specs.reduce((max, item) => Math.max(max, item.desired_revision), 0);
   }, [specs]);
+
+  useEffect(() => {
+    setSelectedApplyRunId("");
+    setSelectedApplyRun(null);
+  }, [selectedHostId, selectedCoreType]);
+
+  useEffect(() => {
+    if (applyRuns.length === 0) {
+      setSelectedApplyRunId("");
+      setSelectedApplyRun(null);
+      return;
+    }
+    if (!selectedApplyRunId) {
+      setSelectedApplyRunId(applyRuns[0].run_id);
+      setSelectedApplyRun(applyRuns[0]);
+      return;
+    }
+    const current = applyRuns.find((item) => item.run_id === selectedApplyRunId) ?? null;
+    if (current) {
+      setSelectedApplyRun(current);
+      return;
+    }
+    setSelectedApplyRunId(applyRuns[0].run_id);
+    setSelectedApplyRun(applyRuns[0]);
+  }, [applyRuns, selectedApplyRunId]);
 
   const createSpecMutation = useMutation({
     mutationFn: createConfigCenterSpec,
@@ -329,7 +467,7 @@ export default function ConfigCenterPage() {
     },
     onError: (error: Error) => {
       toast.error(t("admin.configCenter.messages.specSaveFailed"), {
-        description: error.message,
+        description: formatAdminErrorDetails(error) || error.message,
       });
     },
   });
@@ -345,7 +483,7 @@ export default function ConfigCenterPage() {
     },
     onError: (error: Error) => {
       toast.error(t("admin.configCenter.messages.specSaveFailed"), {
-        description: error.message,
+        description: formatAdminErrorDetails(error) || error.message,
       });
     },
   });
@@ -359,7 +497,7 @@ export default function ConfigCenterPage() {
     },
     onError: (error: Error) => {
       toast.error(t("admin.configCenter.messages.importFailed"), {
-        description: error.message,
+        description: formatAdminErrorDetails(error) || error.message,
       });
     },
   });
@@ -368,13 +506,15 @@ export default function ConfigCenterPage() {
     mutationFn: createConfigCenterApplyRun,
     onSuccess: (run) => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.ADMIN_CONFIG_CENTER_APPLY_RUNS });
+      setSelectedApplyRunId(run.run_id);
+      setActiveTab("apply");
       toast.success(t("admin.configCenter.messages.applyStarted"), {
         description: `${run.run_id}`,
       });
     },
     onError: (error: Error) => {
       toast.error(t("admin.configCenter.messages.applyFailed"), {
-        description: error.message,
+        description: formatAdminErrorDetails(error) || error.message,
       });
     },
   });
@@ -490,6 +630,8 @@ export default function ConfigCenterPage() {
       setSelectedHostId(parsed);
       setSelectedSpec(null);
       setApplyForm(defaultApplyFormState);
+      setActiveTab("specs");
+      setActiveDiffTab("text");
     }
   };
 
@@ -498,6 +640,8 @@ export default function ConfigCenterPage() {
     setSelectedCoreType(next);
     setSelectedSpec(null);
     setApplyForm(defaultApplyFormState);
+    setActiveTab("specs");
+    setActiveDiffTab("text");
   };
 
   if (hostQuery.isLoading) {
@@ -527,10 +671,16 @@ export default function ConfigCenterPage() {
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => {
             specListQuery.refetch();
+            applyRunsQuery.refetch();
+            if (selectedApplyRunId) {
+              applyDetailQuery.refetch();
+            }
             snapshotQuery.refetch();
             driftQuery.refetch();
             recoveryQuery.refetch();
-            textDiffQuery.refetch();
+            if (diffFilename.trim() || diffTag.trim()) {
+              textDiffQuery.refetch();
+            }
             semanticDiffQuery.refetch();
           }}>
             <RefreshCw className="mr-2 h-4 w-4" />
@@ -600,9 +750,10 @@ export default function ConfigCenterPage() {
           size="md"
         />
       ) : (
-        <Tabs defaultValue="specs">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="flex w-full flex-wrap justify-start">
             <TabsTrigger value="specs">{t("admin.configCenter.tabs.specs")}</TabsTrigger>
+            <TabsTrigger value="apply">{t("admin.configCenter.tabs.apply")}</TabsTrigger>
             <TabsTrigger value="diff">{t("admin.configCenter.tabs.diff")}</TabsTrigger>
             <TabsTrigger value="drift">{t("admin.configCenter.tabs.drift")}</TabsTrigger>
             <TabsTrigger value="snapshot">{t("admin.configCenter.tabs.snapshot")}</TabsTrigger>
@@ -709,6 +860,222 @@ export default function ConfigCenterPage() {
             </Card>
           </TabsContent>
 
+          <TabsContent value="apply" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>{t("admin.configCenter.applyRuns.title")}</CardTitle>
+                <CardDescription>{t("admin.configCenter.applyRuns.description")}</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">{t("admin.configCenter.fields.applyRun")}</label>
+                    <Select
+                      value={selectedApplyRunId || undefined}
+                      onValueChange={(value) => {
+                        setSelectedApplyRunId(value);
+                        const nextRun = applyRuns.find((item) => item.run_id === value) ?? null;
+                        setSelectedApplyRun(nextRun);
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder={t("admin.configCenter.placeholders.selectApplyRun")} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {applyRuns.map((run) => (
+                          <SelectItem key={run.run_id} value={run.run_id}>
+                            {`${run.run_id} · ${run.status} · r${run.target_revision}`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      applyRunsQuery.refetch();
+                      if (selectedApplyRunId) {
+                        applyDetailQuery.refetch();
+                      }
+                    }}
+                  >
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    {t("common.refresh")}
+                  </Button>
+                </div>
+
+                {applyRunsQuery.isLoading ? (
+                  <Loading />
+                ) : applyRunsQuery.error ? (
+                  <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                    {t("admin.configCenter.messages.applyRunsLoadFailed")}
+                    <div className="mt-1 text-xs opacity-80">{formatQueryErrorMessage(applyRunsQuery.error)}</div>
+                  </div>
+                ) : applyRuns.length === 0 ? (
+                  <EmptyState
+                    icon={<CheckCircle2 className="h-full w-full" />}
+                    title={t("admin.configCenter.empty.noApplyRunTitle")}
+                    description={t("admin.configCenter.empty.noApplyRunDescription")}
+                    size="sm"
+                  />
+                ) : (
+                  <>
+                    <Table aria-label={t("admin.configCenter.applyRuns.title") as string}>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{t("admin.configCenter.fields.runId")}</TableHead>
+                          <TableHead>{t("admin.configCenter.fields.status")}</TableHead>
+                          <TableHead>{t("admin.configCenter.fields.revision")}</TableHead>
+                          <TableHead>{t("admin.configCenter.fields.updatedAt")}</TableHead>
+                          <TableHead>{t("common.actions")}</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {applyRuns.map((run) => (
+                          <TableRow key={run.run_id}>
+                            <TableCell className="font-medium">{run.run_id}</TableCell>
+                            <TableCell>
+                              <Badge variant={formatApplyStatusVariant(run.status)}>{run.status}</Badge>
+                            </TableCell>
+                            <TableCell>{run.target_revision}</TableCell>
+                            <TableCell>{formatDateTime(run.finished_at || run.started_at)}</TableCell>
+                            <TableCell>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  setSelectedApplyRunId(run.run_id);
+                                  setSelectedApplyRun(run);
+                                }}
+                              >
+                                {t("common.view")}
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+
+                    {selectedApplyRun ? (
+                      <div className="space-y-4 rounded-md border border-border p-4">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant={formatApplyStatusVariant(selectedApplyRun.status)}>
+                            {selectedApplyRun.status}
+                          </Badge>
+                          <span className="text-sm text-muted-foreground">{selectedApplyRun.run_id}</span>
+                          <span className="text-sm text-muted-foreground">
+                            r{selectedApplyRun.previous_revision || 0} → r{selectedApplyRun.target_revision}
+                          </span>
+                        </div>
+
+                        {selectedApplyRun.error_message ? (
+                          <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                            {selectedApplyRun.error_message}
+                          </div>
+                        ) : null}
+
+                        {applyDetailQuery.isLoading ? (
+                          <Loading />
+                        ) : applyDetailQuery.error ? (
+                          <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                            {t("admin.configCenter.messages.applyDetailLoadFailed")}
+                            <div className="mt-1 text-xs opacity-80">{formatQueryErrorMessage(applyDetailQuery.error)}</div>
+                          </div>
+                        ) : applyDetail ? (
+                          <div className="space-y-4">
+                            {applyDetail.issues && applyDetail.issues.length > 0 ? (
+                              <div className="space-y-2">
+                                <p className="text-sm font-medium">{t("admin.configCenter.applyRuns.issuesTitle")}</p>
+                                <div className="space-y-2">
+                                  {applyDetail.issues.map((item, index) => (
+                                    <div
+                                      key={`${item.code}-${index}`}
+                                      className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3"
+                                    >
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <Badge variant="warning">{item.code}</Badge>
+                                      </div>
+                                      <p className="mt-2 text-sm text-muted-foreground">{item.message}</p>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : null}
+
+                            <div className="grid gap-4 lg:grid-cols-2">
+                              <Card>
+                                <CardHeader>
+                                  <CardTitle className="text-base">{t("admin.configCenter.applyRuns.semanticTitle")}</CardTitle>
+                                  <CardDescription>
+                                    {t("admin.configCenter.applyRuns.semanticDescription")}
+                                  </CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                  {applyDetail.semantic_diff && applyDetail.semantic_diff.items.length > 0 ? (
+                                    <Table>
+                                      <TableHeader>
+                                        <TableRow>
+                                          <TableHead>{t("admin.configCenter.fields.tag")}</TableHead>
+                                          <TableHead>{t("admin.configCenter.fields.driftType")}</TableHead>
+                                        </TableRow>
+                                      </TableHeader>
+                                      <TableBody>
+                                        {applyDetail.semantic_diff.items.map((item, index) => (
+                                          <TableRow key={`${item.tag}-${index}`}>
+                                            <TableCell>{item.tag}</TableCell>
+                                            <TableCell>
+                                              <Badge variant={formatDriftVariant(item.drift_type)}>{item.drift_type}</Badge>
+                                            </TableCell>
+                                          </TableRow>
+                                        ))}
+                                      </TableBody>
+                                    </Table>
+                                  ) : (
+                                    <p className="text-sm text-muted-foreground">
+                                      {t("admin.configCenter.empty.noApplySemanticDiff")}
+                                    </p>
+                                  )}
+                                </CardContent>
+                              </Card>
+
+                              <Card>
+                                <CardHeader>
+                                  <CardTitle className="text-base">{t("admin.configCenter.applyRuns.textTitle")}</CardTitle>
+                                  <CardDescription>
+                                    {t("admin.configCenter.applyRuns.textDescription")}
+                                  </CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                  {applyDetail.text_diff ? (
+                                    <div className="space-y-3">
+                                      <div className="flex flex-wrap gap-2">
+                                        <Badge variant="secondary">{applyDetail.text_diff.filename || "-"}</Badge>
+                                        <Badge variant="secondary">{applyDetail.text_diff.tag || "-"}</Badge>
+                                      </div>
+                                      <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-md border border-border p-3 text-xs">
+                                        {applyDetail.text_diff.unified_diff || "-"}
+                                      </pre>
+                                    </div>
+                                  ) : (
+                                    <p className="text-sm text-muted-foreground">
+                                      {diffFilename.trim() || diffTag.trim()
+                                        ? t("admin.configCenter.empty.noApplyTextDiff")
+                                        : t("admin.configCenter.empty.selectApplyTextDiff")}
+                                    </p>
+                                  )}
+                                </CardContent>
+                              </Card>
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
           <TabsContent value="diff" className="space-y-4">
             <Card>
               <CardHeader>
@@ -743,18 +1110,23 @@ export default function ConfigCenterPage() {
                   </div>
                 </div>
 
-                <Tabs defaultValue="text">
+                <Tabs value={activeDiffTab} onValueChange={setActiveDiffTab}>
                   <TabsList>
                     <TabsTrigger value="text">{t("admin.configCenter.diff.text")}</TabsTrigger>
                     <TabsTrigger value="semantic">{t("admin.configCenter.diff.semantic")}</TabsTrigger>
                   </TabsList>
 
                   <TabsContent value="text" className="space-y-3">
-                    {textDiffQuery.isLoading ? (
+                    {!diffFilename.trim() && !diffTag.trim() ? (
+                      <div className="rounded-md border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
+                        {t("admin.configCenter.empty.selectTextDiffSelector")}
+                      </div>
+                    ) : textDiffQuery.isLoading ? (
                       <Loading />
                     ) : textDiffQuery.error ? (
                       <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
                         {t("admin.configCenter.messages.textDiffFailed")}
+                        <div className="mt-1 text-xs opacity-80">{formatQueryErrorMessage(textDiffQuery.error)}</div>
                       </div>
                     ) : textDiffQuery.data ? (
                       <>

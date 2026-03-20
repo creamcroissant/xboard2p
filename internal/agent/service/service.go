@@ -45,9 +45,11 @@ type Agent struct {
 	subParse   *subscribe.Parser    // Subscribe directory parser
 	capDet     *capability.Detector // Capability detector
 
-	batchApplier     *configcenter.AgentBatchApplier
-	inventoryScanner *configcenter.AgentInventoryScanner
-	applyRevision    atomic.Int64
+	batchApplier      *configcenter.AgentBatchApplier
+	inventoryScanner  *configcenter.AgentInventoryScanner
+	applyRevision     atomic.Int64
+	syncInFlight      atomic.Bool
+	batchSyncInFlight atomic.Bool
 
 	configETag     string
 	usersETag      string
@@ -101,16 +103,23 @@ func New(cfg *config.Config) (*Agent, error) {
 		MergeOutputFile:  cfg.Protocol.MergeOutputFile,
 		ServiceName:      cfg.Protocol.ServiceName,
 		ValidateCmd:      cfg.Protocol.ValidateCmd,
+		ServiceAction:    cfg.Protocol.ServiceAction,
 		AutoRestart:      cfg.Protocol.AutoRestart,
 		PreHook:          cfg.Protocol.PreHook,
 		PostHook:         cfg.Protocol.PostHook,
 	}
 	protoMgr := protocol.NewManager(protoCfg, initSys)
 
-	capDet := capability.NewDetector("", "")
+	capDet := capability.NewDetector(cfg.Core.SingBoxBinaryPath, cfg.Core.XrayBinaryPath)
 	coreMgr := core.NewManager()
 	coreMgr.Register(core.NewSingBoxCore(initSys, capDet, cfg.Protocol.ServiceName, cfg.Protocol.ConfigDir))
 	coreMgr.Register(core.NewXrayCore(initSys, capDet, cfg.Protocol.ServiceName, cfg.Traffic.Address, cfg.Protocol.ConfigDir))
+	installer := core.NewInstaller(core.InstallerConfig{
+		ScriptPath:        cfg.Core.InstallScriptPath,
+		SingBoxBinaryPath: cfg.Core.SingBoxBinaryPath,
+		XrayBinaryPath:    cfg.Core.XrayBinaryPath,
+		ServiceName:       cfg.Protocol.ServiceName,
+	}, initSys, slog.Default())
 
 	var switcher *proxy.Switcher
 	if cfg.Proxy.Enabled {
@@ -162,7 +171,7 @@ func New(cfg *config.Config) (*Agent, error) {
 		switcher: switcher,
 		server:   srv,
 		subParse: subscribe.NewParser(cfg.Protocol.SubscribeDir),
-		capDet:   capDet, // Use default paths
+		capDet:   capDet,
 
 		updateTickerCh: make(chan struct{}, 1),
 	}
@@ -170,7 +179,7 @@ func New(cfg *config.Config) (*Agent, error) {
 	agent.currentReportInterval.Store(int32(cfg.Interval.Report))
 
 	if cfg.GRPCServer.Enabled {
-		handler := agentgrpc.NewHandler(coreMgr, cfg.Core.OutputPath, slog.Default(), switcher)
+		handler := agentgrpc.NewHandler(coreMgr, cfg.Core.OutputPath, slog.Default(), switcher, installer)
 		authInterceptor := agentgrpc.NewAuthInterceptor(cfg.GRPCServer.AuthToken)
 		grpcCfg := agentgrpc.Config{
 			Address: cfg.GRPCServer.Listen,
@@ -360,6 +369,12 @@ func (a *Agent) Run(ctx context.Context) {
 }
 
 func (a *Agent) sync(ctx context.Context) {
+	if !a.beginSync() {
+		slog.Debug("sync already in flight, skip re-entry")
+		return
+	}
+	defer a.endSync()
+
 	if a.conn != nil {
 		state := a.conn.CheckConnection(ctx)
 		if state != transport.StateConnected {
@@ -691,6 +706,11 @@ func (a *Agent) syncApplyBatch(ctx context.Context) {
 	if a.batchApplier == nil {
 		return
 	}
+	if !a.beginBatchSync() {
+		slog.Debug("apply batch sync already in flight, skip re-entry")
+		return
+	}
+	defer a.endBatchSync()
 
 	currentRevision := a.getApplyRevision()
 	nextRevision, err := a.batchApplier.SyncOnce(ctx, currentRevision)
@@ -702,6 +722,22 @@ func (a *Agent) syncApplyBatch(ctx context.Context) {
 		a.setApplyRevision(nextRevision)
 		slog.Info("Apply batch synced", "revision", nextRevision)
 	}
+}
+
+func (a *Agent) beginSync() bool {
+	return a.syncInFlight.CompareAndSwap(false, true)
+}
+
+func (a *Agent) endSync() {
+	a.syncInFlight.Store(false)
+}
+
+func (a *Agent) beginBatchSync() bool {
+	return a.batchSyncInFlight.CompareAndSwap(false, true)
+}
+
+func (a *Agent) endBatchSync() {
+	a.batchSyncInFlight.Store(false)
 }
 
 func (a *Agent) getApplyRevision() int64 {

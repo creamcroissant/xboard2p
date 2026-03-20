@@ -53,11 +53,13 @@ type DesiredArtifactFilter struct {
 
 // ApplyRunFilter constrains apply run listing queries.
 type ApplyRunFilter struct {
-	AgentHostID *int64
-	CoreType    *string
-	Status      *string
-	Limit       int
-	Offset      int
+	AgentHostID    *int64
+	CoreType       *string
+	TargetRevision *int64
+	Status         *string
+	Statuses       []string
+	Limit          int
+	Offset         int
 }
 
 // AgentConfigInventoryFilter constrains inventory listing queries.

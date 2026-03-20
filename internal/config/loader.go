@@ -48,6 +48,18 @@ func Load() (*Config, error) {
 	if err := v.BindEnv("ui.install.dir", "XBOARD_UI_INSTALL_DIR", "XBOARD_INSTALL_UI_DIR", "INSTALL_UI_DIR"); err != nil {
 		return nil, fmt.Errorf("bind env ui.install.dir: %w", err)
 	}
+	if err := v.BindEnv("scheduler.stat_user_hourly", "XBOARD_SCHEDULER_STAT_USER_HOURLY"); err != nil {
+		return nil, fmt.Errorf("bind env scheduler.stat_user_hourly: %w", err)
+	}
+	if err := v.BindEnv("scheduler.traffic_fetch", "XBOARD_SCHEDULER_TRAFFIC_FETCH"); err != nil {
+		return nil, fmt.Errorf("bind env scheduler.traffic_fetch: %w", err)
+	}
+	if err := v.BindEnv("scheduler.email_notify", "XBOARD_SCHEDULER_EMAIL_NOTIFY"); err != nil {
+		return nil, fmt.Errorf("bind env scheduler.email_notify: %w", err)
+	}
+	if err := v.BindEnv("scheduler.telegram_notify", "XBOARD_SCHEDULER_TELEGRAM_NOTIFY"); err != nil {
+		return nil, fmt.Errorf("bind env scheduler.telegram_notify: %w", err)
+	}
 
 	// 1. Try to read config file
 	if err := v.ReadInConfig(); err != nil {
@@ -100,18 +112,23 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("auth.leeway", "30s")
 	v.SetDefault("auth.bcrypt_cost", 12)
 
-	v.SetDefault("ui.admin.enabled", false)
+	v.SetDefault("ui.admin.enabled", true)
 	v.SetDefault("ui.admin.dir", "web/user-vite/dist")
 	v.SetDefault("ui.admin.title", "XBoard Admin")
 	v.SetDefault("ui.admin.version", "1.0.0")
 	v.SetDefault("ui.admin.hidden_modules", []string{"payment", "ticket", "gift-card", "plugin", "theme"})
 
-	v.SetDefault("ui.user.enabled", false)
+	v.SetDefault("ui.user.enabled", true)
 	v.SetDefault("ui.user.dir", "web/user-vite/dist")
 	v.SetDefault("ui.user.title", "XBoard")
 
 	v.SetDefault("ui.install.enabled", true)
 	v.SetDefault("ui.install.dir", "web/install")
+
+	v.SetDefault("scheduler.stat_user_hourly", "@every 5m")
+	v.SetDefault("scheduler.traffic_fetch", "@every 1m")
+	v.SetDefault("scheduler.email_notify", "@every 1m")
+	v.SetDefault("scheduler.telegram_notify", "@every 1m")
 }
 
 func loadDotEnv(v *viper.Viper) error {

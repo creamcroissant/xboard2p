@@ -30,6 +30,7 @@ const (
 	AgentService_ReportForwardingStatus_FullMethodName = "/agent.v1.AgentService/ReportForwardingStatus"
 	AgentService_GetCores_FullMethodName               = "/agent.v1.AgentService/GetCores"
 	AgentService_SwitchCore_FullMethodName             = "/agent.v1.AgentService/SwitchCore"
+	AgentService_InstallCore_FullMethodName            = "/agent.v1.AgentService/InstallCore"
 	AgentService_ReportAccessLogs_FullMethodName       = "/agent.v1.AgentService/ReportAccessLogs"
 	AgentService_GetApplyBatch_FullMethodName          = "/agent.v1.AgentService/GetApplyBatch"
 	AgentService_ReportApplyRun_FullMethodName         = "/agent.v1.AgentService/ReportApplyRun"
@@ -65,6 +66,8 @@ type AgentServiceClient interface {
 	GetCores(ctx context.Context, in *GetCoresRequest, opts ...grpc.CallOption) (*GetCoresResponse, error)
 	// SwitchCore requests core switch
 	SwitchCore(ctx context.Context, in *SwitchCoreRequest, opts ...grpc.CallOption) (*SwitchCoreResponse, error)
+	// InstallCore requests controlled core installation or upgrade
+	InstallCore(ctx context.Context, in *InstallCoreRequest, opts ...grpc.CallOption) (*InstallCoreResponse, error)
 	// ReportAccessLogs reports access logs
 	ReportAccessLogs(ctx context.Context, in *AccessLogReport, opts ...grpc.CallOption) (*AccessLogResponse, error)
 	// GetApplyBatch fetches hybrid config-center apply artifacts for current revision.
@@ -194,6 +197,16 @@ func (c *agentServiceClient) SwitchCore(ctx context.Context, in *SwitchCoreReque
 	return out, nil
 }
 
+func (c *agentServiceClient) InstallCore(ctx context.Context, in *InstallCoreRequest, opts ...grpc.CallOption) (*InstallCoreResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InstallCoreResponse)
+	err := c.cc.Invoke(ctx, AgentService_InstallCore_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *agentServiceClient) ReportAccessLogs(ctx context.Context, in *AccessLogReport, opts ...grpc.CallOption) (*AccessLogResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(AccessLogResponse)
@@ -254,6 +267,8 @@ type AgentServiceServer interface {
 	GetCores(context.Context, *GetCoresRequest) (*GetCoresResponse, error)
 	// SwitchCore requests core switch
 	SwitchCore(context.Context, *SwitchCoreRequest) (*SwitchCoreResponse, error)
+	// InstallCore requests controlled core installation or upgrade
+	InstallCore(context.Context, *InstallCoreRequest) (*InstallCoreResponse, error)
 	// ReportAccessLogs reports access logs
 	ReportAccessLogs(context.Context, *AccessLogReport) (*AccessLogResponse, error)
 	// GetApplyBatch fetches hybrid config-center apply artifacts for current revision.
@@ -302,6 +317,9 @@ func (UnimplementedAgentServiceServer) GetCores(context.Context, *GetCoresReques
 }
 func (UnimplementedAgentServiceServer) SwitchCore(context.Context, *SwitchCoreRequest) (*SwitchCoreResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SwitchCore not implemented")
+}
+func (UnimplementedAgentServiceServer) InstallCore(context.Context, *InstallCoreRequest) (*InstallCoreResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method InstallCore not implemented")
 }
 func (UnimplementedAgentServiceServer) ReportAccessLogs(context.Context, *AccessLogReport) (*AccessLogResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReportAccessLogs not implemented")
@@ -520,6 +538,24 @@ func _AgentService_SwitchCore_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AgentService_InstallCore_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InstallCoreRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).InstallCore(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_InstallCore_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).InstallCore(ctx, req.(*InstallCoreRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AgentService_ReportAccessLogs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(AccessLogReport)
 	if err := dec(in); err != nil {
@@ -620,6 +656,10 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SwitchCore",
 			Handler:    _AgentService_SwitchCore_Handler,
+		},
+		{
+			MethodName: "InstallCore",
+			Handler:    _AgentService_InstallCore_Handler,
 		},
 		{
 			MethodName: "ReportAccessLogs",

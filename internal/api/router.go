@@ -387,7 +387,6 @@ func registerV2AdminRoutes(v2 chi.Router, configService service.ConfigService, a
 	adminNoticeHandler := handler.NewAdminNoticeHandler(adminNotice)
 	adminKnowledgeHandler := handler.NewAdminKnowledgeHandler(adminKnowledge, i18nManager)
 	adminInviteHandler := handler.NewAdminInviteHandler(inviteService, i18nManager)
-	adminProtocolHandler := handler.NewAdminProtocolHandler(agentHost, i18nManager)
 	agentHostHandler := handler.NewAgentHostHandler(agentHost, i18nManager)
 	adminForwardingHandler := handler.NewAdminForwardingHandler(forwarding, i18nManager)
 	adminAgentCoreHandler := handler.NewAdminAgentCoreHandler(agentCore, i18nManager)
@@ -450,19 +449,9 @@ func registerV2AdminRoutes(v2 chi.Router, configService service.ConfigService, a
 		admin.Post("/agent-hosts/{id}/core-instances", adminAgentCoreHandler.CreateInstance)
 		admin.Delete("/agent-hosts/{id}/core-instances/{instance_id}", adminAgentCoreHandler.DeleteInstance)
 		admin.Post("/agent-hosts/{id}/core-switch", adminAgentCoreHandler.SwitchCore)
+		admin.Post("/agent-hosts/{id}/core-install", adminAgentCoreHandler.InstallCore)
 		admin.Post("/agent-hosts/{id}/core-convert", adminAgentCoreHandler.ConvertConfig)
 		admin.Get("/agent-hosts/{id}/core-switch-logs", adminAgentCoreHandler.ListSwitchLogs)
-
-		// Protocol management endpoints (via Agent)
-		admin.Get("/agent-hosts/{id}/protocols", adminProtocolHandler.ListConfigs)
-		admin.Get("/agent-hosts/{id}/protocols/inbounds", adminProtocolHandler.ListInbounds)
-		admin.Get("/agent-hosts/{id}/protocols/{filename}", adminProtocolHandler.GetConfig)
-		admin.Post("/agent-hosts/{id}/protocols", adminProtocolHandler.ApplyConfig)
-		admin.Post("/agent-hosts/{id}/protocols/template", adminProtocolHandler.ApplyTemplate)
-		admin.Delete("/agent-hosts/{id}/protocols/{filename}", adminProtocolHandler.DeleteConfig)
-		admin.Get("/agent-hosts/{id}/service/status", adminProtocolHandler.ServiceStatus)
-		admin.Post("/agent-hosts/{id}/service/reload", adminProtocolHandler.ReloadService)
-		admin.Get("/agent-hosts/{id}/health", adminProtocolHandler.AgentHealth)
 
 		// Forwarding rules management endpoints
 		admin.Route("/forwarding", func(fwd chi.Router) {
@@ -502,6 +491,7 @@ func registerV2AdminRoutes(v2 chi.Router, configService service.ConfigService, a
 		// Config center apply run endpoints
 		admin.Post("/config-center/apply-runs", adminConfigCenterApplyHandler.CreateApplyRun)
 		admin.Get("/config-center/apply-runs", adminConfigCenterApplyHandler.ListApplyRuns)
+		admin.Get("/config-center/apply-runs/{run_id}", adminConfigCenterApplyHandler.GetApplyRunDetail)
 
 		// 已移除的商业化/占位模块不再挂载，避免 404/501 噪声。
 		// mountHandler(admin, "/coupon", adminHandler)

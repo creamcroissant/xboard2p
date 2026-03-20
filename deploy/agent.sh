@@ -30,6 +30,15 @@ XBOARD_BOOTSTRAP_KEEP_TEMP="${XBOARD_BOOTSTRAP_KEEP_TEMP:-0}"
 # Deprecated compatibility flag. Bootstrap is strict-only now.
 : "${XBOARD_BOOTSTRAP_DOWNLOAD_STRICT:=1}"
 
+XBOARD_CORE_RELEASE_API_BASE_URL="${XBOARD_CORE_RELEASE_API_BASE_URL:-https://api.github.com}"
+XBOARD_CORE_INSTALL_BASE_DIR="${XBOARD_CORE_INSTALL_BASE_DIR:-${INSTALL_DIR}/cores}"
+XBOARD_SINGBOX_RELEASE_REPO="${XBOARD_SINGBOX_RELEASE_REPO:-SagerNet/sing-box}"
+XBOARD_SINGBOX_V2RAY_RELEASE_REPO="${XBOARD_SINGBOX_V2RAY_RELEASE_REPO:-creamcroissant/sing-box_with_api}"
+XBOARD_XRAY_RELEASE_REPO="${XBOARD_XRAY_RELEASE_REPO:-XTLS/Xray-core}"
+XBOARD_SINGBOX_BINARY_PATH="${XBOARD_SINGBOX_BINARY_PATH:-${INSTALL_DIR}/bin/sing-box}"
+XBOARD_XRAY_BINARY_PATH="${XBOARD_XRAY_BINARY_PATH:-${INSTALL_DIR}/bin/xray}"
+XBOARD_AGENT_CORE_OUTPUT="${XBOARD_AGENT_CORE_OUTPUT:-}"
+
 OS_RAW=$(uname -s | tr '[:upper:]' '[:lower:]')
 case "$OS_RAW" in
     linux*) OS="linux" ;;
@@ -542,6 +551,470 @@ download_release_binary() {
     return 0
 }
 
+fetch_release_metadata() {
+    repo=$1
+    version=$2
+    output_path=$3
+
+    api_base="${XBOARD_CORE_RELEASE_API_BASE_URL%/}"
+    if [ -z "$repo" ]; then
+        echo "Error: release repository is required."
+        return 1
+    fi
+
+    if [ "$version" = "" ] || [ "$version" = "latest" ]; then
+        url="${api_base}/repos/${repo}/releases/latest"
+    else
+        normalized_version=$version
+        case "$normalized_version" in
+            v*) ;;
+            *) normalized_version="v${normalized_version}" ;;
+        esac
+        url="${api_base}/repos/${repo}/releases/tags/${normalized_version}"
+    fi
+
+    if ! download_file "$url" "$output_path" "release metadata"; then
+        return 1
+    fi
+    return 0
+}
+
+json_get_release_tag() {
+    metadata_file=$1
+    python3 - "$metadata_file" <<'PY'
+import json, sys
+with open(sys.argv[1], 'r', encoding='utf-8') as f:
+    data = json.load(f)
+print(data.get('tag_name', ''))
+PY
+}
+
+json_get_asset_field() {
+    metadata_file=$1
+    asset_name=$2
+    field_name=$3
+    python3 - "$metadata_file" "$asset_name" "$field_name" <<'PY'
+import json, sys
+with open(sys.argv[1], 'r', encoding='utf-8') as f:
+    data = json.load(f)
+asset_name = sys.argv[2]
+field_name = sys.argv[3]
+for asset in data.get('assets', []):
+    if asset.get('name') == asset_name:
+        value = asset.get(field_name, '')
+        if value is None:
+            value = ''
+        print(value)
+        break
+PY
+}
+
+core_output_is_json() {
+    [ "$XBOARD_AGENT_CORE_OUTPUT" = "json" ]
+}
+
+emit_core_install_success() {
+    core_type=$1
+    action=$2
+    requested_ref=$3
+    resolved_tag=$4
+    message=$5
+    binary_path=$6
+    stable_binary_path=$7
+    changed_state=$8
+
+    if core_output_is_json; then
+        python3 - "$core_type" "$action" "$requested_ref" "$resolved_tag" "$message" "$binary_path" "$stable_binary_path" "$changed_state" <<'PY'
+import json, sys
+core_type, action, requested_ref, resolved_tag, message, binary_path, stable_binary_path, changed_state = sys.argv[1:9]
+payload = {
+    'success': True,
+    'core_type': core_type,
+    'action': action,
+    'requested_ref': requested_ref,
+    'resolved_tag': resolved_tag,
+    'message': message,
+    'binary_path': binary_path,
+    'stable_binary_path': stable_binary_path,
+}
+if changed_state in ('true', 'false'):
+    payload['changed'] = changed_state == 'true'
+print(json.dumps(payload, separators=(',', ':')))
+PY
+        return 0
+    fi
+
+    echo "$message"
+    return 0
+}
+
+normalize_core_channel() {
+    normalized_channel=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+    case "$normalized_channel" in
+        "")
+            printf '%s' ""
+            ;;
+        latest|stable)
+            printf '%s' "latest"
+            ;;
+        *)
+            echo "Error: unsupported core channel '${1}'. Use stable or latest."
+            return 1
+            ;;
+    esac
+}
+
+normalize_digest_value() {
+    digest=$1
+    digest=$(printf '%s' "$digest" | tr -d '\r\n')
+    case "$digest" in
+        sha256:*) printf '%s' "${digest#sha256:}" ;;
+        *) printf '%s' "$digest" ;;
+    esac
+}
+
+verify_digest_value() {
+    file_path=$1
+    digest_value=$2
+    asset_name=$3
+
+    normalized=$(normalize_digest_value "$digest_value")
+    if [ -z "$normalized" ]; then
+        echo "Error: missing digest for ${asset_name}."
+        return 1
+    fi
+
+    actual=$(hash_file_sha256 "$file_path")
+    if [ "$actual" != "$normalized" ]; then
+        echo "Error: checksum mismatch for ${asset_name}."
+        echo "Expected: ${normalized}"
+        echo "Actual:   ${actual}"
+        return 1
+    fi
+    return 0
+}
+
+parse_xray_dgst_sha256() {
+    dgst_file=$1
+    sed -n 's/^SHA2-256=[[:space:]]*//p' "$dgst_file" | head -n 1 | tr -d '\r'
+}
+
+resolve_core_asset_digest() {
+    metadata_file=$1
+    core_type=$2
+    asset_name=$3
+    workdir=$4
+
+    asset_digest=$(json_get_asset_field "$metadata_file" "$asset_name" "digest")
+    if [ -n "$asset_digest" ]; then
+        printf '%s' "$asset_digest"
+        return 0
+    fi
+
+    if [ "$core_type" = "xray" ]; then
+        dgst_name="${asset_name}.dgst"
+        dgst_url=$(json_get_asset_field "$metadata_file" "$dgst_name" "browser_download_url")
+        if [ -n "$dgst_url" ]; then
+            dgst_path="$workdir/$dgst_name"
+            if ! download_file "$dgst_url" "$dgst_path" "$dgst_name"; then
+                return 1
+            fi
+            dgst_digest=$(parse_xray_dgst_sha256 "$dgst_path")
+            if [ -z "$dgst_digest" ]; then
+                echo "Error: failed to parse SHA2-256 digest from ${dgst_name}."
+                return 1
+            fi
+            printf 'sha256:%s' "$dgst_digest"
+            return 0
+        fi
+    fi
+
+    return 0
+}
+
+extract_archive() {
+    archive_path=$1
+    target_dir=$2
+
+    case "$archive_path" in
+        *.tar.gz|*.tgz)
+            tar -xzf "$archive_path" -C "$target_dir"
+            ;;
+        *.zip)
+            if ! require_command unzip; then
+                return 1
+            fi
+            unzip -q "$archive_path" -d "$target_dir"
+            ;;
+        *)
+            echo "Error: unsupported archive format: ${archive_path}"
+            return 1
+            ;;
+    esac
+}
+
+copy_with_parent() {
+    src_path=$1
+    dst_path=$2
+
+    dst_dir=$(dirname "$dst_path")
+    if ! ensure_dir "$dst_dir"; then
+        echo "Error: failed to create directory ${dst_dir}."
+        return 1
+    fi
+    if ! install_file "$src_path" "$dst_path"; then
+        return 1
+    fi
+    return 0
+}
+
+install_symlink_or_copy() {
+    src_path=$1
+    dst_path=$2
+
+    dst_dir=$(dirname "$dst_path")
+    if ! ensure_dir "$dst_dir"; then
+        echo "Error: failed to create directory ${dst_dir}."
+        return 1
+    fi
+
+    if ln -sfn "$src_path" "$dst_path" >/dev/null 2>&1; then
+        return 0
+    fi
+    if run_privileged ln -sfn "$src_path" "$dst_path" >/dev/null 2>&1; then
+        return 0
+    fi
+    if ! install_executable_file "$src_path" "$dst_path"; then
+        return 1
+    fi
+    return 0
+}
+
+persist_agent_deploy_assets() {
+    deploy_dir="${INSTALL_DIR}/deploy"
+    if ! ensure_dir "$deploy_dir"; then
+        echo "Error: failed to create deploy directory ${deploy_dir}."
+        return 1
+    fi
+
+    script_source=""
+    if [ -f "$0" ]; then
+        script_source=$0
+    elif [ -f "${SCRIPT_DIR}/agent.sh" ]; then
+        script_source="${SCRIPT_DIR}/agent.sh"
+    fi
+    if [ -n "$script_source" ]; then
+        if ! install_executable_file "$script_source" "${deploy_dir}/agent.sh"; then
+            echo "Error: failed to persist agent installer script."
+            return 1
+        fi
+    fi
+
+    service_source=$(resolve_service_file "agent.service")
+    if [ -n "$service_source" ]; then
+        if ! copy_with_parent "$service_source" "${deploy_dir}/agent.service"; then
+            echo "Error: failed to persist agent service file."
+            return 1
+        fi
+    fi
+    return 0
+}
+
+resolve_core_asset() {
+    core_type=$1
+    version=$2
+    flavor=$3
+
+    CORE_RELEASE_REPO=""
+    CORE_ASSET_NAME=""
+    CORE_BINARY_NAME=""
+    CORE_STABLE_BINARY_PATH=""
+
+    case "$core_type" in
+        sing-box)
+            case "$flavor" in
+                ""|official)
+                    CORE_RELEASE_REPO="$XBOARD_SINGBOX_RELEASE_REPO"
+                    ;;
+                with-v2ray-api)
+                    if [ -z "$XBOARD_SINGBOX_V2RAY_RELEASE_REPO" ]; then
+                        echo "Error: with-v2ray-api flavor is not configured on this host."
+                        return 1
+                    fi
+                    CORE_RELEASE_REPO="$XBOARD_SINGBOX_V2RAY_RELEASE_REPO"
+                    ;;
+                *)
+                    echo "Error: unsupported sing-box flavor '${flavor}'."
+                    return 1
+                    ;;
+            esac
+            normalized_version=$version
+            case "$normalized_version" in
+                v*) normalized_version=${normalized_version#v} ;;
+            esac
+            case "$flavor" in
+                with-v2ray-api)
+                    CORE_ASSET_NAME="sing-box-linux-${ARCH}"
+                    ;;
+                *)
+                    CORE_ASSET_NAME="sing-box-${normalized_version}-linux-${ARCH}.tar.gz"
+                    ;;
+            esac
+            CORE_BINARY_NAME="sing-box"
+            CORE_STABLE_BINARY_PATH="$XBOARD_SINGBOX_BINARY_PATH"
+            ;;
+        xray)
+            if [ -n "$flavor" ] && [ "$flavor" != "official" ]; then
+                echo "Error: unsupported xray flavor '${flavor}'."
+                return 1
+            fi
+            CORE_RELEASE_REPO="$XBOARD_XRAY_RELEASE_REPO"
+            case "$ARCH" in
+                amd64) arch_token="64" ;;
+                arm64) arch_token="arm64-v8a" ;;
+                *)
+                    echo "Error: unsupported xray architecture '${ARCH}'."
+                    return 1
+                    ;;
+            esac
+            CORE_ASSET_NAME="Xray-linux-${arch_token}.zip"
+            CORE_BINARY_NAME="xray"
+            CORE_STABLE_BINARY_PATH="$XBOARD_XRAY_BINARY_PATH"
+            ;;
+        *)
+            echo "Error: unsupported core type '${core_type}'."
+            return 1
+            ;;
+    esac
+
+    return 0
+}
+
+find_extracted_binary() {
+    search_dir=$1
+    binary_name=$2
+
+    python3 - "$search_dir" "$binary_name" <<'PY'
+import os, sys
+root, name = sys.argv[1], sys.argv[2]
+for current_root, _, files in os.walk(root):
+    if name in files:
+        print(os.path.join(current_root, name))
+        break
+PY
+}
+
+install_core_release() {
+    core_type=$1
+    action=$2
+    version=$3
+    channel=$4
+    flavor=$5
+
+    if [ -n "$version" ] && [ -n "$channel" ]; then
+        echo "Error: --core-version and --core-channel cannot be used together."
+        return 1
+    fi
+
+    if [ -n "$channel" ]; then
+        channel=$(normalize_core_channel "$channel") || return 1
+    fi
+    if [ -z "$version" ] && [ -z "$channel" ]; then
+        channel="latest"
+    fi
+
+    requested_ref=$version
+    if [ -z "$requested_ref" ]; then
+        requested_ref=$channel
+    fi
+
+    if ! ensure_download_dependencies; then
+        echo "Error: release download dependency check failed for core install."
+        return 1
+    fi
+    if ! require_command python3; then
+        return 1
+    fi
+
+    workdir=$(mktemp -d 2>/dev/null || mktemp -d -t xboard-core-install)
+    if [ -z "$workdir" ]; then
+        echo "Error: failed to create temporary core install directory."
+        return 1
+    fi
+    trap 'rm -rf "$workdir"' EXIT INT TERM
+
+    metadata_file="$workdir/release.json"
+    if ! resolve_core_asset "$core_type" "$requested_ref" "$flavor"; then
+        return 1
+    fi
+    if ! fetch_release_metadata "$CORE_RELEASE_REPO" "$requested_ref" "$metadata_file"; then
+        return 1
+    fi
+    resolved_tag=$(json_get_release_tag "$metadata_file")
+    if [ -z "$resolved_tag" ]; then
+        echo "Error: failed to resolve release tag for ${core_type}."
+        return 1
+    fi
+
+    if ! resolve_core_asset "$core_type" "$resolved_tag" "$flavor"; then
+        return 1
+    fi
+
+    download_url=$(json_get_asset_field "$metadata_file" "$CORE_ASSET_NAME" "browser_download_url")
+    if ! asset_digest=$(resolve_core_asset_digest "$metadata_file" "$core_type" "$CORE_ASSET_NAME" "$workdir"); then
+        return 1
+    fi
+    if [ -z "$download_url" ]; then
+        echo "Error: release asset '${CORE_ASSET_NAME}' not found in ${CORE_RELEASE_REPO}@${resolved_tag}."
+        return 1
+    fi
+
+    archive_path="$workdir/$CORE_ASSET_NAME"
+    if ! download_file "$download_url" "$archive_path" "$CORE_ASSET_NAME"; then
+        return 1
+    fi
+    if ! verify_digest_value "$archive_path" "$asset_digest" "$CORE_ASSET_NAME"; then
+        return 1
+    fi
+
+    extract_dir="$workdir/extracted"
+    mkdir -p "$extract_dir"
+    if ! extract_archive "$archive_path" "$extract_dir"; then
+        return 1
+    fi
+
+    binary_path=$(find_extracted_binary "$extract_dir" "$CORE_BINARY_NAME")
+    if [ -z "$binary_path" ] || [ ! -f "$binary_path" ]; then
+        echo "Error: failed to locate extracted binary '${CORE_BINARY_NAME}'."
+        return 1
+    fi
+
+    version_dir="${XBOARD_CORE_INSTALL_BASE_DIR}/${core_type}/${resolved_tag}"
+    target_binary_path="${version_dir}/${CORE_BINARY_NAME}"
+    if [ "$action" = "ensure" ] && [ -x "$target_binary_path" ]; then
+        if ! install_symlink_or_copy "$target_binary_path" "$CORE_STABLE_BINARY_PATH"; then
+            return 1
+        fi
+        emit_core_install_success "$core_type" "$action" "$requested_ref" "$resolved_tag" "Core ${core_type} already installed at ${resolved_tag}." "$target_binary_path" "$CORE_STABLE_BINARY_PATH" "false"
+        return 0
+    fi
+
+    if ! ensure_dir "$version_dir"; then
+        echo "Error: failed to create version directory ${version_dir}."
+        return 1
+    fi
+    if ! install_executable_file "$binary_path" "$target_binary_path"; then
+        echo "Error: failed to install core binary into ${target_binary_path}."
+        return 1
+    fi
+    if ! install_symlink_or_copy "$target_binary_path" "$CORE_STABLE_BINARY_PATH"; then
+        return 1
+    fi
+
+    emit_core_install_success "$core_type" "$action" "$requested_ref" "$resolved_tag" "Installed ${core_type} ${resolved_tag} to ${target_binary_path}." "$target_binary_path" "$CORE_STABLE_BINARY_PATH" "true"
+    return 0
+}
+
 hash_file_sha256() {
     target_path=$1
 
@@ -830,43 +1303,131 @@ run_bootstrap_mode() {
     )
 }
 
-HOST_TOKEN="${XBOARD_AGENT_HOST_TOKEN:-}"
+LEGACY_HOST_TOKEN="${XBOARD_AGENT_HOST_TOKEN:-}"
+LEGACY_HOST_TOKEN_SET=0
+LEGACY_HOST_TOKEN_SOURCE=""
+if [ -n "$LEGACY_HOST_TOKEN" ]; then
+    LEGACY_HOST_TOKEN_SET=1
+    LEGACY_HOST_TOKEN_SOURCE="XBOARD_AGENT_HOST_TOKEN"
+fi
 COMMUNICATION_KEY="${XBOARD_AGENT_COMMUNICATION_KEY:-}"
+COMMUNICATION_KEY_SET=0
+if [ -n "$COMMUNICATION_KEY" ]; then
+    COMMUNICATION_KEY_SET=1
+fi
 GRPC_ADDRESS="${XBOARD_AGENT_GRPC_ADDRESS:-}"
+GRPC_ADDRESS_SET=0
+if [ -n "$GRPC_ADDRESS" ]; then
+    GRPC_ADDRESS_SET=1
+fi
 GRPC_TLS_ENABLED="${XBOARD_AGENT_GRPC_TLS_ENABLED:-false}"
+GRPC_TLS_ENABLED_SET=0
+if [ "${XBOARD_AGENT_GRPC_TLS_ENABLED+x}" = "x" ]; then
+    GRPC_TLS_ENABLED_SET=1
+fi
 TRAFFIC_TYPE="${XBOARD_AGENT_TRAFFIC_TYPE:-netio}"
+TRAFFIC_TYPE_SET=0
+if [ "${XBOARD_AGENT_TRAFFIC_TYPE+x}" = "x" ]; then
+    TRAFFIC_TYPE_SET=1
+fi
 FORCE_CONFIG_OVERWRITE="${XBOARD_AGENT_CONFIG_OVERWRITE:-0}"
+FORCE_CONFIG_OVERWRITE_SET=0
+if [ "$FORCE_CONFIG_OVERWRITE" = "1" ]; then
+    FORCE_CONFIG_OVERWRITE_SET=1
+fi
+WITH_CORE_TYPE="${XBOARD_AGENT_WITH_CORE:-}"
+WITH_CORE_TYPE_SET=0
+if [ -n "$WITH_CORE_TYPE" ]; then
+    WITH_CORE_TYPE_SET=1
+fi
+CORE_ACTION="${XBOARD_AGENT_CORE_ACTION:-}"
+CORE_ACTION_SET=0
+if [ -n "$CORE_ACTION" ]; then
+    CORE_ACTION_SET=1
+fi
+CORE_TYPE="${XBOARD_AGENT_CORE_TYPE:-}"
+CORE_TYPE_SET=0
+if [ -n "$CORE_TYPE" ]; then
+    CORE_TYPE_SET=1
+fi
+CORE_VERSION="${XBOARD_AGENT_CORE_VERSION:-}"
+CORE_VERSION_SET=0
+if [ -n "$CORE_VERSION" ]; then
+    CORE_VERSION_SET=1
+fi
+CORE_CHANNEL="${XBOARD_AGENT_CORE_CHANNEL:-}"
+CORE_CHANNEL_SET=0
+if [ -n "$CORE_CHANNEL" ]; then
+    CORE_CHANNEL_SET=1
+fi
+CORE_FLAVOR="${XBOARD_AGENT_CORE_FLAVOR:-}"
+CORE_FLAVOR_SET=0
+if [ -n "$CORE_FLAVOR" ]; then
+    CORE_FLAVOR_SET=1
+fi
 BOOTSTRAP_MODE=0
 UNINSTALL_MODE=0
-INSTALL_SEMANTIC_ARGS_USED=0
+BOOTSTRAP_REF_SET=0
+BOOTSTRAP_REPO_SET=0
+SERVICE_URL_SET=0
 
 print_usage() {
     cat <<'EOF'
-Usage: sh agent.sh [options] [-- <agent install args>]
+Usage:
+  Install agent:
+    sh agent.sh -k <communication-key> -g <grpc-address> [options]
 
-Options:
-  --host-token <token>          Agent host token
-  --communication-key <key>     Agent registration communication key (first boot)
-  --grpc-address <address>      Panel gRPC address, e.g. 10.0.0.2:9090
-  --grpc-tls-enabled <bool>     true/false, default false
-  --traffic-type <type>         traffic.type, default netio
-  --force-config-overwrite      overwrite existing agent_config.yml
-  --bootstrap                   run bootstrap mode (download+verify+install)
-  --uninstall                   remove agent artifacts managed by this script
-  --ref <latest|tag|commit>     bootstrap source ref (default: latest)
-  --repo <owner/repo>           bootstrap source repository
-  --service-url <url>           bootstrap service URL override
-  -h, --help                    show this help message
+  Install agent + core:
+    sh agent.sh -k <communication-key> -g <grpc-address> -c <sing-box|xray> [core options]
+
+  Bootstrap remote install:
+    sh agent.sh --bootstrap [--ref <latest|tag|commit>] [--repo <owner/repo>] [--service-url <url>] -- -k <communication-key> -g <grpc-address> [options]
+
+  Core maintenance only:
+    sh agent.sh --core-action <install|upgrade|ensure> --core-type <sing-box|xray> [core options]
+
+  Uninstall:
+    sh agent.sh --uninstall
+
+Install options:
+  -k, --communication-key <key>  Agent registration communication key (required)
+  -g, --grpc-address <address>   Panel gRPC address, e.g. 10.0.0.2:9090 (required)
+  -t, --grpc-tls-enabled <bool>  true/false, default false
+      --traffic-type <type>      traffic.type, default netio
+  -f, --force-config-overwrite   overwrite existing agent_config.yml
+  -c, --with-core <core_type>    install core during agent install (sing-box|xray)
+
+Core maintenance options:
+      --core-action <action>     core install action: install|upgrade|ensure
+      --core-type <core_type>    target core type for core install/upgrade
+      --core-version <version>   core release version
+      --core-channel <channel>   core release channel: stable|latest
+      --core-flavor <flavor>     core release flavor, e.g. official
+
+Bootstrap options:
+      --bootstrap                run bootstrap mode (download+verify+install)
+      --ref <latest|tag|commit>  bootstrap source ref (default: latest)
+      --repo <owner/repo>        bootstrap source repository
+      --service-url <url>        bootstrap service URL override
+
+Other options:
+      --uninstall                remove agent artifacts managed by this script
+  -h, --help                     show this help message
 
 Environment:
-  XBOARD_AGENT_HOST_TOKEN
   XBOARD_AGENT_COMMUNICATION_KEY
   XBOARD_AGENT_GRPC_ADDRESS
   XBOARD_AGENT_GRPC_TLS_ENABLED
   XBOARD_AGENT_TRAFFIC_TYPE
   XBOARD_AGENT_CONFIG_OVERWRITE=1
+  XBOARD_AGENT_WITH_CORE
+  XBOARD_AGENT_CORE_ACTION
+  XBOARD_AGENT_CORE_TYPE
+  XBOARD_AGENT_CORE_VERSION
+  XBOARD_AGENT_CORE_CHANNEL
+  XBOARD_AGENT_CORE_FLAVOR
 
-  Bootstrap-related:
+Bootstrap-related:
   XBOARD_BOOTSTRAP_REF, XBOARD_BOOTSTRAP_REPO
   XBOARD_BOOTSTRAP_RAW_BASE_URL, XBOARD_BOOTSTRAP_RELEASE_BASE_URL
   XBOARD_BOOTSTRAP_API_BASE_URL
@@ -889,6 +1450,17 @@ normalize_bool() {
     esac
 }
 
+fail_host_token_disabled() {
+    echo "Error: host_token can only be written back by the Agent after first-boot registration; do not pass --host-token or XBOARD_AGENT_HOST_TOKEN."
+    exit 1
+}
+
+fail_host_token_mixed() {
+    echo "Error: communication_key and host_token cannot be used together."
+    echo "host_token can only be written back by the Agent after first-boot registration."
+    exit 1
+}
+
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --host-token)
@@ -896,35 +1468,36 @@ while [ "$#" -gt 0 ]; do
                 echo "Error: --host-token requires a value."
                 exit 1
             fi
-            HOST_TOKEN=$2
-            INSTALL_SEMANTIC_ARGS_USED=1
+            LEGACY_HOST_TOKEN=$2
+            LEGACY_HOST_TOKEN_SET=1
+            LEGACY_HOST_TOKEN_SOURCE="--host-token"
             shift 2
             ;;
-        --communication-key)
+        -k|--communication-key)
             if [ "$#" -lt 2 ]; then
                 echo "Error: --communication-key requires a value."
                 exit 1
             fi
             COMMUNICATION_KEY=$2
-            INSTALL_SEMANTIC_ARGS_USED=1
+            COMMUNICATION_KEY_SET=1
             shift 2
             ;;
-        --grpc-address)
+        -g|--grpc-address)
             if [ "$#" -lt 2 ]; then
                 echo "Error: --grpc-address requires a value."
                 exit 1
             fi
             GRPC_ADDRESS=$2
-            INSTALL_SEMANTIC_ARGS_USED=1
+            GRPC_ADDRESS_SET=1
             shift 2
             ;;
-        --grpc-tls-enabled)
+        -t|--grpc-tls-enabled)
             if [ "$#" -lt 2 ]; then
                 echo "Error: --grpc-tls-enabled requires a value."
                 exit 1
             fi
             GRPC_TLS_ENABLED=$2
-            INSTALL_SEMANTIC_ARGS_USED=1
+            GRPC_TLS_ENABLED_SET=1
             shift 2
             ;;
         --traffic-type)
@@ -933,13 +1506,67 @@ while [ "$#" -gt 0 ]; do
                 exit 1
             fi
             TRAFFIC_TYPE=$2
-            INSTALL_SEMANTIC_ARGS_USED=1
+            TRAFFIC_TYPE_SET=1
             shift 2
             ;;
-        --force-config-overwrite)
+        -f|--force-config-overwrite)
             FORCE_CONFIG_OVERWRITE=1
-            INSTALL_SEMANTIC_ARGS_USED=1
+            FORCE_CONFIG_OVERWRITE_SET=1
             shift
+            ;;
+        -c|--with-core)
+            if [ "$#" -lt 2 ]; then
+                echo "Error: --with-core requires a value."
+                exit 1
+            fi
+            WITH_CORE_TYPE=$2
+            WITH_CORE_TYPE_SET=1
+            shift 2
+            ;;
+        --core-action)
+            if [ "$#" -lt 2 ]; then
+                echo "Error: --core-action requires a value."
+                exit 1
+            fi
+            CORE_ACTION=$2
+            CORE_ACTION_SET=1
+            shift 2
+            ;;
+        --core-type)
+            if [ "$#" -lt 2 ]; then
+                echo "Error: --core-type requires a value."
+                exit 1
+            fi
+            CORE_TYPE=$2
+            CORE_TYPE_SET=1
+            shift 2
+            ;;
+        --core-version)
+            if [ "$#" -lt 2 ]; then
+                echo "Error: --core-version requires a value."
+                exit 1
+            fi
+            CORE_VERSION=$2
+            CORE_VERSION_SET=1
+            shift 2
+            ;;
+        --core-channel)
+            if [ "$#" -lt 2 ]; then
+                echo "Error: --core-channel requires a value."
+                exit 1
+            fi
+            CORE_CHANNEL=$2
+            CORE_CHANNEL_SET=1
+            shift 2
+            ;;
+        --core-flavor)
+            if [ "$#" -lt 2 ]; then
+                echo "Error: --core-flavor requires a value."
+                exit 1
+            fi
+            CORE_FLAVOR=$2
+            CORE_FLAVOR_SET=1
+            shift 2
             ;;
         --bootstrap)
             BOOTSTRAP_MODE=1
@@ -955,7 +1582,7 @@ while [ "$#" -gt 0 ]; do
                 exit 1
             fi
             XBOARD_BOOTSTRAP_REF=$2
-            INSTALL_SEMANTIC_ARGS_USED=1
+            BOOTSTRAP_REF_SET=1
             shift 2
             ;;
         --repo)
@@ -964,7 +1591,7 @@ while [ "$#" -gt 0 ]; do
                 exit 1
             fi
             XBOARD_BOOTSTRAP_REPO=$2
-            INSTALL_SEMANTIC_ARGS_USED=1
+            BOOTSTRAP_REPO_SET=1
             shift 2
             ;;
         --service-url)
@@ -973,7 +1600,7 @@ while [ "$#" -gt 0 ]; do
                 exit 1
             fi
             XBOARD_AGENT_SERVICE_URL=$2
-            INSTALL_SEMANTIC_ARGS_USED=1
+            SERVICE_URL_SET=1
             shift 2
             ;;
         -h|--help)
@@ -997,9 +1624,60 @@ if [ "$BOOTSTRAP_MODE" = "1" ] && [ "$UNINSTALL_MODE" = "1" ]; then
     exit 1
 fi
 
+if [ "$COMMUNICATION_KEY_SET" = "1" ] && [ "$LEGACY_HOST_TOKEN_SET" = "1" ]; then
+    fail_host_token_mixed
+fi
+
+if [ "$LEGACY_HOST_TOKEN_SET" = "1" ] && {
+    [ "$LEGACY_HOST_TOKEN_SOURCE" = "--host-token" ] ||
+    [ "$BOOTSTRAP_MODE" = "1" ] ||
+    { [ "$UNINSTALL_MODE" != "1" ] && [ -z "$CORE_ACTION" ]; }
+}; then
+    fail_host_token_disabled
+fi
+
+if [ -n "$WITH_CORE_TYPE" ] && [ -n "$CORE_ACTION" ]; then
+    echo "Error: --with-core cannot be combined with --core-action."
+    exit 1
+fi
+
+if [ -n "$CORE_VERSION" ] && [ -n "$CORE_CHANNEL" ]; then
+    echo "Error: --core-version and --core-channel cannot be used together."
+    exit 1
+fi
+
+if [ -n "$WITH_CORE_TYPE" ] && [ -n "$CORE_TYPE" ] && [ "$WITH_CORE_TYPE" != "$CORE_TYPE" ]; then
+    echo "Error: --with-core and --core-type must reference the same core."
+    exit 1
+fi
+
+if [ -n "$WITH_CORE_TYPE" ] && [ -z "$CORE_TYPE" ]; then
+    CORE_TYPE=$WITH_CORE_TYPE
+fi
+
+if [ -z "$WITH_CORE_TYPE" ] && [ -z "$CORE_ACTION" ] && { [ -n "$CORE_TYPE" ] || [ -n "$CORE_VERSION" ] || [ -n "$CORE_CHANNEL" ] || [ -n "$CORE_FLAVOR" ]; }; then
+    echo "Error: core options require --with-core or --core-action."
+    exit 1
+fi
+
+if [ -n "$CORE_ACTION" ] && [ -z "$CORE_TYPE" ]; then
+    echo "Error: --core-type is required when --core-action is set."
+    exit 1
+fi
+
+if [ -n "$CORE_ACTION" ] && [ "$BOOTSTRAP_MODE" = "1" ]; then
+    echo "Error: --core-action cannot be combined with --bootstrap."
+    exit 1
+fi
+
+if [ -n "$CORE_ACTION" ] && { [ "$COMMUNICATION_KEY_SET" = "1" ] || [ "$GRPC_ADDRESS_SET" = "1" ] || [ "$GRPC_TLS_ENABLED_SET" = "1" ] || [ "$TRAFFIC_TYPE_SET" = "1" ] || [ "$FORCE_CONFIG_OVERWRITE_SET" = "1" ] || [ "$BOOTSTRAP_REF_SET" = "1" ] || [ "$BOOTSTRAP_REPO_SET" = "1" ] || [ "$SERVICE_URL_SET" = "1" ]; }; then
+    echo "Error: --core-action cannot be combined with install/bootstrap config parameters."
+    exit 1
+fi
+
 if [ "$UNINSTALL_MODE" = "1" ]; then
-    if [ "$INSTALL_SEMANTIC_ARGS_USED" = "1" ]; then
-        echo "Error: --uninstall cannot be combined with install/bootstrap parameters."
+    if [ "$COMMUNICATION_KEY_SET" = "1" ] || [ "$LEGACY_HOST_TOKEN_SET" = "1" ] || [ "$GRPC_ADDRESS_SET" = "1" ] || [ "$GRPC_TLS_ENABLED_SET" = "1" ] || [ "$TRAFFIC_TYPE_SET" = "1" ] || [ "$FORCE_CONFIG_OVERWRITE_SET" = "1" ] || [ "$WITH_CORE_TYPE_SET" = "1" ] || [ "$CORE_ACTION_SET" = "1" ] || [ "$CORE_TYPE_SET" = "1" ] || [ "$CORE_VERSION_SET" = "1" ] || [ "$CORE_CHANNEL_SET" = "1" ] || [ "$CORE_FLAVOR_SET" = "1" ] || [ "$BOOTSTRAP_REF_SET" = "1" ] || [ "$BOOTSTRAP_REPO_SET" = "1" ] || [ "$SERVICE_URL_SET" = "1" ]; then
+        echo "Error: --uninstall cannot be combined with install/bootstrap/core parameters."
         exit 1
     fi
 
@@ -1028,7 +1706,30 @@ if [ "$UNINSTALL_MODE" = "1" ]; then
 fi
 
 if [ "$BOOTSTRAP_MODE" = "1" ]; then
+    export XBOARD_AGENT_COMMUNICATION_KEY="$COMMUNICATION_KEY"
+    export XBOARD_AGENT_GRPC_ADDRESS="$GRPC_ADDRESS"
+    export XBOARD_AGENT_GRPC_TLS_ENABLED="$GRPC_TLS_ENABLED"
+    export XBOARD_AGENT_TRAFFIC_TYPE="$TRAFFIC_TYPE"
+    export XBOARD_AGENT_CONFIG_OVERWRITE="$FORCE_CONFIG_OVERWRITE"
+    export XBOARD_AGENT_WITH_CORE="$WITH_CORE_TYPE"
+    export XBOARD_AGENT_CORE_ACTION="$CORE_ACTION"
+    export XBOARD_AGENT_CORE_TYPE="$CORE_TYPE"
+    export XBOARD_AGENT_CORE_VERSION="$CORE_VERSION"
+    export XBOARD_AGENT_CORE_CHANNEL="$CORE_CHANNEL"
+    export XBOARD_AGENT_CORE_FLAVOR="$CORE_FLAVOR"
+    unset XBOARD_AGENT_HOST_TOKEN
     if ! run_bootstrap_mode "$@"; then
+        exit 1
+    fi
+    exit 0
+fi
+
+if [ -n "$CORE_ACTION" ]; then
+    if [ "$UNINSTALL_MODE" = "1" ]; then
+        echo "Error: --core-action cannot be combined with --uninstall."
+        exit 1
+    fi
+    if ! install_core_release "$CORE_TYPE" "$CORE_ACTION" "$CORE_VERSION" "$CORE_CHANNEL" "$CORE_FLAVOR"; then
         exit 1
     fi
     exit 0
@@ -1054,6 +1755,16 @@ fi
 
 install_binary "agent" "./cmd/agent/main.go"
 
+if ! persist_agent_deploy_assets; then
+    exit 1
+fi
+
+if [ -n "$WITH_CORE_TYPE" ]; then
+    if ! install_core_release "$WITH_CORE_TYPE" "install" "$CORE_VERSION" "$CORE_CHANNEL" "$CORE_FLAVOR"; then
+        exit 1
+    fi
+fi
+
 CONFIG_PATH="$INSTALL_DIR/agent_config.yml"
 if [ -f "$CONFIG_PATH" ] && [ "$FORCE_CONFIG_OVERWRITE" != "1" ]; then
     echo "agent_config.yml already exists. Keep existing file (use --force-config-overwrite to overwrite)."
@@ -1062,23 +1773,21 @@ else
         echo "Error: missing required config parameters."
         echo "grpc address is required to initialize agent_config.yml."
         echo "Example:"
-        echo "  sh ./deploy/agent.sh --communication-key '<key>' --grpc-address '127.0.0.1:9090'"
-        echo "  or"
-        echo "  sh ./deploy/agent.sh --host-token '<token>' --grpc-address '127.0.0.1:9090'"
-        echo "  or set XBOARD_AGENT_GRPC_ADDRESS with XBOARD_AGENT_HOST_TOKEN / XBOARD_AGENT_COMMUNICATION_KEY"
+        echo "  sh ./deploy/agent.sh -k '<communication-key>' -g '127.0.0.1:9090'"
         exit 1
     fi
 
-    if [ -z "$HOST_TOKEN" ] && [ -z "$COMMUNICATION_KEY" ]; then
+    if [ -z "$COMMUNICATION_KEY" ]; then
         echo "Error: missing required authentication parameters."
-        echo "Provide either --host-token or --communication-key to initialize agent_config.yml."
+        echo "communication_key is required to initialize agent_config.yml."
+        echo "host_token can only be written back by the Agent after first-boot registration."
         exit 1
     fi
 
     umask 077
     cat > "$CONFIG_PATH" <<EOF
 panel:
-  host_token: "${HOST_TOKEN}"
+  host_token: ""
   communication_key: "${COMMUNICATION_KEY}"
 
 grpc:

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os/signal"
 	"syscall"
@@ -34,6 +35,13 @@ var serveCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(serveCmd)
+}
+
+func registerSchedulerJob(scheduler *job.Scheduler, field, spec string, runnable job.Runnable) error {
+	if _, err := scheduler.Register(spec, runnable); err != nil {
+		return fmt.Errorf("register scheduler %s: %w", field, err)
+	}
+	return nil
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
@@ -212,19 +220,20 @@ func runServe(cmd *cobra.Command, args []string) error {
 		logger,
 	)
 	accessLogService := service.NewAccessLogService(store)
-	inboundSpecService := service.NewInboundSpecService(store.InboundSpecs(), store.InboundSpecRevisions(), store.InboundIndexes())
+	artifactCompilerService := service.NewArtifactCompilerService(store.InboundSpecs(), store.DesiredArtifacts())
+	inboundSpecService := service.NewInboundSpecService(store.InboundSpecs(), store.InboundSpecRevisions(), store.InboundIndexes(), artifactCompilerService)
 	driftAndDiffService := service.NewDriftAndDiffService(store.DesiredArtifacts(), store.AgentConfigInventories(), store.InboundIndexes(), store.DriftStates())
 	inventoryIngestService := service.NewInventoryIngestService(store.AgentConfigInventories(), store.InboundIndexes())
-	applyOrchestratorService := service.NewApplyOrchestratorService(store.DesiredArtifacts(), store.ApplyRuns())
+	applyOrchestratorService := service.NewApplyOrchestratorService(store.DesiredArtifacts(), store.ApplyRuns(), driftAndDiffService)
 	shortLinkService := service.NewShortLinkService(store.ShortLinks(), store.Users(), store.Settings())
 
 	scheduler := job.NewScheduler(logger)
 
 	// Multi-granularity stat user jobs for traffic aggregation
 	// Each job uses its own accumulator from the multi-accumulator
-	// Hourly: runs every 5 minutes (modified to 10s for testing), aggregates to hourly buckets
+	// Hourly: runs every 5 minutes, aggregates to hourly buckets
 	statUserJobHourly := job.NewStatUserJobWithType(multiAccumulator.Get(job.RecordTypeHourly), store.StatUsers(), logger, job.RecordTypeHourly)
-	if _, err := scheduler.Register("@every 10s", statUserJobHourly); err != nil {
+	if err := registerSchedulerJob(scheduler, "scheduler.stat_user_hourly", cfg.Scheduler.StatUserHourly, statUserJobHourly); err != nil {
 		return err
 	}
 	// Daily: runs every hour, aggregates to daily buckets
@@ -238,15 +247,15 @@ func runServe(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	trafficFetchJob := job.NewTrafficFetchJob(trafficQueue, serverTrafficService, logger)
-	if _, err := scheduler.Register("@every 10s", trafficFetchJob); err != nil {
+	if err := registerSchedulerJob(scheduler, "scheduler.traffic_fetch", cfg.Scheduler.TrafficFetch, trafficFetchJob); err != nil {
 		return err
 	}
 	emailJob := job.NewSendEmailJob(notificationQueue, infra.Notifier, logger)
-	if _, err := scheduler.Register("@every 10s", emailJob); err != nil {
+	if err := registerSchedulerJob(scheduler, "scheduler.email_notify", cfg.Scheduler.EmailNotify, emailJob); err != nil {
 		return err
 	}
 	telegramJob := job.NewSendTelegramJob(notificationQueue, infra.Notifier, logger)
-	if _, err := scheduler.Register("@every 10s", telegramJob); err != nil {
+	if err := registerSchedulerJob(scheduler, "scheduler.telegram_notify", cfg.Scheduler.TelegramNotify, telegramJob); err != nil {
 		return err
 	}
 	heartbeatJob := job.NewNodeHeartbeatJob(store.Servers(), notificationQueue, store.Settings(), logger)

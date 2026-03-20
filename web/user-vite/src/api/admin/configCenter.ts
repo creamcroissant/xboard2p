@@ -2,6 +2,7 @@ import { adminApi } from "./client";
 import type {
   ConfigCenterAppliedSnapshot,
   ConfigCenterApplyRun,
+  ConfigCenterApplyRunDetail,
   ConfigCenterApplyRunListResponse,
   ConfigCenterArtifactListResponse,
   ConfigCenterDriftStateListResponse,
@@ -11,6 +12,7 @@ import type {
   ConfigCenterSpecListResponse,
   ConfigCenterTextDiff,
   CreateConfigCenterApplyRunRequest,
+  GetConfigCenterApplyRunDetailParams,
   GetConfigCenterSemanticDiffParams,
   GetConfigCenterTextDiffParams,
   ImportConfigCenterSpecRequest,
@@ -148,6 +150,19 @@ export async function listConfigCenterApplyRuns(
     data: response.data.data ?? [],
     total: response.data.total ?? 0,
   };
+}
+
+export async function getConfigCenterApplyRunDetail(
+  runId: string,
+  params?: GetConfigCenterApplyRunDetailParams
+): Promise<ConfigCenterApplyRunDetail> {
+  const response = await adminApi.get<DataEnvelope<ConfigCenterApplyRunDetail>>(
+    `/config-center/apply-runs/${encodeURIComponent(runId)}`,
+    {
+      params,
+    }
+  );
+  return response.data.data;
 }
 
 export async function listConfigCenterAppliedSnapshot(

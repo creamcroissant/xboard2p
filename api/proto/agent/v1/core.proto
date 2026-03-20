@@ -54,3 +54,27 @@ message SwitchCoreResponse {
   string message = 3;
   string error = 4;
 }
+
+// InstallCoreRequest requests controlled core installation or upgrade.
+message InstallCoreRequest {
+  string core_type = 1;
+  string action = 2;
+  string version = 3;
+  string channel = 4;
+  string flavor = 5;
+  bool activate = 6;
+  string request_id = 7;
+}
+
+// InstallCoreResponse reports install or upgrade result.
+message InstallCoreResponse {
+  bool success = 1;
+  bool changed = 2;
+  string message = 3;
+  string error = 4;
+  string core_type = 5;
+  string version = 6;
+  string previous_version = 7;
+  bool activated = 8;
+  bool rolled_back = 9;
+}

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/creamcroissant/xboard/internal/agent/protocol"
 	"gopkg.in/yaml.v3"
 )
 
@@ -29,6 +30,9 @@ const (
 	defaultProxyPIDDir         = "/var/run/xboard/cores"
 	defaultProxyCgroupBasePath = "/sys/fs/cgroup/xboard"
 	defaultPanelHTTPPort       = "8080"
+	defaultInstallScriptPath   = "/opt/xboard/deploy/agent.sh"
+	defaultSingBoxBinaryPath   = "/opt/xboard/bin/sing-box"
+	defaultXrayBinaryPath      = "/opt/xboard/bin/xray"
 )
 
 type Config struct {
@@ -165,7 +169,10 @@ type ProtocolConfig struct {
 	// ValidateCmd is the command to validate config before applying (optional)
 	ValidateCmd string `yaml:"validate_cmd"`
 
-	// AutoRestart controls whether to restart service after config change
+	// ServiceAction controls whether changes trigger reload/restart/none.
+	ServiceAction string `yaml:"service_action"`
+
+	// AutoRestart is a legacy compatibility field: true -> reload, false -> none.
 	AutoRestart bool `yaml:"auto_restart"`
 
 	// PreHook is executed before applying config changes (optional)
@@ -232,9 +239,12 @@ type IntervalConfig struct {
 }
 
 type CoreConfig struct {
-	TemplatePath string `yaml:"template_path"`
-	OutputPath   string `yaml:"output_path"`
-	ReloadCmd    string `yaml:"reload_cmd"`
+	TemplatePath      string `yaml:"template_path"`
+	OutputPath        string `yaml:"output_path"`
+	ReloadCmd         string `yaml:"reload_cmd"`
+	InstallScriptPath string `yaml:"install_script_path"`
+	SingBoxBinaryPath string `yaml:"singbox_binary_path"`
+	XrayBinaryPath    string `yaml:"xray_binary_path"`
 }
 
 type TrafficConfig struct {
@@ -333,6 +343,11 @@ func applyDefaults(cfg *Config) error {
 	}
 	if cfg.Protocol.ServiceName == "" {
 		cfg.Protocol.ServiceName = "sing-box"
+	}
+
+	// Core defaults
+	if strings.TrimSpace(cfg.Core.InstallScriptPath) == "" {
+		cfg.Core.InstallScriptPath = defaultInstallScriptPath
 	}
 
 	// gRPC defaults
@@ -626,6 +641,9 @@ func (cfg *Config) Validate() error {
 				return fmt.Errorf("grpc_server.tls.cert_file and grpc_server.tls.key_file are required when grpc_server.tls is enabled")
 			}
 		}
+	}
+	if _, err := protocol.NormalizeServiceAction(cfg.Protocol.ServiceAction, cfg.Protocol.AutoRestart); err != nil {
+		return err
 	}
 	if cfg.Proxy.Enabled {
 		if cfg.Proxy.PortRangeStart <= 0 || cfg.Proxy.PortRangeEnd <= 0 || cfg.Proxy.PortRangeEnd < cfg.Proxy.PortRangeStart {

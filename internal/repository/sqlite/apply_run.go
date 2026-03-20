@@ -87,7 +87,7 @@ func (r *applyRunRepo) FindByRunID(ctx context.Context, runID string) (*reposito
 
 func (r *applyRunRepo) List(ctx context.Context, filter repository.ApplyRunFilter) ([]*repository.ApplyRun, error) {
 	query := strings.Builder{}
-	args := make([]any, 0, 8)
+	args := make([]any, 0, 10)
 
 	query.WriteString(`
 		SELECT
@@ -98,18 +98,7 @@ func (r *applyRunRepo) List(ctx context.Context, filter repository.ApplyRunFilte
 		WHERE 1 = 1
 	`)
 
-	if filter.AgentHostID != nil {
-		query.WriteString(" AND agent_host_id = ?")
-		args = append(args, *filter.AgentHostID)
-	}
-	if filter.CoreType != nil {
-		query.WriteString(" AND core_type = ?")
-		args = append(args, *filter.CoreType)
-	}
-	if filter.Status != nil {
-		query.WriteString(" AND status = ?")
-		args = append(args, *filter.Status)
-	}
+	appendApplyRunFilterConditions(&query, &args, filter)
 
 	limit, offset := normalizePagination(filter.Limit, filter.Offset, 100)
 	query.WriteString(" ORDER BY started_at DESC, run_id DESC LIMIT ? OFFSET ?")
@@ -134,25 +123,43 @@ func (r *applyRunRepo) List(ctx context.Context, filter repository.ApplyRunFilte
 
 func (r *applyRunRepo) Count(ctx context.Context, filter repository.ApplyRunFilter) (int64, error) {
 	query := strings.Builder{}
-	args := make([]any, 0, 6)
+	args := make([]any, 0, 8)
 
 	query.WriteString(`SELECT COUNT(*) FROM apply_runs WHERE 1 = 1`)
-	if filter.AgentHostID != nil {
-		query.WriteString(" AND agent_host_id = ?")
-		args = append(args, *filter.AgentHostID)
-	}
-	if filter.CoreType != nil {
-		query.WriteString(" AND core_type = ?")
-		args = append(args, *filter.CoreType)
-	}
-	if filter.Status != nil {
-		query.WriteString(" AND status = ?")
-		args = append(args, *filter.Status)
-	}
+	appendApplyRunFilterConditions(&query, &args, filter)
 
 	var total int64
 	err := r.db.QueryRowContext(ctx, query.String(), args...).Scan(&total)
 	return total, err
+}
+
+func appendApplyRunFilterConditions(query *strings.Builder, args *[]any, filter repository.ApplyRunFilter) {
+	if filter.AgentHostID != nil {
+		query.WriteString(" AND agent_host_id = ?")
+		*args = append(*args, *filter.AgentHostID)
+	}
+	if filter.CoreType != nil {
+		query.WriteString(" AND core_type = ?")
+		*args = append(*args, *filter.CoreType)
+	}
+	if filter.TargetRevision != nil {
+		query.WriteString(" AND target_revision = ?")
+		*args = append(*args, *filter.TargetRevision)
+	}
+	if len(filter.Statuses) > 0 {
+		query.WriteString(" AND status IN (")
+		for idx, status := range filter.Statuses {
+			if idx > 0 {
+				query.WriteString(",")
+			}
+			query.WriteString("?")
+			*args = append(*args, status)
+		}
+		query.WriteString(")")
+	} else if filter.Status != nil {
+		query.WriteString(" AND status = ?")
+		*args = append(*args, *filter.Status)
+	}
 }
 
 type applyRunScanner interface {

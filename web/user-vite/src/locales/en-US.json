@@ -21,6 +21,7 @@
     "back": "Back",
     "retry": "Retry",
     "actions": "Actions",
+    "view": "View",
     "expand": "Expand",
     "collapse": "Collapse"
   },
@@ -542,6 +543,7 @@
       },
       "tabs": {
         "specs": "Specs",
+        "apply": "Apply Diagnostics",
         "diff": "Diff",
         "drift": "Drift",
         "snapshot": "Applied Snapshot"
@@ -560,6 +562,15 @@
       "apply": {
         "targetRevision": "Target revision",
         "previousRevision": "Previous revision (optional)"
+      },
+      "applyRuns": {
+        "title": "Apply Runs and Diagnostics",
+        "description": "Inspect recent apply runs, errors, and reused diagnostics",
+        "issuesTitle": "Diagnostic Issues",
+        "semanticTitle": "Semantic Diagnostics",
+        "semanticDescription": "Run-level diagnostics aggregated from semantic diff",
+        "textTitle": "Text Diagnostics",
+        "textDescription": "Drill down with text diff by tag or filename"
       },
       "diff": {
         "title": "Text and Semantic Diff",
@@ -589,6 +600,9 @@
       "fields": {
         "agentHost": "Agent Host",
         "selectedHost": "Selected Host",
+        "applyRun": "Apply Run",
+        "runId": "Run ID",
+        "status": "Status",
         "coreType": "Core Type",
         "tag": "Tag",
         "revision": "Revision",
@@ -620,6 +634,7 @@
       },
       "placeholders": {
         "selectHost": "Select an agent host",
+        "selectApplyRun": "Select an apply run",
         "noHost": "No host selected",
         "optional": "Optional",
         "specTag": "e.g. inbound-web"
@@ -629,6 +644,12 @@
         "noHostDescription": "Select a host to manage config center resources.",
         "noSpecTitle": "No Specs",
         "noSpecDescription": "Create your first spec to manage desired config.",
+        "noApplyRunTitle": "No Apply Runs",
+        "noApplyRunDescription": "Create an apply run to inspect status and diagnostics here.",
+        "noApplySemanticDiff": "No semantic diagnostics available",
+        "noApplyTextDiff": "No text diagnostics available for the current selector",
+        "selectApplyTextDiff": "Enter a tag or filename to inspect run-level text diagnostics",
+        "selectTextDiffSelector": "Text diff requires a tag or filename",
         "noSemanticDiff": "No semantic diff",
         "noDriftTitle": "No Drift",
         "noDriftDescription": "Desired and Applied are currently aligned.",
@@ -652,6 +673,8 @@
         "snapshotLoadFailed": "Failed to load applied snapshot",
         "driftLoadFailed": "Failed to load drift states",
         "recoveryLoadFailed": "Failed to load recovery records",
+        "applyRunsLoadFailed": "Failed to load apply runs",
+        "applyDetailLoadFailed": "Failed to load apply diagnostics",
         "textDiffFailed": "Failed to load text diff",
         "semanticDiffFailed": "Failed to load semantic diff",
         "specSaved": "Spec created successfully",

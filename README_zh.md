@@ -27,11 +27,13 @@ pkg/, test/       # 预留扩展库与契约/集成测试
 Dockerfile        # Go 多阶段构建
 .env.example      # 环境变量示例
 config.example.yml # YAML 配置示例
+coding.md         # 官方架构文档
 README.md         # 英文概览
 README_zh.md      # 中文概览
 todo.list         # 开发任务板
 ```
 
+详细架构、约束与规划请参阅 `coding.md`。
 
 ## 🚀 快速开始
 
@@ -103,22 +105,22 @@ docker run --rm -it \
 使用提供的脚本安装为 systemd 服务：
 
 ```bash
-# 安装 panel + agent（需要 root）
-sudo ./deploy/install.sh --full
-
-# 仅安装 panel
+# 安装 panel（需要 root）
 sudo ./deploy/panel.sh
 
-# 仅安装 agent
-sudo ./deploy/agent.sh
+# 安装 agent（需要 root）
+sudo ./deploy/agent.sh -k 'your-agent-communication-key' -g '10.0.0.2:9090'
+
+# 安装 agent + sing-box core
+sudo ./deploy/agent.sh -k 'your-agent-communication-key' -g '10.0.0.2:9090' -c sing-box
 
 # 单命令 bootstrap 入口（bootstrap 逻辑已并入 agent.sh）
 curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh -o /tmp/agent.sh && \
-  sudo INSTALL_DIR=/opt/xboard sh /tmp/agent.sh --bootstrap --ref latest
+  sudo INSTALL_DIR=/opt/xboard sh /tmp/agent.sh --bootstrap --ref latest -- -k 'your-agent-communication-key' -g '10.0.0.2:9090'
 
 # 指定 tag 的 bootstrap（脚本/service/二进制版本强绑定）
 curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh -o /tmp/agent.sh && \
-  sudo INSTALL_DIR=/opt/xboard sh /tmp/agent.sh --bootstrap --ref v1.2.3
+  sudo INSTALL_DIR=/opt/xboard sh /tmp/agent.sh --bootstrap --ref v1.2.3 -- -k 'your-agent-communication-key' -g '10.0.0.2:9090'
 
 # 启动服务
 sudo systemctl start xboard
@@ -131,11 +133,6 @@ sudo ./deploy/panel.sh --uninstall
 
 # 卸载 agent 脚本管理产物
 sudo ./deploy/agent.sh --uninstall
-
-# 通过聚合入口卸载
-sudo ./deploy/install.sh --full --uninstall
-sudo ./deploy/install.sh --panel-only --uninstall
-sudo ./deploy/install.sh --agent-only --uninstall
 ```
 
 默认安装目录为 `/opt/xboard`。
@@ -152,19 +149,29 @@ agent 安装相关环境变量：
 - `XBOARD_AGENT_SCRIPT_URL` / `XBOARD_AGENT_SERVICE_URL`：私有镜像下载地址覆盖。
 - `XBOARD_BOOTSTRAP_DOWNLOAD_STRICT`：兼容保留变量；bootstrap 默认 strict-only，不再影响行为。
 
-`deploy/agent.sh` 参数化初始化（CLI/ENV 对应）：
-- `--host-token` / `XBOARD_AGENT_HOST_TOKEN`
-- `--grpc-address` / `XBOARD_AGENT_GRPC_ADDRESS`
-- `--grpc-tls-enabled` / `XBOARD_AGENT_GRPC_TLS_ENABLED`（默认 `false`）
+`deploy/agent.sh` 安装参数（CLI/ENV 对应）：
+- `-k, --communication-key` / `XBOARD_AGENT_COMMUNICATION_KEY`
+- `-g, --grpc-address` / `XBOARD_AGENT_GRPC_ADDRESS`
+- `-t, --grpc-tls-enabled` / `XBOARD_AGENT_GRPC_TLS_ENABLED`（默认 `false`）
 - `--traffic-type` / `XBOARD_AGENT_TRAFFIC_TYPE`（默认 `netio`）
-- `--force-config-overwrite` / `XBOARD_AGENT_CONFIG_OVERWRITE=1`
+- `-f, --force-config-overwrite` / `XBOARD_AGENT_CONFIG_OVERWRITE=1`
+- `-c, --with-core` / `XBOARD_AGENT_WITH_CORE`（默认不安装任何 core）
 - `--uninstall`（仅清理脚本管理产物）
+
+仅 Core 运维参数：
+- `--core-action` / `XBOARD_AGENT_CORE_ACTION`
+- `--core-type` / `XBOARD_AGENT_CORE_TYPE`
+- `--core-version` / `XBOARD_AGENT_CORE_VERSION`
+- `--core-channel` / `XBOARD_AGENT_CORE_CHANNEL`
+- `--core-flavor` / `XBOARD_AGENT_CORE_FLAVOR`
 
 配置文件生成规则：
 - `agent_config.yml` 不存在：按参数写入。
 - `agent_config.yml` 已存在：默认不覆盖；显式开启 overwrite 才覆盖。
-- `host_token` 或 `grpc_address` 缺失：直接失败并输出示例。
-- 安装日志不打印 token 明文。
+- `communication_key` 或 `grpc_address` 缺失：直接失败并输出示例。
+- 新安装生成的配置固定为 `panel.host_token` 为空、`panel.communication_key` 非空。
+- `host_token` 不再作为公开安装输入；它只会在 Agent 首启注册后自动回写。
+- 安装日志不打印敏感值。
 
 卸载行为说明：
 - `--uninstall` 仅清理脚本管理项。
@@ -175,9 +182,8 @@ agent 安装相关环境变量：
 非交互示例：
 ```bash
 sudo INSTALL_DIR=/opt/xboard \
-  XBOARD_AGENT_HOST_TOKEN='your-agent-host-token' \
+  XBOARD_AGENT_COMMUNICATION_KEY='your-agent-communication-key' \
   XBOARD_AGENT_GRPC_ADDRESS='10.0.0.2:9090' \
-  XBOARD_AGENT_GRPC_TLS_ENABLED=false \
   sh ./deploy/agent.sh
 ```
 
@@ -224,7 +230,7 @@ bootstrap 现为 strict-only：
 
 配置优先读取 `config.yml`，同时支持环境变量覆盖（适合容器化部署）。
 
-详见 `config.example.yml`。
+详见 `config.example.yml` 及 `coding.md`。
 
 ## 🧪 开发流程
 
@@ -238,6 +244,8 @@ bootstrap 现为 strict-only：
 | 仅构建前端 | `make build-frontend` |
 | 仅构建后端 | `make build-backend` |
 | 冒烟测试 | `make smoke` |
+| E2E（完整） | `./scripts/e2e-test.sh` |
+| E2E（deploy-cmd） | `E2E_MODE=deploy-cmd PLAYWRIGHT_ARGS='tests/02-admin-agents.spec.ts' ./scripts/e2e-test.sh` |
 
 ## 📊 功能状态（2025-12）
 

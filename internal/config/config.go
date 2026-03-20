@@ -7,23 +7,24 @@ import (
 
 // Config 汇总应用的全部配置。
 type Config struct {
-	HTTP     HTTPConfig     `mapstructure:"http"`
-	GRPC     GRPCConfig     `mapstructure:"grpc"`
-	Log      LogConfig      `mapstructure:"log"`
-	DB       DBConfig       `mapstructure:"database"`
-	Auth     AuthConfig     `mapstructure:"auth"`
-	Security SecurityConfig `mapstructure:"security"`
-	Metrics  MetricsConfig  `mapstructure:"metrics"`
-	UI       UIConfig       `mapstructure:"ui"`
-	Cores    []CoreConfig   `mapstructure:"cores"`
-	Nodes    []NodeConfig   `mapstructure:"nodes"`
+	HTTP      HTTPConfig      `mapstructure:"http"`
+	GRPC      GRPCConfig      `mapstructure:"grpc"`
+	Log       LogConfig       `mapstructure:"log"`
+	DB        DBConfig        `mapstructure:"database"`
+	Auth      AuthConfig      `mapstructure:"auth"`
+	Security  SecurityConfig  `mapstructure:"security"`
+	Metrics   MetricsConfig   `mapstructure:"metrics"`
+	UI        UIConfig        `mapstructure:"ui"`
+	Scheduler SchedulerConfig `mapstructure:"scheduler"`
+	Cores     []CoreConfig    `mapstructure:"cores"`
+	Nodes     []NodeConfig    `mapstructure:"nodes"`
 }
 
 // GRPCConfig 定义 Agent 通信所需的 gRPC 服务配置。
 type GRPCConfig struct {
-	Enabled bool           `mapstructure:"enabled"`
-	Addr    string         `mapstructure:"addr"`
-	TLS     GRPCTLSConfig  `mapstructure:"tls"`
+	Enabled bool          `mapstructure:"enabled"`
+	Addr    string        `mapstructure:"addr"`
+	TLS     GRPCTLSConfig `mapstructure:"tls"`
 }
 
 // GRPCTLSConfig 定义 gRPC 服务的 TLS 配置。
@@ -40,10 +41,10 @@ type SecurityConfig struct {
 
 // MetricsConfig 定义 Prometheus 指标配置。
 type MetricsConfig struct {
-	Enabled   bool     `mapstructure:"enabled"`
-	Namespace string   `mapstructure:"namespace"`
-	Subsystem string   `mapstructure:"subsystem"`
-	Token     string   `mapstructure:"token"`
+	Enabled   bool      `mapstructure:"enabled"`
+	Namespace string    `mapstructure:"namespace"`
+	Subsystem string    `mapstructure:"subsystem"`
+	Token     string    `mapstructure:"token"`
 	Buckets   []float64 `mapstructure:"buckets"`
 }
 
@@ -105,12 +106,20 @@ type InstallUIConfig struct {
 	Dir     string `mapstructure:"dir"`
 }
 
+// SchedulerConfig 定义 Panel 后台任务调度配置。
+type SchedulerConfig struct {
+	StatUserHourly string `mapstructure:"stat_user_hourly"`
+	TrafficFetch   string `mapstructure:"traffic_fetch"`
+	EmailNotify    string `mapstructure:"email_notify"`
+	TelegramNotify string `mapstructure:"telegram_notify"`
+}
+
 // CoreConfig 定义代理核心配置（Xray/Sing-box）。
 type CoreConfig struct {
-	Type         string         `mapstructure:"type"`
-	Name         string         `mapstructure:"name"`
-	OriginalPath string         `mapstructure:"original_path"`
-	Log          CoreLogConfig  `mapstructure:"log"`
+	Type         string        `mapstructure:"type"`
+	Name         string        `mapstructure:"name"`
+	OriginalPath string        `mapstructure:"original_path"`
+	Log          CoreLogConfig `mapstructure:"log"`
 }
 
 type CoreLogConfig struct {

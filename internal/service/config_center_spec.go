@@ -58,6 +58,7 @@ type inboundSpecService struct {
 	specs          repository.InboundSpecRepository
 	revisions      repository.InboundSpecRevisionRepository
 	inboundIndexes repository.InboundIndexRepository
+	compiler       ArtifactCompilerService
 }
 
 // NewInboundSpecService creates InboundSpecService.
@@ -65,11 +66,17 @@ func NewInboundSpecService(
 	specs repository.InboundSpecRepository,
 	revisions repository.InboundSpecRevisionRepository,
 	inboundIndexes repository.InboundIndexRepository,
+	compilers ...ArtifactCompilerService,
 ) InboundSpecService {
+	var compiler ArtifactCompilerService
+	if len(compilers) > 0 {
+		compiler = compilers[0]
+	}
 	return &inboundSpecService{
 		specs:          specs,
 		revisions:      revisions,
 		inboundIndexes: inboundIndexes,
+		compiler:       compiler,
 	}
 }
 
@@ -124,9 +131,19 @@ func (s *inboundSpecService) createSpec(ctx context.Context, req UpsertInboundSp
 		return 0, 0, err
 	}
 
+	cleanup := func(baseErr error) error {
+		artifactErr := errors.Join(s.deleteDesiredArtifacts(ctx, spec.AgentHostID, spec.CoreType, spec.DesiredRevision))
+		specErr := errors.Join(s.specs.Delete(ctx, spec.ID))
+		return errors.Join(baseErr, artifactErr, specErr)
+	}
+
+	if err := s.renderDesiredArtifacts(ctx, spec.AgentHostID, spec.CoreType, spec.DesiredRevision); err != nil {
+		return 0, 0, cleanup(err)
+	}
+
 	snapshot, err := buildInboundSpecSnapshot(spec)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, cleanup(err)
 	}
 	revision := &repository.InboundSpecRevision{
 		SpecID:     spec.ID,
@@ -136,7 +153,7 @@ func (s *inboundSpecService) createSpec(ctx context.Context, req UpsertInboundSp
 		OperatorID: req.OperatorID,
 	}
 	if err := s.revisions.Create(ctx, revision); err != nil {
-		return 0, 0, err
+		return 0, 0, cleanup(err)
 	}
 	return spec.ID, spec.DesiredRevision, nil
 }
@@ -149,6 +166,7 @@ func (s *inboundSpecService) updateSpec(ctx context.Context, req UpsertInboundSp
 		}
 		return 0, 0, err
 	}
+	previous := *existing
 
 	agentHostID := existing.AgentHostID
 	if req.AgentHostID > 0 {
@@ -216,9 +234,19 @@ func (s *inboundSpecService) updateSpec(ctx context.Context, req UpsertInboundSp
 		return 0, 0, err
 	}
 
+	cleanup := func(baseErr error) error {
+		rollbackErr := s.specs.Update(ctx, &previous)
+		artifactErr := s.deleteDesiredArtifacts(ctx, existing.AgentHostID, existing.CoreType, nextRevision)
+		return errors.Join(baseErr, rollbackErr, artifactErr)
+	}
+
+	if err := s.renderDesiredArtifacts(ctx, existing.AgentHostID, existing.CoreType, nextRevision); err != nil {
+		return 0, 0, cleanup(err)
+	}
+
 	snapshot, err := buildInboundSpecSnapshot(existing)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, cleanup(err)
 	}
 	revision := &repository.InboundSpecRevision{
 		SpecID:     existing.ID,
@@ -228,7 +256,7 @@ func (s *inboundSpecService) updateSpec(ctx context.Context, req UpsertInboundSp
 		OperatorID: req.OperatorID,
 	}
 	if err := s.revisions.Create(ctx, revision); err != nil {
-		return 0, 0, err
+		return 0, 0, cleanup(err)
 	}
 
 	return existing.ID, nextRevision, nil
@@ -429,10 +457,14 @@ func (s *inboundSpecService) ImportFromApplied(ctx context.Context, req ImportIn
 			upsertReq.SpecID = existing.ID
 		}
 
-		if _, _, err := s.UpsertSpec(ctx, upsertReq); err != nil {
+		specID, revision, err := s.UpsertSpec(ctx, upsertReq)
+		if err != nil {
 			return 0, err
 		}
-		if upsertReq.SpecID == 0 {
+		if err := s.renderDesiredArtifacts(ctx, req.AgentHostID, coreType, revision); err != nil {
+			return 0, err
+		}
+		if upsertReq.SpecID == 0 && specID > 0 {
 			createdCount++
 		}
 	}
@@ -504,6 +536,29 @@ func (s *inboundSpecService) ensureListenAvailable(ctx context.Context, agentHos
 		}
 		filter.Offset += filter.Limit
 	}
+}
+
+
+func (s *inboundSpecService) renderDesiredArtifacts(ctx context.Context, agentHostID int64, coreType string, desiredRevision int64) error {
+	if s == nil || s.compiler == nil {
+		return nil
+	}
+	_, err := s.compiler.RenderArtifacts(ctx, RenderArtifactsRequest{
+		AgentHostID:     agentHostID,
+		CoreType:        coreType,
+		DesiredRevision: desiredRevision,
+	})
+	if err != nil {
+		return fmt.Errorf("render desired artifacts: %w", err)
+	}
+	return nil
+}
+
+func (s *inboundSpecService) deleteDesiredArtifacts(ctx context.Context, agentHostID int64, coreType string, desiredRevision int64) error {
+	if s == nil || s.compiler == nil {
+		return nil
+	}
+	return s.compiler.DeleteArtifacts(ctx, agentHostID, coreType, desiredRevision)
 }
 
 func buildInboundSpecSnapshot(spec *repository.InboundSpec) ([]byte, error) {

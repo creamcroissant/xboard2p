@@ -21,6 +21,7 @@
     "back": "返回",
     "retry": "重试",
     "actions": "操作",
+    "view": "查看",
     "expand": "展开",
     "collapse": "收起"
   },
@@ -567,6 +568,7 @@
       },
       "tabs": {
         "specs": "Spec 管理",
+        "apply": "发布诊断",
         "diff": "差异对比",
         "drift": "漂移状态",
         "snapshot": "Applied 快照"
@@ -585,6 +587,15 @@
       "apply": {
         "targetRevision": "目标 revision",
         "previousRevision": "上一 revision（可选）"
+      },
+      "applyRuns": {
+        "title": "发布记录与诊断",
+        "description": "查看最近的 apply run 状态、错误与可复用诊断结果",
+        "issuesTitle": "诊断问题",
+        "semanticTitle": "语义诊断",
+        "semanticDescription": "基于现有 semantic diff 的 run 级诊断聚合",
+        "textTitle": "文本诊断",
+        "textDescription": "复用 text diff 进行按 tag / filename 下钻"
       },
       "diff": {
         "title": "文本与语义差异",
@@ -614,6 +625,9 @@
       "fields": {
         "agentHost": "Agent 主机",
         "selectedHost": "当前主机",
+        "applyRun": "发布记录",
+        "runId": "Run ID",
+        "status": "状态",
         "coreType": "核心类型",
         "tag": "Tag",
         "revision": "Revision",
@@ -645,6 +659,7 @@
       },
       "placeholders": {
         "selectHost": "请选择 Agent 主机",
+        "selectApplyRun": "请选择发布记录",
         "noHost": "未选择主机",
         "optional": "可选",
         "specTag": "例如：inbound-web"
@@ -654,6 +669,12 @@
         "noHostDescription": "选择主机后可查看并管理配置中心内容。",
         "noSpecTitle": "暂无 Spec",
         "noSpecDescription": "创建第一条 Spec 开始管理期望配置。",
+        "noApplyRunTitle": "暂无发布记录",
+        "noApplyRunDescription": "创建 apply run 后可在此查看状态与诊断。",
+        "noApplySemanticDiff": "暂无语义诊断结果",
+        "noApplyTextDiff": "当前选择下暂无文本诊断结果",
+        "selectApplyTextDiff": "填写 Tag 或文件名后可查看该 run 的文本诊断",
+        "selectTextDiffSelector": "文本 Diff 需要至少填写 Tag 或文件名",
         "noSemanticDiff": "暂无语义差异",
         "noDriftTitle": "暂无漂移",
         "noDriftDescription": "当前 Desired 与 Applied 状态一致。",
@@ -677,6 +698,8 @@
         "snapshotLoadFailed": "加载 Applied 快照失败",
         "driftLoadFailed": "加载漂移状态失败",
         "recoveryLoadFailed": "加载恢复记录失败",
+        "applyRunsLoadFailed": "加载发布记录失败",
+        "applyDetailLoadFailed": "加载发布诊断失败",
         "textDiffFailed": "加载文本 Diff 失败",
         "semanticDiffFailed": "加载语义 Diff 失败",
         "specSaved": "Spec 创建成功",

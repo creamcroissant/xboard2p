@@ -33,6 +33,7 @@ Dockerfile            # Go multi-stage build
 config.example.yml    # YAML configuration example
 ```
 
+For more details, stage goals, and architectural constraints, see `coding.md`.
 
 ## 🚀 Quick Start
 
@@ -102,22 +103,22 @@ docker run --rm -it \
 Use the provided scripts to install as a systemd service:
 
 ```bash
-# Install panel + agent (requires root)
-sudo ./deploy/install.sh --full
-
-# Install panel only
+# Install panel (requires root)
 sudo ./deploy/panel.sh
 
-# Install agent only
-sudo ./deploy/agent.sh
+# Install agent (requires root)
+sudo ./deploy/agent.sh -k 'your-agent-communication-key' -g '10.0.0.2:9090'
+
+# Install agent + sing-box core
+sudo ./deploy/agent.sh -k 'your-agent-communication-key' -g '10.0.0.2:9090' -c sing-box
 
 # One-liner bootstrap entry (bootstrap logic is merged into agent.sh)
 curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh -o /tmp/agent.sh && \
-  sudo INSTALL_DIR=/opt/xboard sh /tmp/agent.sh --bootstrap --ref latest
+  sudo INSTALL_DIR=/opt/xboard sh /tmp/agent.sh --bootstrap --ref latest -- -k 'your-agent-communication-key' -g '10.0.0.2:9090'
 
 # Bootstrap with explicit tag (script/service/binary version bound to same tag)
 curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh -o /tmp/agent.sh && \
-  sudo INSTALL_DIR=/opt/xboard sh /tmp/agent.sh --bootstrap --ref v1.2.3
+  sudo INSTALL_DIR=/opt/xboard sh /tmp/agent.sh --bootstrap --ref v1.2.3 -- -k 'your-agent-communication-key' -g '10.0.0.2:9090'
 
 # Start service
 sudo systemctl start xboard
@@ -130,11 +131,6 @@ sudo ./deploy/panel.sh --uninstall
 
 # Uninstall agent-managed artifacts
 sudo ./deploy/agent.sh --uninstall
-
-# Uninstall via aggregate entry
-sudo ./deploy/install.sh --full --uninstall
-sudo ./deploy/install.sh --panel-only --uninstall
-sudo ./deploy/install.sh --agent-only --uninstall
 ```
 
 Default installation directory is `/opt/xboard`.
@@ -151,19 +147,29 @@ Agent install environment variables:
 - `XBOARD_AGENT_SCRIPT_URL` / `XBOARD_AGENT_SERVICE_URL`: optional override URLs for private mirror.
 - `XBOARD_BOOTSTRAP_DOWNLOAD_STRICT`: deprecated compatibility flag; bootstrap is strict-only by default.
 
-Agent config initialization parameters (`deploy/agent.sh`):
-- `--host-token` / `XBOARD_AGENT_HOST_TOKEN`
-- `--grpc-address` / `XBOARD_AGENT_GRPC_ADDRESS`
-- `--grpc-tls-enabled` / `XBOARD_AGENT_GRPC_TLS_ENABLED` (default `false`)
+Agent install parameters (`deploy/agent.sh`):
+- `-k, --communication-key` / `XBOARD_AGENT_COMMUNICATION_KEY`
+- `-g, --grpc-address` / `XBOARD_AGENT_GRPC_ADDRESS`
+- `-t, --grpc-tls-enabled` / `XBOARD_AGENT_GRPC_TLS_ENABLED` (default `false`)
 - `--traffic-type` / `XBOARD_AGENT_TRAFFIC_TYPE` (default `netio`)
-- `--force-config-overwrite` / `XBOARD_AGENT_CONFIG_OVERWRITE=1`
+- `-f, --force-config-overwrite` / `XBOARD_AGENT_CONFIG_OVERWRITE=1`
+- `-c, --with-core` / `XBOARD_AGENT_WITH_CORE` (default does not install any core)
 - `--uninstall` (remove script-managed artifacts only)
+
+Core-only maintenance parameters:
+- `--core-action` / `XBOARD_AGENT_CORE_ACTION`
+- `--core-type` / `XBOARD_AGENT_CORE_TYPE`
+- `--core-version` / `XBOARD_AGENT_CORE_VERSION`
+- `--core-channel` / `XBOARD_AGENT_CORE_CHANNEL`
+- `--core-flavor` / `XBOARD_AGENT_CORE_FLAVOR`
 
 Config generation behavior:
 - If `agent_config.yml` does not exist: installer writes it from parameters.
 - If `agent_config.yml` exists: installer keeps it unless overwrite is explicitly enabled.
-- Missing `host_token` or `grpc_address` causes hard failure with usage example.
-- Installer logs do not print token values.
+- Missing `communication_key` or `grpc_address` causes hard failure with usage example.
+- Fresh install config always starts with empty `panel.host_token` and non-empty `panel.communication_key`.
+- `host_token` is not a public install input anymore; it is written back by the Agent after first-boot registration.
+- Installer logs do not print secret values.
 
 Uninstall behavior:
 - `--uninstall` removes only artifacts managed by the scripts.
@@ -174,9 +180,8 @@ Uninstall behavior:
 Example (non-interactive):
 ```bash
 sudo INSTALL_DIR=/opt/xboard \
-  XBOARD_AGENT_HOST_TOKEN='your-agent-host-token' \
+  XBOARD_AGENT_COMMUNICATION_KEY='your-agent-communication-key' \
   XBOARD_AGENT_GRPC_ADDRESS='10.0.0.2:9090' \
-  XBOARD_AGENT_GRPC_TLS_ENABLED=false \
   sh ./deploy/agent.sh
 ```
 
@@ -223,7 +228,7 @@ Route registration reference: `internal/api/router.go`.
 
 Configuration is loaded from `config.yml` (preferred) or Environment Variables (for containerization).
 
-See `config.example.yml` for configuration structure details.
+See `config.example.yml` for structure and `coding.md` for details.
 
 ## 🧪 Development Workflow
 
@@ -237,6 +242,8 @@ See `config.example.yml` for configuration structure details.
 | Build Frontend Only | `make build-frontend` |
 | Build Backend Only | `make build-backend` |
 | Smoke Test | `make smoke` |
+| E2E (full) | `./scripts/e2e-test.sh` |
+| E2E (deploy-cmd) | `E2E_MODE=deploy-cmd PLAYWRIGHT_ARGS='tests/02-admin-agents.spec.ts' ./scripts/e2e-test.sh` |
 
 ## 📊 Feature Status (2026-01)
 

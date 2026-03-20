@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/creamcroissant/xboard/internal/api/requestctx"
 	"github.com/creamcroissant/xboard/internal/service"
 	"github.com/creamcroissant/xboard/internal/support/i18n"
+	"github.com/go-chi/chi/v5"
 )
 
 // AdminConfigCenterApplyHandler exposes admin endpoints for apply run operations.
@@ -66,7 +68,7 @@ func (h *AdminConfigCenterApplyHandler) CreateApplyRun(w http.ResponseWriter, r 
 		return
 	}
 
-	run, err := h.apply.CreateApplyRun(r.Context(), service.CreateApplyRunRequest{
+	run, err := h.apply.PrepareApplyRun(r.Context(), service.PrepareApplyRunRequest{
 		AgentHostID:      payload.AgentHostID,
 		CoreType:         payload.CoreType,
 		TargetRevision:   payload.TargetRevision,
@@ -118,6 +120,42 @@ func (h *AdminConfigCenterApplyHandler) ListApplyRuns(w http.ResponseWriter, r *
 	respondJSON(w, http.StatusOK, map[string]any{
 		"data":  result.Items,
 		"total": result.Total,
+	})
+}
+
+// GetApplyRunDetail handles GET /api/v2/{securePath}/config-center/apply-runs/{run_id}.
+func (h *AdminConfigCenterApplyHandler) GetApplyRunDetail(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireAdmin(w, r); !ok {
+		return
+	}
+	if !h.ensureService(w, r, "admin.config_center.apply.detail") {
+		return
+	}
+
+	query := r.URL.Query()
+	includeText := false
+	if raw := strings.TrimSpace(query.Get("include_text")); raw != "" {
+		parsed, err := strconv.ParseBool(raw)
+		if err != nil {
+			RespondErrorI18nAction(r.Context(), w, http.StatusBadRequest, "admin.config_center.apply.detail", "error.bad_request", h.i18n)
+			return
+		}
+		includeText = parsed
+	}
+
+	result, err := h.apply.GetApplyRunDetail(r.Context(), service.GetApplyRunDetailRequest{
+		RunID:       strings.TrimSpace(chi.URLParam(r, "run_id")),
+		IncludeText: includeText,
+		TextTag:     strings.TrimSpace(query.Get("text_tag")),
+		TextFile:    strings.TrimSpace(query.Get("text_file")),
+	})
+	if err != nil {
+		h.respondApplyError(r.Context(), w, "admin.config_center.apply.detail", err)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]any{
+		"data": result,
 	})
 }
 

@@ -200,6 +200,24 @@ export interface ConfigCenterApplyRunListResponse {
   total: number;
 }
 
+export interface GetConfigCenterApplyRunDetailParams {
+  include_text?: boolean;
+  text_tag?: string;
+  text_file?: string;
+}
+
+export interface ConfigCenterApplyDiagnosticIssue {
+  code: string;
+  message: string;
+}
+
+export interface ConfigCenterApplyRunDetail {
+  run: ConfigCenterApplyRun;
+  semantic_diff?: ConfigCenterSemanticDiff;
+  text_diff?: ConfigCenterTextDiff;
+  issues?: ConfigCenterApplyDiagnosticIssue[];
+}
+
 export interface ListConfigCenterAppliedSnapshotParams {
   agent_host_id: number;
   core_type: ConfigCenterCoreType;

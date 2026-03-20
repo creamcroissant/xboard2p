@@ -51,6 +51,11 @@ ui:
     base_url: ""                  # Base URL path (optional)
     title: "XBoard Admin"
     version: "1.0.0"
+  user:
+    enabled: true
+    dir: "web/user-vite/dist"     # Path to User UI static files
+    base_url: ""                  # Base URL path (optional)
+    title: "XBoard"
   install:
     enabled: true
     dir: "web/install"            # Path to Install UI static files
@@ -76,6 +81,9 @@ core:
   template_path: "/etc/xboard/templates/singbox.tmpl"  # Go template file
   output_path: "/etc/sing-box/config.json"            # Rendered config path
   reload_cmd: "systemctl reload sing-box"             # Command to reload core
+  install_script_path: "/opt/xboard/deploy/agent.sh" # Trusted installer used by InstallCore RPC
+  singbox_binary_path: ""                             # Optional; empty keeps PATH-based runtime detection
+  xray_binary_path: ""                                # Optional; empty keeps PATH-based runtime detection
 
 # Agent multi-core configuration (optional)
 # - Use this when you want to manage multiple core instances (sing-box / xray, etc.)

@@ -21,24 +21,30 @@ type Switcher interface {
 	Switch(ctx context.Context, req proxy.SwitchRequest) (*proxy.SwitchResult, error)
 }
 
+type CoreInstaller interface {
+	InstallCore(ctx context.Context, req *agentv1.InstallCoreRequest) (*agentv1.InstallCoreResponse, error)
+}
+
 // Handler implements AgentServiceServer on the Agent side.
 type Handler struct {
 	agentv1.UnimplementedAgentServiceServer
 
 	coreMgr    *core.Manager
 	switcher   Switcher
+	installer  CoreInstaller
 	outputPath string
 	logger     *slog.Logger
 }
 
 // NewHandler creates a new Agent gRPC handler.
-func NewHandler(coreMgr *core.Manager, outputPath string, logger *slog.Logger, switcher Switcher) *Handler {
+func NewHandler(coreMgr *core.Manager, outputPath string, logger *slog.Logger, switcher Switcher, installer CoreInstaller) *Handler {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &Handler{
 		coreMgr:    coreMgr,
 		switcher:   switcher,
+		installer:  installer,
 		outputPath: outputPath,
 		logger:     logger,
 	}
@@ -172,6 +178,43 @@ func (h *Handler) SwitchCore(ctx context.Context, req *agentv1.SwitchCoreRequest
 		NewInstanceId: newInstanceID,
 		Message:       "core switch completed",
 	}, nil
+}
+
+// InstallCore performs controlled core install or upgrade on this Agent.
+func (h *Handler) InstallCore(ctx context.Context, req *agentv1.InstallCoreRequest) (*agentv1.InstallCoreResponse, error) {
+	if h.installer == nil {
+		return &agentv1.InstallCoreResponse{
+			Success: false,
+			Error:   "core installer not initialized",
+			Message: "core installer not initialized",
+		}, nil
+	}
+	if req == nil {
+		return &agentv1.InstallCoreResponse{
+			Success: false,
+			Error:   "empty request",
+			Message: "empty request",
+		}, nil
+	}
+	resp, err := h.installer.InstallCore(ctx, req)
+	if err != nil {
+		h.logger.Error("core install failed", "error", err, "core_type", strings.TrimSpace(req.CoreType), "action", strings.TrimSpace(req.Action))
+		return &agentv1.InstallCoreResponse{
+			Success:  false,
+			Error:    err.Error(),
+			Message:  "core install failed",
+			CoreType: strings.TrimSpace(req.CoreType),
+		}, nil
+	}
+	if resp == nil {
+		return &agentv1.InstallCoreResponse{
+			Success:  false,
+			Error:    "empty installer response",
+			Message:  "empty installer response",
+			CoreType: strings.TrimSpace(req.CoreType),
+		}, nil
+	}
+	return resp, nil
 }
 
 func (h *Handler) writeConfig(switchID string, content []byte) (string, error) {

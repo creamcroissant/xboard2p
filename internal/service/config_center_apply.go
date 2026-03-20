@@ -29,11 +29,15 @@ const (
 // ApplyOrchestratorService orchestrates apply run lifecycle and batch payload assembly.
 type ApplyOrchestratorService interface {
 	CreateApplyRun(ctx context.Context, req CreateApplyRunRequest) (*repository.ApplyRun, error)
+	PrepareApplyRun(ctx context.Context, req PrepareApplyRunRequest) (*repository.ApplyRun, error)
 	ListApplyRuns(ctx context.Context, req ListApplyRunsRequest) (*ListApplyRunsResult, error)
+	GetApplyRunDetail(ctx context.Context, req GetApplyRunDetailRequest) (*GetApplyRunDetailResult, error)
 	GetApplyBatch(ctx context.Context, req GetApplyBatchRequest) (*GetApplyBatchResult, error)
 	ReportApplyResult(ctx context.Context, req ReportApplyResultRequest) error
 }
 
+
+// PrepareApplyRunRequest validates target revision artifacts and creates/reuses one apply run.
 // CreateApplyRunRequest defines one apply run creation.
 type CreateApplyRunRequest struct {
 	AgentHostID      int64
@@ -42,6 +46,9 @@ type CreateApplyRunRequest struct {
 	PreviousRevision int64
 	OperatorID       int64
 }
+
+// PrepareApplyRunRequest validates target revision artifacts and creates/reuses one apply run.
+type PrepareApplyRunRequest = CreateApplyRunRequest
 
 // ListApplyRunsRequest defines apply run list query from control plane.
 type ListApplyRunsRequest struct {
@@ -56,6 +63,28 @@ type ListApplyRunsRequest struct {
 type ListApplyRunsResult struct {
 	Items []*repository.ApplyRun
 	Total int64
+}
+
+// GetApplyRunDetailRequest queries one apply run with aggregated diagnostics.
+type GetApplyRunDetailRequest struct {
+	RunID       string
+	IncludeText bool
+	TextTag     string
+	TextFile    string
+}
+
+// ApplyDiagnosticIssue describes one diagnostic degradation or unavailable branch.
+type ApplyDiagnosticIssue struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// GetApplyRunDetailResult returns one apply run with aggregated diagnostics.
+type GetApplyRunDetailResult struct {
+	Run          *repository.ApplyRun   `json:"run"`
+	SemanticDiff *SemanticDiffResult    `json:"semantic_diff,omitempty"`
+	TextDiff     *TextDiffResult        `json:"text_diff,omitempty"`
+	Issues       []ApplyDiagnosticIssue `json:"issues,omitempty"`
 }
 
 // GetApplyBatchRequest queries one host/core apply batch by current revision.
@@ -98,19 +127,74 @@ type ReportApplyResultRequest struct {
 }
 
 type applyOrchestratorService struct {
-	artifacts repository.DesiredArtifactRepository
-	applyRuns repository.ApplyRunRepository
+	artifacts   repository.DesiredArtifactRepository
+	applyRuns   repository.ApplyRunRepository
+	diagnostics DriftAndDiffService
 }
 
 // NewApplyOrchestratorService creates ApplyOrchestratorService.
 func NewApplyOrchestratorService(
 	artifacts repository.DesiredArtifactRepository,
 	applyRuns repository.ApplyRunRepository,
+	diagnostics ...DriftAndDiffService,
 ) ApplyOrchestratorService {
-	return &applyOrchestratorService{
-		artifacts: artifacts,
-		applyRuns: applyRuns,
+	var diff DriftAndDiffService
+	if len(diagnostics) > 0 {
+		diff = diagnostics[0]
 	}
+	return &applyOrchestratorService{
+		artifacts:   artifacts,
+		applyRuns:   applyRuns,
+		diagnostics: diff,
+	}
+}
+
+
+func (s *applyOrchestratorService) PrepareApplyRun(ctx context.Context, req PrepareApplyRunRequest) (*repository.ApplyRun, error) {
+	if s == nil || s.artifacts == nil || s.applyRuns == nil {
+		return nil, ErrApplyOrchestratorNotConfigured
+	}
+	if req.AgentHostID <= 0 {
+		return nil, fmt.Errorf("%w (agent_host_id is required / 不能为空)", ErrApplyOrchestratorInvalidRequest)
+	}
+	if req.TargetRevision <= 0 {
+		return nil, fmt.Errorf("%w (target_revision must be greater than 0 / 必须大于 0)", ErrApplyOrchestratorInvalidRequest)
+	}
+
+	coreType := normalizeCoreType(req.CoreType)
+	if coreType == "" {
+		return nil, fmt.Errorf("%w (core_type must be sing-box or xray / 必须是 sing-box 或 xray)", ErrApplyOrchestratorInvalidRequest)
+	}
+
+	artifacts, err := s.artifacts.List(ctx, repository.DesiredArtifactFilter{
+		AgentHostID:     req.AgentHostID,
+		CoreType:        &coreType,
+		DesiredRevision: &req.TargetRevision,
+		Limit:           1000,
+		Offset:          0,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(artifacts) == 0 {
+		return nil, fmt.Errorf("desired artifacts missing for agent_host_id=%d core_type=%s target_revision=%d", req.AgentHostID, coreType, req.TargetRevision)
+	}
+
+	openRun, err := s.findReusableOpenApplyRun(ctx, req.AgentHostID, coreType, req.TargetRevision)
+	if err != nil {
+		return nil, err
+	}
+	if openRun != nil {
+		return openRun, nil
+	}
+
+	return s.CreateApplyRun(ctx, CreateApplyRunRequest{
+		AgentHostID:      req.AgentHostID,
+		CoreType:         coreType,
+		TargetRevision:   req.TargetRevision,
+		PreviousRevision: req.PreviousRevision,
+		OperatorID:       req.OperatorID,
+	})
 }
 
 func (s *applyOrchestratorService) CreateApplyRun(ctx context.Context, req CreateApplyRunRequest) (*repository.ApplyRun, error) {
@@ -194,6 +278,76 @@ func (s *applyOrchestratorService) ListApplyRuns(ctx context.Context, req ListAp
 	return &ListApplyRunsResult{Items: items, Total: total}, nil
 }
 
+func (s *applyOrchestratorService) GetApplyRunDetail(ctx context.Context, req GetApplyRunDetailRequest) (*GetApplyRunDetailResult, error) {
+	if s == nil || s.applyRuns == nil {
+		return nil, ErrApplyOrchestratorNotConfigured
+	}
+	runID := strings.TrimSpace(req.RunID)
+	if runID == "" {
+		return nil, fmt.Errorf("%w (run_id is required / 不能为空)", ErrApplyOrchestratorInvalidRequest)
+	}
+
+	run, err := s.applyRuns.FindByRunID(ctx, runID)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, ErrApplyOrchestratorNotFound
+		}
+		return nil, err
+	}
+
+	result := &GetApplyRunDetailResult{Run: run}
+	if s.diagnostics == nil {
+		result.Issues = append(result.Issues, ApplyDiagnosticIssue{
+			Code:    "diagnostics_unavailable",
+			Message: "diagnostics service is not configured",
+		})
+		return result, nil
+	}
+
+	semanticDiff, err := s.diagnostics.GetSemanticDiff(ctx, GetSemanticDiffRequest{
+		AgentHostID:     run.AgentHostID,
+		CoreType:        run.CoreType,
+		DesiredRevision: run.TargetRevision,
+	})
+	if err != nil {
+		result.Issues = append(result.Issues, ApplyDiagnosticIssue{
+			Code:    "semantic_diff_unavailable",
+			Message: err.Error(),
+		})
+	} else {
+		result.SemanticDiff = semanticDiff
+	}
+
+	if req.IncludeText {
+		textTag := strings.TrimSpace(req.TextTag)
+		textFile := strings.TrimSpace(req.TextFile)
+		if textTag == "" && textFile == "" {
+			result.Issues = append(result.Issues, ApplyDiagnosticIssue{
+				Code:    "text_diff_selector_required",
+				Message: "filename or tag is required when include_text is true",
+			})
+		} else {
+			textDiff, textErr := s.diagnostics.GetTextDiff(ctx, GetTextDiffRequest{
+				AgentHostID:     run.AgentHostID,
+				CoreType:        run.CoreType,
+				DesiredRevision: run.TargetRevision,
+				Filename:        textFile,
+				Tag:             textTag,
+			})
+			if textErr != nil {
+				result.Issues = append(result.Issues, ApplyDiagnosticIssue{
+					Code:    "text_diff_unavailable",
+					Message: textErr.Error(),
+				})
+			} else {
+				result.TextDiff = textDiff
+			}
+		}
+	}
+
+	return result, nil
+}
+
 func (s *applyOrchestratorService) GetApplyBatch(ctx context.Context, req GetApplyBatchRequest) (*GetApplyBatchResult, error) {
 	if s == nil || s.artifacts == nil || s.applyRuns == nil {
 		return nil, ErrApplyOrchestratorNotConfigured
@@ -215,14 +369,7 @@ func (s *applyOrchestratorService) GetApplyBatch(ctx context.Context, req GetApp
 		return nil, err
 	}
 	if targetRevision == 0 {
-		return &GetApplyBatchResult{
-			NotModified:      true,
-			RunID:            "",
-			CoreType:         coreType,
-			TargetRevision:   req.CurrentRevision,
-			PreviousRevision: req.CurrentRevision,
-			Artifacts:        nil,
-		}, nil
+		return nil, fmt.Errorf("desired artifacts missing for agent_host_id=%d core_type=%s", req.AgentHostID, coreType)
 	}
 	if targetRevision <= req.CurrentRevision {
 		return &GetApplyBatchResult{
@@ -265,7 +412,7 @@ func (s *applyOrchestratorService) GetApplyBatch(ctx context.Context, req GetApp
 		return nil, fmt.Errorf("latest revision has no valid artifacts (agent_host_id=%d core_type=%s target_revision=%d)", req.AgentHostID, coreType, targetRevision)
 	}
 
-	run, err := s.CreateApplyRun(ctx, CreateApplyRunRequest{
+	run, err := s.PrepareApplyRun(ctx, PrepareApplyRunRequest{
 		AgentHostID:      req.AgentHostID,
 		CoreType:         coreType,
 		TargetRevision:   targetRevision,
@@ -275,13 +422,17 @@ func (s *applyOrchestratorService) GetApplyBatch(ctx context.Context, req GetApp
 	if err != nil {
 		return nil, err
 	}
+	previousRevision := req.CurrentRevision
+	if run.PreviousRevision > 0 {
+		previousRevision = run.PreviousRevision
+	}
 
 	return &GetApplyBatchResult{
 		NotModified:      false,
 		RunID:            run.RunID,
 		CoreType:         coreType,
 		TargetRevision:   targetRevision,
-		PreviousRevision: req.CurrentRevision,
+		PreviousRevision: previousRevision,
 		Artifacts:        payload,
 	}, nil
 }
@@ -336,6 +487,9 @@ func (s *applyOrchestratorService) ReportApplyResult(ctx context.Context, req Re
 	if currentStatus == nextStatus {
 		return nil
 	}
+	if shouldIgnoreLateApplyRunStatus(currentStatus, nextStatus) {
+		return nil
+	}
 	if !isApplyRunTransitionAllowed(currentStatus, nextStatus) {
 		return fmt.Errorf("%w (from=%s to=%s)", ErrApplyOrchestratorInvalidState, currentStatus, nextStatus)
 	}
@@ -388,6 +542,22 @@ func isApplyRunTransitionAllowed(currentStatus, nextStatus string) bool {
 	}
 }
 
+func shouldIgnoreLateApplyRunStatus(currentStatus, nextStatus string) bool {
+	if !isApplyRunTerminalStatus(currentStatus) {
+		return false
+	}
+	switch nextStatus {
+	case applyRunStatusPending, applyRunStatusApplying:
+		return true
+	case applyRunStatusFailed:
+		return currentStatus == applyRunStatusSuccess || currentStatus == applyRunStatusRolledBack
+	case applyRunStatusRolledBack:
+		return currentStatus == applyRunStatusSuccess
+	default:
+		return false
+	}
+}
+
 func isApplyRunTerminalStatus(statusValue string) bool {
 	switch statusValue {
 	case applyRunStatusSuccess, applyRunStatusFailed, applyRunStatusRolledBack:
@@ -413,6 +583,34 @@ func validateApplyResultStatusConsistency(success bool, statusValue, nextStatus 
 		return fmt.Errorf("%w (status and success are inconsistent)", ErrApplyOrchestratorInvalidRequest)
 	}
 	return nil
+}
+
+func findReusableOpenApplyRun(ctx context.Context, applyRuns repository.ApplyRunRepository, agentHostID int64, coreType string, targetRevision int64) (*repository.ApplyRun, error) {
+	filter := repository.ApplyRunFilter{
+		AgentHostID:    &agentHostID,
+		CoreType:       &coreType,
+		TargetRevision: &targetRevision,
+		Statuses:       []string{applyRunStatusPending, applyRunStatusApplying},
+		Limit:          1,
+		Offset:         0,
+	}
+	runs, err := applyRuns.List(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	for _, run := range runs {
+		if run != nil {
+			return run, nil
+		}
+	}
+	return nil, nil
+}
+
+func (s *applyOrchestratorService) findReusableOpenApplyRun(ctx context.Context, agentHostID int64, coreType string, targetRevision int64) (*repository.ApplyRun, error) {
+	if s == nil || s.applyRuns == nil {
+		return nil, ErrApplyOrchestratorNotConfigured
+	}
+	return findReusableOpenApplyRun(ctx, s.applyRuns, agentHostID, coreType, targetRevision)
 }
 
 func generateApplyRunID(agentHostID int64) (string, error) {

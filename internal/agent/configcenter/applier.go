@@ -8,13 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/creamcroissant/xboard/internal/agent/config"
+	"github.com/creamcroissant/xboard/internal/agent/protocol"
 	"github.com/creamcroissant/xboard/internal/agent/transport"
 	agentv1 "github.com/creamcroissant/xboard/pkg/pb/agent/v1"
 )
@@ -32,25 +31,21 @@ type BatchClient interface {
 	ReportApplyRun(ctx context.Context, report *agentv1.ApplyRunReport) (*agentv1.ApplyRunResponse, error)
 }
 
-// ProtocolManager defines protocol manager capabilities required by AgentBatchApplier.
+// ProtocolManager defines staged apply capabilities required by AgentBatchApplier.
 type ProtocolManager interface {
-	ValidateConfigInDir(ctx context.Context, dir string) error
-	ReloadServiceWithValidationDir(ctx context.Context, dir string) error
+	ExecuteStagedApply(ctx context.Context, req protocol.StagedApplyRequest) (protocol.StagedApplyResult, error)
 }
 
-// AgentBatchApplier pulls apply batches, performs staged atomic switch, rollback, and run reporting.
+// AgentBatchApplier pulls apply batches, delegates snapshot staged apply, and reports run status.
 type AgentBatchApplier struct {
-	coreType        string
-	legacyDir       string
-	managedDir      string
-	mergeOutputFile string
+	coreType string
 
 	client   BatchClient
 	protoMgr ProtocolManager
 	logger   *slog.Logger
 }
 
-// NewAgentBatchApplier creates AgentBatchApplier with normalized protocol paths.
+// NewAgentBatchApplier creates AgentBatchApplier with validated protocol paths.
 func NewAgentBatchApplier(
 	cfg config.ProtocolConfig,
 	coreType string,
@@ -70,8 +65,7 @@ func NewAgentBatchApplier(
 		return nil, fmt.Errorf("core_type must be sing-box or xray")
 	}
 
-	legacyDirAbs, managedDirAbs, mergeOutputFile, err := resolveProtocolPaths(cfg)
-	if err != nil {
+	if _, _, _, err := resolveProtocolPaths(cfg); err != nil {
 		return nil, err
 	}
 
@@ -80,17 +74,14 @@ func NewAgentBatchApplier(
 	}
 
 	return &AgentBatchApplier{
-		coreType:        normalizedCore,
-		legacyDir:       legacyDirAbs,
-		managedDir:      managedDirAbs,
-		mergeOutputFile: mergeOutputFile,
-		client:          client,
-		protoMgr:        protoMgr,
-		logger:          logger,
+		coreType: normalizedCore,
+		client:   client,
+		protoMgr: protoMgr,
+		logger:   logger,
 	}, nil
 }
 
-// SyncOnce fetches one apply batch and performs staged apply with rollback/report.
+// SyncOnce fetches one apply batch and performs snapshot staged apply with rollback/report.
 // It returns latest applied revision on success, otherwise returns currentRevision with an error.
 func (a *AgentBatchApplier) SyncOnce(ctx context.Context, currentRevision int64) (int64, error) {
 	if currentRevision < 0 {
@@ -174,10 +165,8 @@ func (a *AgentBatchApplier) SyncOnce(ctx context.Context, currentRevision int64)
 }
 
 type normalizedArtifact struct {
-	filename    string
-	sourceTag   string
-	content     []byte
-	contentHash string
+	filename string
+	content  []byte
 }
 
 type applyExecutionResult struct {
@@ -223,10 +212,8 @@ func (a *AgentBatchApplier) normalizeArtifacts(artifacts []*agentv1.ApplyArtifac
 		}
 
 		result = append(result, normalizedArtifact{
-			filename:    filename,
-			sourceTag:   strings.TrimSpace(artifact.GetSourceTag()),
-			content:     content,
-			contentHash: expectedHash,
+			filename: filename,
+			content:  content,
 		})
 	}
 
@@ -241,284 +228,30 @@ func (a *AgentBatchApplier) normalizeArtifacts(artifacts []*agentv1.ApplyArtifac
 }
 
 func (a *AgentBatchApplier) applyBatch(ctx context.Context, runID string, previousRevision int64, artifacts []normalizedArtifact) (applyExecutionResult, error) {
-	var result applyExecutionResult
-
-	managedParent := filepath.Dir(a.managedDir)
-	if err := os.MkdirAll(managedParent, 0o755); err != nil {
-		return result, fmt.Errorf("create managed parent dir: %w", err)
-	}
-
-	stageDir, err := os.MkdirTemp(managedParent, ".xboard_apply_stage_*")
+	result, err := a.protoMgr.ExecuteStagedApply(ctx, protocol.StagedApplyRequest{
+		Mode:          protocol.StagedApplyModeSnapshot,
+		RunID:         runID,
+		CoreType:      a.coreType,
+		SnapshotFiles: toSnapshotFiles(artifacts),
+	})
 	if err != nil {
-		return result, fmt.Errorf("create stage dir: %w", err)
-	}
-	stageDir = filepath.Clean(stageDir)
-
-	stageMoved := false
-	defer func() {
-		if !stageMoved {
-			_ = os.RemoveAll(stageDir)
+		if result.RolledBack {
+			return applyExecutionResult{rolledBack: true, rollbackRevision: previousRevision}, err
 		}
-	}()
-
-	if err := a.writeArtifactsToStage(stageDir, artifacts); err != nil {
-		return result, err
+		return applyExecutionResult{}, err
 	}
-
-	if a.coreType == "xray" {
-		if err := a.buildMergedOutput(stageDir); err != nil {
-			return result, fmt.Errorf("build merged output: %w", err)
-		}
-	}
-
-	if err := a.protoMgr.ValidateConfigInDir(ctx, stageDir); err != nil {
-		return result, fmt.Errorf("validate staged batch: %w", err)
-	}
-
-	backupDir, switched, err := a.switchManagedDir(runID, stageDir)
-	if err != nil {
-		return result, err
-	}
-	stageMoved = true
-
-	reloadErr := a.protoMgr.ReloadServiceWithValidationDir(ctx, a.managedDir)
-	if reloadErr == nil {
-		if switched {
-			_ = os.RemoveAll(backupDir)
-		}
-		return result, nil
-	}
-
-	if !switched {
-		return result, fmt.Errorf("reload service after apply: %w", reloadErr)
-	}
-
-	rollbackErr := a.rollbackManagedDir(backupDir)
-	if rollbackErr != nil {
-		return result, fmt.Errorf("reload service after apply: %w (rollback switch failed: %v)", reloadErr, rollbackErr)
-	}
-	result.rolledBack = true
-	result.rollbackRevision = previousRevision
-
-	reloadRollbackErr := a.protoMgr.ReloadServiceWithValidationDir(ctx, a.managedDir)
-	if reloadRollbackErr != nil {
-		return result, fmt.Errorf("reload service after apply: %w (rollback reload failed: %v)", reloadErr, reloadRollbackErr)
-	}
-
-	return result, fmt.Errorf("reload service after apply: %w (rolled back to previous revision)", reloadErr)
+	return applyExecutionResult{}, nil
 }
 
-func (a *AgentBatchApplier) writeArtifactsToStage(stageDir string, artifacts []normalizedArtifact) error {
-	if err := os.MkdirAll(stageDir, 0o755); err != nil {
-		return fmt.Errorf("create stage dir: %w", err)
-	}
+func toSnapshotFiles(artifacts []normalizedArtifact) []protocol.StagedApplyFile {
+	files := make([]protocol.StagedApplyFile, 0, len(artifacts))
 	for _, artifact := range artifacts {
-		path := filepath.Join(stageDir, artifact.filename)
-		if err := os.WriteFile(path, artifact.content, 0o644); err != nil {
-			return fmt.Errorf("write stage artifact %s: %w", artifact.filename, err)
-		}
+		files = append(files, protocol.StagedApplyFile{
+			Filename: artifact.filename,
+			Content:  append([]byte(nil), artifact.content...),
+		})
 	}
-	return nil
-}
-
-func (a *AgentBatchApplier) switchManagedDir(runID, stageDir string) (backupDir string, switched bool, err error) {
-	runID = strings.TrimSpace(runID)
-	if runID == "" {
-		runID = "unknown"
-	}
-	backupDir = filepath.Join(filepath.Dir(a.managedDir), fmt.Sprintf(".xboard_apply_backup_%s_%d", runID, time.Now().UnixNano()))
-
-	if _, statErr := os.Stat(a.managedDir); statErr == nil {
-		if err := os.Rename(a.managedDir, backupDir); err != nil {
-			return "", false, fmt.Errorf("move current managed dir to backup: %w", err)
-		}
-		switched = true
-	} else if !os.IsNotExist(statErr) {
-		return "", false, fmt.Errorf("stat managed dir: %w", statErr)
-	}
-
-	if err := os.Rename(stageDir, a.managedDir); err != nil {
-		if switched {
-			_ = os.Rename(backupDir, a.managedDir)
-		}
-		return "", false, fmt.Errorf("activate staged batch: %w", err)
-	}
-	return backupDir, switched, nil
-}
-
-func (a *AgentBatchApplier) rollbackManagedDir(backupDir string) error {
-	backupDir = strings.TrimSpace(backupDir)
-	if backupDir == "" {
-		return fmt.Errorf("rollback backup dir is empty")
-	}
-	if err := os.RemoveAll(a.managedDir); err != nil {
-		return fmt.Errorf("remove failed managed dir: %w", err)
-	}
-	if err := os.Rename(backupDir, a.managedDir); err != nil {
-		return fmt.Errorf("restore backup managed dir: %w", err)
-	}
-	return nil
-}
-
-func (a *AgentBatchApplier) buildMergedOutput(stageDir string) error {
-	legacyBasePath := filepath.Join(a.legacyDir, a.mergeOutputFile)
-	baseDocument := map[string]any{}
-
-	if content, err := os.ReadFile(legacyBasePath); err == nil {
-		if err := json.Unmarshal(content, &baseDocument); err != nil {
-			return fmt.Errorf("parse legacy base config %s: %w", legacyBasePath, err)
-		}
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("read legacy base config %s: %w", legacyBasePath, err)
-	}
-
-	baseInbounds, err := extractInbounds(baseDocument)
-	if err != nil {
-		return fmt.Errorf("extract legacy inbounds: %w", err)
-	}
-	managedInbounds, err := collectManagedInbounds(stageDir, a.mergeOutputFile)
-	if err != nil {
-		return err
-	}
-
-	mergedInbounds, err := overlayInboundsByTag(baseInbounds, managedInbounds)
-	if err != nil {
-		return err
-	}
-
-	inboundsAny := make([]any, 0, len(mergedInbounds))
-	for _, inbound := range mergedInbounds {
-		inboundsAny = append(inboundsAny, inbound)
-	}
-	baseDocument["inbounds"] = inboundsAny
-
-	mergedContent, err := json.MarshalIndent(baseDocument, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal merged output: %w", err)
-	}
-	mergedPath := filepath.Join(stageDir, a.mergeOutputFile)
-	if err := os.WriteFile(mergedPath, mergedContent, 0o644); err != nil {
-		return fmt.Errorf("write merged output %s: %w", mergedPath, err)
-	}
-	return nil
-}
-
-func extractInbounds(document map[string]any) ([]map[string]any, error) {
-	if document == nil {
-		return nil, nil
-	}
-	inboundsRaw, ok := document["inbounds"]
-	if !ok || inboundsRaw == nil {
-		return nil, nil
-	}
-	inboundsArray, ok := inboundsRaw.([]any)
-	if !ok {
-		return nil, fmt.Errorf("inbounds must be array")
-	}
-	result := make([]map[string]any, 0, len(inboundsArray))
-	for _, item := range inboundsArray {
-		inbound, ok := toMap(item)
-		if !ok {
-			return nil, fmt.Errorf("inbounds entry must be object")
-		}
-		result = append(result, inbound)
-	}
-	return result, nil
-}
-
-func collectManagedInbounds(stageDir, mergeOutputFile string) ([]map[string]any, error) {
-	entries, err := os.ReadDir(stageDir)
-	if err != nil {
-		return nil, fmt.Errorf("read stage dir: %w", err)
-	}
-	files := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		if !strings.HasSuffix(strings.ToLower(name), ".json") {
-			continue
-		}
-		if name == mergeOutputFile {
-			continue
-		}
-		files = append(files, name)
-	}
-	sort.Strings(files)
-
-	result := make([]map[string]any, 0)
-	for _, filename := range files {
-		path := filepath.Join(stageDir, filename)
-		content, err := os.ReadFile(path)
-		if err != nil {
-			return nil, fmt.Errorf("read staged file %s: %w", filename, err)
-		}
-		var document map[string]any
-		if err := json.Unmarshal(content, &document); err != nil {
-			return nil, fmt.Errorf("parse staged file %s: %w", filename, err)
-		}
-		inbounds, err := extractInbounds(document)
-		if err != nil {
-			return nil, fmt.Errorf("extract inbounds from staged file %s: %w", filename, err)
-		}
-		result = append(result, inbounds...)
-	}
-	return result, nil
-}
-
-func overlayInboundsByTag(baseInbounds, managedInbounds []map[string]any) ([]map[string]any, error) {
-	managedByTag := make(map[string]map[string]any, len(managedInbounds))
-	managedNoTag := make([]map[string]any, 0)
-
-	for _, inbound := range managedInbounds {
-		tag := inboundTag(inbound)
-		if tag == "" {
-			managedNoTag = append(managedNoTag, inbound)
-			continue
-		}
-		if _, exists := managedByTag[tag]; exists {
-			return nil, fmt.Errorf("duplicate managed inbound tag: %s", tag)
-		}
-		managedByTag[tag] = inbound
-	}
-
-	result := make([]map[string]any, 0, len(baseInbounds)+len(managedInbounds))
-	usedManagedTags := make(map[string]struct{}, len(managedByTag))
-	for _, inbound := range baseInbounds {
-		tag := inboundTag(inbound)
-		if tag != "" {
-			if managed, ok := managedByTag[tag]; ok {
-				result = append(result, managed)
-				usedManagedTags[tag] = struct{}{}
-				continue
-			}
-		}
-		result = append(result, inbound)
-	}
-
-	remainingTags := make([]string, 0)
-	for tag := range managedByTag {
-		if _, used := usedManagedTags[tag]; used {
-			continue
-		}
-		remainingTags = append(remainingTags, tag)
-	}
-	sort.Strings(remainingTags)
-	for _, tag := range remainingTags {
-		result = append(result, managedByTag[tag])
-	}
-
-	result = append(result, managedNoTag...)
-	return result, nil
-}
-
-func inboundTag(inbound map[string]any) string {
-	if inbound == nil {
-		return ""
-	}
-	tag, _ := inbound["tag"].(string)
-	return strings.TrimSpace(tag)
+	return files
 }
 
 func (a *AgentBatchApplier) reportApplyResult(
@@ -556,12 +289,4 @@ func (a *AgentBatchApplier) reportApplyResult(
 		return fmt.Errorf("report apply result: %s", message)
 	}
 	return nil
-}
-
-func toMap(value any) (map[string]any, bool) {
-	mapped, ok := value.(map[string]any)
-	if !ok || mapped == nil {
-		return nil, false
-	}
-	return mapped, true
 }

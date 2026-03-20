@@ -7,6 +7,8 @@ import "errors"
 var (
 	// ErrNotFound indicates requested resource does not exist.
 	ErrNotFound = errors.New("service: not found / 未找到资源")
+	// ErrBadRequest indicates provided parameters are invalid.
+	ErrBadRequest = errors.New("service: bad request / 请求参数无效")
 	// ErrInvalidCredentials indicates provided credentials are wrong.
 	ErrInvalidCredentials = errors.New("service: invalid credentials / 凭证无效")
 	// ErrRateLimited indicates caller exceeded allowed attempts.

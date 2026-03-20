@@ -95,6 +95,7 @@ export {
   getConfigCenterSemanticDiff,
   createConfigCenterApplyRun,
   listConfigCenterApplyRuns,
+  getConfigCenterApplyRunDetail,
   listConfigCenterAppliedSnapshot,
   listConfigCenterDriftStates,
   listConfigCenterRecoveryStates,

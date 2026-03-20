@@ -25,6 +25,7 @@ var (
 // ArtifactCompilerService renders desired artifacts from inbound semantic specs.
 type ArtifactCompilerService interface {
 	RenderArtifacts(ctx context.Context, req RenderArtifactsRequest) (*RenderArtifactsResult, error)
+	DeleteArtifacts(ctx context.Context, agentHostID int64, coreType string, desiredRevision int64) error
 }
 
 // RenderArtifactsRequest defines one rendering batch for host/core/revision.
@@ -250,6 +251,23 @@ func (s *artifactCompilerService) RenderArtifacts(ctx context.Context, req Rende
 		Artifacts:       metadata,
 		Warnings:        warnings,
 	}, nil
+}
+
+func (s *artifactCompilerService) DeleteArtifacts(ctx context.Context, agentHostID int64, coreType string, desiredRevision int64) error {
+	if s == nil || s.artifacts == nil {
+		return fmt.Errorf("artifact compiler service not configured / artifact 编译服务未配置")
+	}
+	normalizedCore := normalizeCoreType(coreType)
+	if normalizedCore == "" {
+		return fmt.Errorf("%w (core_type must be sing-box or xray / 必须是 sing-box 或 xray)", ErrArtifactCompileInvalidRequest)
+	}
+	if agentHostID <= 0 {
+		return fmt.Errorf("%w (agent_host_id is required / 不能为空)", ErrArtifactCompileInvalidRequest)
+	}
+	if desiredRevision <= 0 {
+		return fmt.Errorf("%w (desired_revision must be greater than 0 / 必须大于 0)", ErrArtifactCompileInvalidRequest)
+	}
+	return s.artifacts.DeleteByHostCoreRevision(ctx, agentHostID, normalizedCore, desiredRevision)
 }
 
 func (s *artifactCompilerService) listSpecsByHostAndCore(ctx context.Context, agentHostID int64, coreType string) ([]*repository.InboundSpec, error) {

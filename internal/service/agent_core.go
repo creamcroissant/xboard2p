@@ -31,6 +31,7 @@ type AgentCoreService interface {
 	CreateInstance(ctx context.Context, req CreateInstanceRequest) (*repository.AgentCoreInstance, error)
 	DeleteInstance(ctx context.Context, agentHostID int64, instanceID string) error
 	SwitchCore(ctx context.Context, req SwitchCoreRequest) (*SwitchResult, error)
+	InstallCore(ctx context.Context, req InstallCoreRequest) (*InstallCoreResult, error)
 	GetSwitchLogs(ctx context.Context, filter SwitchLogFilter) ([]*repository.AgentCoreSwitchLog, int64, error)
 	ConvertConfig(ctx context.Context, req ConvertRequest) (*ConvertResult, error)
 }
@@ -58,6 +59,19 @@ type SwitchCoreRequest struct {
 	OperatorID       *int64
 }
 
+// InstallCoreRequest 定义核心安装/升级请求参数。
+type InstallCoreRequest struct {
+	AgentHostID int64
+	CoreType    string
+	Action      string
+	Version     string
+	Channel     string
+	Flavor      string
+	Activate    bool
+	RequestID   string
+	OperatorID  *int64
+}
+
 // SwitchResult 返回切换结果与日志信息。
 type SwitchResult struct {
 	Success        bool   `json:"success"`
@@ -68,6 +82,19 @@ type SwitchResult struct {
 	CompletedAt    *int64 `json:"completed_at,omitempty"`
 	FromInstanceID string `json:"from_instance_id,omitempty"`
 	ToCoreType     string `json:"to_core_type,omitempty"`
+}
+
+// InstallCoreResult 返回核心安装/升级结果。
+type InstallCoreResult struct {
+	Success         bool   `json:"success"`
+	Changed         bool   `json:"changed"`
+	Message         string `json:"message,omitempty"`
+	Error           string `json:"error,omitempty"`
+	CoreType        string `json:"core_type,omitempty"`
+	Version         string `json:"version,omitempty"`
+	PreviousVersion string `json:"previous_version,omitempty"`
+	Activated       bool   `json:"activated"`
+	RolledBack      bool   `json:"rolled_back"`
 }
 
 // SwitchLogFilter 定义切换日志查询条件。
@@ -235,13 +262,13 @@ func (s *agentCoreService) CreateInstance(ctx context.Context, req CreateInstanc
 	}
 
 	instance := &repository.AgentCoreInstance{
-		AgentHostID:     host.ID,
-		InstanceID:      resp.NewInstanceId,
-		CoreType:        strings.TrimSpace(req.CoreType),
-		Status:          "running",
+		AgentHostID:      host.ID,
+		InstanceID:       resp.NewInstanceId,
+		CoreType:         strings.TrimSpace(req.CoreType),
+		Status:           "running",
 		ConfigTemplateID: templateID,
-		ConfigHash:      configHash,
-		ListenPorts:     []int{},
+		ConfigHash:       configHash,
+		ListenPorts:      []int{},
 	}
 	if s.instances != nil {
 		if err := s.instances.Create(ctx, instance); err != nil {
@@ -370,6 +397,48 @@ func (s *agentCoreService) SwitchCore(ctx context.Context, req SwitchCoreRequest
 	}
 	result.CompletedAt = &completedAt
 	return result, nil
+}
+
+func (s *agentCoreService) InstallCore(ctx context.Context, req InstallCoreRequest) (*InstallCoreResult, error) {
+	if req.AgentHostID == 0 {
+		return nil, ErrBadRequest
+	}
+	if strings.TrimSpace(req.CoreType) == "" {
+		return nil, ErrBadRequest
+	}
+	if strings.TrimSpace(req.Action) == "" {
+		return nil, ErrBadRequest
+	}
+
+	client, _, err := s.buildAgentClient(ctx, req.AgentHostID)
+	if err != nil {
+		return nil, err
+	}
+	defer client.Close()
+
+	resp, err := client.InstallCore(ctx, &agentv1.InstallCoreRequest{
+		CoreType:  strings.TrimSpace(req.CoreType),
+		Action:    strings.TrimSpace(req.Action),
+		Version:   strings.TrimSpace(req.Version),
+		Channel:   strings.TrimSpace(req.Channel),
+		Flavor:    strings.TrimSpace(req.Flavor),
+		Activate:  req.Activate,
+		RequestId: strings.TrimSpace(req.RequestID),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &InstallCoreResult{
+		Success:         resp.Success,
+		Changed:         resp.Changed,
+		Message:         resp.Message,
+		Error:           resp.Error,
+		CoreType:        resp.CoreType,
+		Version:         resp.Version,
+		PreviousVersion: resp.PreviousVersion,
+		Activated:       resp.Activated,
+		RolledBack:      resp.RolledBack,
+	}, nil
 }
 
 func (s *agentCoreService) GetSwitchLogs(ctx context.Context, filter SwitchLogFilter) ([]*repository.AgentCoreSwitchLog, int64, error) {
@@ -535,15 +604,15 @@ func (s *agentCoreService) updateInstancesAfterSwitch(ctx context.Context, agent
 		return nil
 	}
 	instance := &repository.AgentCoreInstance{
-		AgentHostID:     agentHostID,
-		InstanceID:      newInstanceID,
-		CoreType:        strings.TrimSpace(toCoreType),
-		Status:          "running",
+		AgentHostID:      agentHostID,
+		InstanceID:       newInstanceID,
+		CoreType:         strings.TrimSpace(toCoreType),
+		Status:           "running",
 		ConfigTemplateID: templateID,
-		ConfigHash:      configHash,
-		ListenPorts:     []int{},
-		LastHeartbeatAt: nil,
-		ErrorMessage:    "",
+		ConfigHash:       configHash,
+		ListenPorts:      []int{},
+		LastHeartbeatAt:  nil,
+		ErrorMessage:     "",
 	}
 	if err := s.instances.Create(ctx, instance); err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
@@ -593,4 +662,3 @@ func ptrToBool(value *bool) bool {
 	}
 	return *value
 }
-
