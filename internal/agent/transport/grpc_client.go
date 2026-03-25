@@ -337,6 +337,20 @@ func (c *GRPCClient) GetForwardingRules(ctx context.Context, version int64) (*ag
 	})
 }
 
+// GetCoreOperations fetches pending core operations for this agent.
+func (c *GRPCClient) GetCoreOperations(ctx context.Context, statuses []string, limit int32) (*agentv1.GetCoreOperationsResponse, error) {
+	return callUnary(ctx, c, CallConfig{}, func(ctx context.Context) (*agentv1.GetCoreOperationsResponse, error) {
+		return c.client.GetCoreOperations(ctx, &agentv1.GetCoreOperationsRequest{Statuses: statuses, Limit: limit})
+	})
+}
+
+// ReportCoreOperation reports one core operation execution result.
+func (c *GRPCClient) ReportCoreOperation(ctx context.Context, report *agentv1.ReportCoreOperationRequest) (*agentv1.ReportCoreOperationResponse, error) {
+	return callUnary(ctx, c, CallConfig{}, func(ctx context.Context) (*agentv1.ReportCoreOperationResponse, error) {
+		return c.client.ReportCoreOperation(ctx, report)
+	})
+}
+
 // ReportAccessLogs reports access logs
 func (c *GRPCClient) ReportAccessLogs(ctx context.Context, report *agentv1.AccessLogReport) (*agentv1.AccessLogResponse, error) {
 	return callUnary(ctx, c, CallConfig{}, func(ctx context.Context) (*agentv1.AccessLogResponse, error) {

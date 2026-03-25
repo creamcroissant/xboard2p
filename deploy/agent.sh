@@ -217,6 +217,9 @@ dependency_package_name() {
         ca-certificates)
             printf '%s' "ca-certificates"
             ;;
+        python3)
+            printf '%s' "python3"
+            ;;
         *)
             printf '%s' "$dep_name"
             ;;
@@ -336,6 +339,10 @@ ensure_download_dependencies() {
     fi
 
     if ! ensure_dependency "ca-certificates"; then
+        return 1
+    fi
+
+    if ! ensure_dependency "python3"; then
         return 1
     fi
 
@@ -1795,6 +1802,11 @@ grpc:
   address: "${GRPC_ADDRESS}"
   tls:
     enabled: ${GRPC_TLS_ENABLED}
+
+core:
+  install_script_path: "${INSTALL_DIR}/deploy/agent.sh"
+  singbox_binary_path: "${INSTALL_DIR}/bin/sing-box"
+  xray_binary_path: "${INSTALL_DIR}/bin/xray"
 
 traffic:
   type: "${TRAFFIC_TYPE}"

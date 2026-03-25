@@ -441,21 +441,49 @@ type ForwardingRuleLog struct {
 	CreatedAt   int64
 }
 
+// CoreStatusSnapshot represents the latest known core capability snapshot reported by an agent host.
+type CoreStatusSnapshot struct {
+	Type         string   `json:"type"`
+	Version      string   `json:"version,omitempty"`
+	Installed    bool     `json:"installed"`
+	Capabilities []string `json:"capabilities,omitempty"`
+}
+
+// CoreOperation represents one asynchronous core management task tracked by Panel.
+type CoreOperation struct {
+	ID             string          `json:"id"`
+	AgentHostID    int64           `json:"agent_host_id"`
+	OperationType  string          `json:"operation_type"`
+	CoreType       string          `json:"core_type"`
+	Status         string          `json:"status"`
+	RequestPayload json.RawMessage `json:"request_payload,omitempty"`
+	ResultPayload  json.RawMessage `json:"result_payload,omitempty"`
+	ErrorMessage   string          `json:"error_message,omitempty"`
+	OperatorID     *int64          `json:"operator_id,omitempty"`
+	ClaimedBy      string          `json:"claimed_by,omitempty"`
+	ClaimedAt      *int64          `json:"claimed_at,omitempty"`
+	StartedAt      *int64          `json:"started_at,omitempty"`
+	FinishedAt     *int64          `json:"finished_at,omitempty"`
+	CreatedAt      int64           `json:"created_at"`
+	UpdatedAt      int64           `json:"updated_at"`
+}
+
 // AgentCoreInstance represents a persisted core instance on an agent host.
 type AgentCoreInstance struct {
-	ID               int64  `json:"id"`
-	AgentHostID      int64  `json:"agent_host_id"`
-	InstanceID       string `json:"instance_id"`
-	CoreType         string `json:"core_type"`
-	Status           string `json:"status"`
-	ListenPorts      []int  `json:"listen_ports"`
-	ConfigTemplateID *int64 `json:"config_template_id"`
-	ConfigHash       string `json:"config_hash"`
-	StartedAt        *int64 `json:"started_at"`
-	LastHeartbeatAt  *int64 `json:"last_heartbeat_at"`
-	ErrorMessage     string `json:"error_message"`
-	CreatedAt        int64  `json:"created_at"`
-	UpdatedAt        int64  `json:"updated_at"`
+	ID               int64               `json:"id"`
+	AgentHostID      int64               `json:"agent_host_id"`
+	InstanceID       string              `json:"instance_id"`
+	CoreType         string              `json:"core_type"`
+	Status           string              `json:"status"`
+	ListenPorts      []int               `json:"listen_ports"`
+	ConfigTemplateID *int64              `json:"config_template_id"`
+	ConfigHash       string              `json:"config_hash"`
+	StartedAt        *int64              `json:"started_at"`
+	LastHeartbeatAt  *int64              `json:"last_heartbeat_at"`
+	ErrorMessage     string              `json:"error_message"`
+	CreatedAt        int64               `json:"created_at"`
+	UpdatedAt        int64               `json:"updated_at"`
+	CoreSnapshot     *CoreStatusSnapshot `json:"core_snapshot,omitempty"`
 }
 
 // AgentCoreSwitchLog captures core switching audit logs.

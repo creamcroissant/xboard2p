@@ -446,6 +446,7 @@ func registerV2AdminRoutes(v2 chi.Router, configService service.ConfigService, a
 		// Agent core management endpoints
 		admin.Get("/agent-hosts/{id}/cores", adminAgentCoreHandler.ListCores)
 		admin.Get("/agent-hosts/{id}/core-instances", adminAgentCoreHandler.ListInstances)
+		admin.Get("/agent-hosts/{id}/core-operations", adminAgentCoreHandler.ListOperations)
 		admin.Post("/agent-hosts/{id}/core-instances", adminAgentCoreHandler.CreateInstance)
 		admin.Delete("/agent-hosts/{id}/core-instances/{instance_id}", adminAgentCoreHandler.DeleteInstance)
 		admin.Post("/agent-hosts/{id}/core-switch", adminAgentCoreHandler.SwitchCore)

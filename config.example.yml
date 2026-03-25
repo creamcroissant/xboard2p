@@ -66,7 +66,7 @@ ui:
 
 grpc:
   enabled: true                 # Required. Agent only supports gRPC transport.
-  addr: "127.0.0.1:9090"       # Panel gRPC listen address
+  addr: "0.0.0.0:9090"       # Panel gRPC listen address (must be reachable by agents in multi-host/container deployments)
 
 tag: "default"                # Agent tag (optional)
 
@@ -82,8 +82,8 @@ core:
   output_path: "/etc/sing-box/config.json"            # Rendered config path
   reload_cmd: "systemctl reload sing-box"             # Command to reload core
   install_script_path: "/opt/xboard/deploy/agent.sh" # Trusted installer used by InstallCore RPC
-  singbox_binary_path: ""                             # Optional; empty keeps PATH-based runtime detection
-  xray_binary_path: ""                                # Optional; empty keeps PATH-based runtime detection
+  singbox_binary_path: "/opt/xboard/bin/sing-box"    # Standard stable binary path used by runtime detection
+  xray_binary_path: "/opt/xboard/bin/xray"           # Standard stable binary path used by runtime detection
 
 # Agent multi-core configuration (optional)
 # - Use this when you want to manage multiple core instances (sing-box / xray, etc.)

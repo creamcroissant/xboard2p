@@ -28,9 +28,8 @@ const (
 	AgentService_StatusStream_FullMethodName           = "/agent.v1.AgentService/StatusStream"
 	AgentService_GetForwardingRules_FullMethodName     = "/agent.v1.AgentService/GetForwardingRules"
 	AgentService_ReportForwardingStatus_FullMethodName = "/agent.v1.AgentService/ReportForwardingStatus"
-	AgentService_GetCores_FullMethodName               = "/agent.v1.AgentService/GetCores"
-	AgentService_SwitchCore_FullMethodName             = "/agent.v1.AgentService/SwitchCore"
-	AgentService_InstallCore_FullMethodName            = "/agent.v1.AgentService/InstallCore"
+	AgentService_GetCoreOperations_FullMethodName      = "/agent.v1.AgentService/GetCoreOperations"
+	AgentService_ReportCoreOperation_FullMethodName    = "/agent.v1.AgentService/ReportCoreOperation"
 	AgentService_ReportAccessLogs_FullMethodName       = "/agent.v1.AgentService/ReportAccessLogs"
 	AgentService_GetApplyBatch_FullMethodName          = "/agent.v1.AgentService/GetApplyBatch"
 	AgentService_ReportApplyRun_FullMethodName         = "/agent.v1.AgentService/ReportApplyRun"
@@ -43,36 +42,19 @@ const (
 // AgentService defines the communication interface between Agent and Panel
 // Panel acts as the gRPC server, Agent connects as client
 type AgentServiceClient interface {
-	// Heartbeat keeps the connection alive and syncs time
 	Heartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatResponse, error)
-	// ReportStatus reports system metrics and network traffic
 	ReportStatus(ctx context.Context, in *StatusReport, opts ...grpc.CallOption) (*StatusResponse, error)
-	// GetConfig fetches node configuration
 	GetConfig(ctx context.Context, in *ConfigRequest, opts ...grpc.CallOption) (*ConfigResponse, error)
-	// GetUsers fetches user list for the node
 	GetUsers(ctx context.Context, in *UsersRequest, opts ...grpc.CallOption) (*UsersResponse, error)
-	// ReportTraffic reports user-level traffic data
 	ReportTraffic(ctx context.Context, in *TrafficReport, opts ...grpc.CallOption) (*TrafficResponse, error)
-	// ReportAlive reports active user IDs
 	ReportAlive(ctx context.Context, in *AliveReport, opts ...grpc.CallOption) (*AliveResponse, error)
-	// StatusStream is a bidirectional stream for real-time status updates
-	// Agent sends status reports, Panel can send commands
 	StatusStream(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[StatusReport, StatusCommand], error)
-	// GetForwardingRules fetches forwarding rules
 	GetForwardingRules(ctx context.Context, in *ForwardingRulesRequest, opts ...grpc.CallOption) (*ForwardingRulesResponse, error)
-	// ReportForwardingStatus reports apply result
 	ReportForwardingStatus(ctx context.Context, in *ForwardingStatusReport, opts ...grpc.CallOption) (*StatusResponse, error)
-	// GetCores fetches available cores and instances
-	GetCores(ctx context.Context, in *GetCoresRequest, opts ...grpc.CallOption) (*GetCoresResponse, error)
-	// SwitchCore requests core switch
-	SwitchCore(ctx context.Context, in *SwitchCoreRequest, opts ...grpc.CallOption) (*SwitchCoreResponse, error)
-	// InstallCore requests controlled core installation or upgrade
-	InstallCore(ctx context.Context, in *InstallCoreRequest, opts ...grpc.CallOption) (*InstallCoreResponse, error)
-	// ReportAccessLogs reports access logs
+	GetCoreOperations(ctx context.Context, in *GetCoreOperationsRequest, opts ...grpc.CallOption) (*GetCoreOperationsResponse, error)
+	ReportCoreOperation(ctx context.Context, in *ReportCoreOperationRequest, opts ...grpc.CallOption) (*ReportCoreOperationResponse, error)
 	ReportAccessLogs(ctx context.Context, in *AccessLogReport, opts ...grpc.CallOption) (*AccessLogResponse, error)
-	// GetApplyBatch fetches hybrid config-center apply artifacts for current revision.
 	GetApplyBatch(ctx context.Context, in *ApplyBatchRequest, opts ...grpc.CallOption) (*ApplyBatchResponse, error)
-	// ReportApplyRun reports apply run result for hybrid config-center batch.
 	ReportApplyRun(ctx context.Context, in *ApplyRunReport, opts ...grpc.CallOption) (*ApplyRunResponse, error)
 }
 
@@ -177,30 +159,20 @@ func (c *agentServiceClient) ReportForwardingStatus(ctx context.Context, in *For
 	return out, nil
 }
 
-func (c *agentServiceClient) GetCores(ctx context.Context, in *GetCoresRequest, opts ...grpc.CallOption) (*GetCoresResponse, error) {
+func (c *agentServiceClient) GetCoreOperations(ctx context.Context, in *GetCoreOperationsRequest, opts ...grpc.CallOption) (*GetCoreOperationsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetCoresResponse)
-	err := c.cc.Invoke(ctx, AgentService_GetCores_FullMethodName, in, out, cOpts...)
+	out := new(GetCoreOperationsResponse)
+	err := c.cc.Invoke(ctx, AgentService_GetCoreOperations_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *agentServiceClient) SwitchCore(ctx context.Context, in *SwitchCoreRequest, opts ...grpc.CallOption) (*SwitchCoreResponse, error) {
+func (c *agentServiceClient) ReportCoreOperation(ctx context.Context, in *ReportCoreOperationRequest, opts ...grpc.CallOption) (*ReportCoreOperationResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(SwitchCoreResponse)
-	err := c.cc.Invoke(ctx, AgentService_SwitchCore_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *agentServiceClient) InstallCore(ctx context.Context, in *InstallCoreRequest, opts ...grpc.CallOption) (*InstallCoreResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(InstallCoreResponse)
-	err := c.cc.Invoke(ctx, AgentService_InstallCore_FullMethodName, in, out, cOpts...)
+	out := new(ReportCoreOperationResponse)
+	err := c.cc.Invoke(ctx, AgentService_ReportCoreOperation_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -244,36 +216,19 @@ func (c *agentServiceClient) ReportApplyRun(ctx context.Context, in *ApplyRunRep
 // AgentService defines the communication interface between Agent and Panel
 // Panel acts as the gRPC server, Agent connects as client
 type AgentServiceServer interface {
-	// Heartbeat keeps the connection alive and syncs time
 	Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error)
-	// ReportStatus reports system metrics and network traffic
 	ReportStatus(context.Context, *StatusReport) (*StatusResponse, error)
-	// GetConfig fetches node configuration
 	GetConfig(context.Context, *ConfigRequest) (*ConfigResponse, error)
-	// GetUsers fetches user list for the node
 	GetUsers(context.Context, *UsersRequest) (*UsersResponse, error)
-	// ReportTraffic reports user-level traffic data
 	ReportTraffic(context.Context, *TrafficReport) (*TrafficResponse, error)
-	// ReportAlive reports active user IDs
 	ReportAlive(context.Context, *AliveReport) (*AliveResponse, error)
-	// StatusStream is a bidirectional stream for real-time status updates
-	// Agent sends status reports, Panel can send commands
 	StatusStream(grpc.BidiStreamingServer[StatusReport, StatusCommand]) error
-	// GetForwardingRules fetches forwarding rules
 	GetForwardingRules(context.Context, *ForwardingRulesRequest) (*ForwardingRulesResponse, error)
-	// ReportForwardingStatus reports apply result
 	ReportForwardingStatus(context.Context, *ForwardingStatusReport) (*StatusResponse, error)
-	// GetCores fetches available cores and instances
-	GetCores(context.Context, *GetCoresRequest) (*GetCoresResponse, error)
-	// SwitchCore requests core switch
-	SwitchCore(context.Context, *SwitchCoreRequest) (*SwitchCoreResponse, error)
-	// InstallCore requests controlled core installation or upgrade
-	InstallCore(context.Context, *InstallCoreRequest) (*InstallCoreResponse, error)
-	// ReportAccessLogs reports access logs
+	GetCoreOperations(context.Context, *GetCoreOperationsRequest) (*GetCoreOperationsResponse, error)
+	ReportCoreOperation(context.Context, *ReportCoreOperationRequest) (*ReportCoreOperationResponse, error)
 	ReportAccessLogs(context.Context, *AccessLogReport) (*AccessLogResponse, error)
-	// GetApplyBatch fetches hybrid config-center apply artifacts for current revision.
 	GetApplyBatch(context.Context, *ApplyBatchRequest) (*ApplyBatchResponse, error)
-	// ReportApplyRun reports apply run result for hybrid config-center batch.
 	ReportApplyRun(context.Context, *ApplyRunReport) (*ApplyRunResponse, error)
 	mustEmbedUnimplementedAgentServiceServer()
 }
@@ -312,14 +267,11 @@ func (UnimplementedAgentServiceServer) GetForwardingRules(context.Context, *Forw
 func (UnimplementedAgentServiceServer) ReportForwardingStatus(context.Context, *ForwardingStatusReport) (*StatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReportForwardingStatus not implemented")
 }
-func (UnimplementedAgentServiceServer) GetCores(context.Context, *GetCoresRequest) (*GetCoresResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method GetCores not implemented")
+func (UnimplementedAgentServiceServer) GetCoreOperations(context.Context, *GetCoreOperationsRequest) (*GetCoreOperationsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetCoreOperations not implemented")
 }
-func (UnimplementedAgentServiceServer) SwitchCore(context.Context, *SwitchCoreRequest) (*SwitchCoreResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method SwitchCore not implemented")
-}
-func (UnimplementedAgentServiceServer) InstallCore(context.Context, *InstallCoreRequest) (*InstallCoreResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method InstallCore not implemented")
+func (UnimplementedAgentServiceServer) ReportCoreOperation(context.Context, *ReportCoreOperationRequest) (*ReportCoreOperationResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReportCoreOperation not implemented")
 }
 func (UnimplementedAgentServiceServer) ReportAccessLogs(context.Context, *AccessLogReport) (*AccessLogResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReportAccessLogs not implemented")
@@ -502,56 +454,38 @@ func _AgentService_ReportForwardingStatus_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
-func _AgentService_GetCores_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetCoresRequest)
+func _AgentService_GetCoreOperations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetCoreOperationsRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(AgentServiceServer).GetCores(ctx, in)
+		return srv.(AgentServiceServer).GetCoreOperations(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: AgentService_GetCores_FullMethodName,
+		FullMethod: AgentService_GetCoreOperations_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AgentServiceServer).GetCores(ctx, req.(*GetCoresRequest))
+		return srv.(AgentServiceServer).GetCoreOperations(ctx, req.(*GetCoreOperationsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _AgentService_SwitchCore_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SwitchCoreRequest)
+func _AgentService_ReportCoreOperation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportCoreOperationRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(AgentServiceServer).SwitchCore(ctx, in)
+		return srv.(AgentServiceServer).ReportCoreOperation(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: AgentService_SwitchCore_FullMethodName,
+		FullMethod: AgentService_ReportCoreOperation_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AgentServiceServer).SwitchCore(ctx, req.(*SwitchCoreRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _AgentService_InstallCore_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(InstallCoreRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(AgentServiceServer).InstallCore(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: AgentService_InstallCore_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AgentServiceServer).InstallCore(ctx, req.(*InstallCoreRequest))
+		return srv.(AgentServiceServer).ReportCoreOperation(ctx, req.(*ReportCoreOperationRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -650,16 +584,12 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _AgentService_ReportForwardingStatus_Handler,
 		},
 		{
-			MethodName: "GetCores",
-			Handler:    _AgentService_GetCores_Handler,
+			MethodName: "GetCoreOperations",
+			Handler:    _AgentService_GetCoreOperations_Handler,
 		},
 		{
-			MethodName: "SwitchCore",
-			Handler:    _AgentService_SwitchCore_Handler,
-		},
-		{
-			MethodName: "InstallCore",
-			Handler:    _AgentService_InstallCore_Handler,
+			MethodName: "ReportCoreOperation",
+			Handler:    _AgentService_ReportCoreOperation_Handler,
 		},
 		{
 			MethodName: "ReportAccessLogs",

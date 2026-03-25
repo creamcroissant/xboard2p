@@ -51,6 +51,20 @@ type DesiredArtifactFilter struct {
 	Offset          int
 }
 
+// CoreOperationFilter constrains core operation listing and claim queries.
+type CoreOperationFilter struct {
+	AgentHostID   *int64
+	OperationType *string
+	CoreType      *string
+	Status        *string
+	Statuses      []string
+	ClaimedBy     *string
+	CreatedAfter  *int64
+	CreatedBefore *int64
+	Limit         int
+	Offset        int
+}
+
 // ApplyRunFilter constrains apply run listing queries.
 type ApplyRunFilter struct {
 	AgentHostID    *int64

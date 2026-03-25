@@ -11,6 +11,7 @@ import (
 // Store wires SQLite-backed repository implementations.
 type Store struct {
 	db                     *sql.DB
+	coreOperations         repository.CoreOperationRepository
 	users                  repository.UserRepository
 	settings               repository.SettingRepository
 	invites                repository.InviteCodeRepository
@@ -52,6 +53,7 @@ type Store struct {
 func NewStore(db *sql.DB) *Store {
 	return &Store{
 		db:                     db,
+		coreOperations:         newCoreOperationRepo(db),
 		users:                  &userRepo{db: db},
 		settings:               &settingRepo{db: db},
 		invites:                &inviteRepo{db: db},
@@ -88,6 +90,10 @@ func NewStore(db *sql.DB) *Store {
 		inboundIndexes:         newInboundIndexRepo(db),
 		driftStates:            newDriftStateRepo(db),
 	}
+}
+
+func (s *Store) CoreOperations() repository.CoreOperationRepository {
+	return s.coreOperations
 }
 
 func (s *Store) Users() repository.UserRepository {

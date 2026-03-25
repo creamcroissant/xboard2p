@@ -48,6 +48,7 @@ type KeepaliveConfig struct {
 }
 
 // AgentClient 封装与 Agent 的 gRPC 连接。
+// 该 legacy client 已退役，保留该类型仅为了让过渡期测试和注入点继续编译。
 type AgentClient struct {
 	conn   *grpc.ClientConn
 	client agentv1.AgentServiceClient
@@ -57,10 +58,7 @@ type AgentClient struct {
 // NewAgentClient 创建新的 Agent gRPC 客户端。
 func NewAgentClient(cfg Config) (*AgentClient, error) {
 	if cfg.Keepalive == nil {
-		cfg.Keepalive = &KeepaliveConfig{
-			Time:    30 * time.Second,
-			Timeout: 10 * time.Second,
-		}
+		cfg.Keepalive = &KeepaliveConfig{Time: 30 * time.Second, Timeout: 10 * time.Second}
 	}
 	if cfg.Timeout.Default == 0 {
 		cfg.Timeout.Default = 10 * time.Second
@@ -79,7 +77,6 @@ func NewAgentClient(cfg Config) (*AgentClient, error) {
 			PermitWithoutStream: true,
 		}),
 	}
-
 	if cfg.TLS != nil && cfg.TLS.Enabled {
 		tlsCfg, err := buildTLSConfig(cfg.TLS)
 		if err != nil {
@@ -92,24 +89,15 @@ func NewAgentClient(cfg Config) (*AgentClient, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.Timeout.Connect)
 	defer cancel()
-
 	conn, err := grpc.DialContext(ctx, cfg.Address, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("create agent gRPC client: %w", err)
 	}
-
-	return &AgentClient{
-		conn:   conn,
-		client: agentv1.NewAgentServiceClient(conn),
-		config: cfg,
-	}, nil
+	return &AgentClient{conn: conn, client: agentv1.NewAgentServiceClient(conn), config: cfg}, nil
 }
 
 func buildTLSConfig(cfg *TLSConfig) (*tls.Config, error) {
-	tlsCfg := &tls.Config{
-		InsecureSkipVerify: cfg.InsecureSkipVerify,
-	}
-
+	tlsCfg := &tls.Config{InsecureSkipVerify: cfg.InsecureSkipVerify}
 	if cfg.CAFile != "" {
 		caCert, err := os.ReadFile(cfg.CAFile)
 		if err != nil {
@@ -121,7 +109,6 @@ func buildTLSConfig(cfg *TLSConfig) (*tls.Config, error) {
 		}
 		tlsCfg.RootCAs = caCertPool
 	}
-
 	if cfg.CertFile != "" && cfg.KeyFile != "" {
 		cert, err := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)
 		if err != nil {
@@ -129,12 +116,11 @@ func buildTLSConfig(cfg *TLSConfig) (*tls.Config, error) {
 		}
 		tlsCfg.Certificates = []tls.Certificate{cert}
 	}
-
 	return tlsCfg, nil
 }
 
 func (c *AgentClient) withAuth(ctx context.Context) context.Context {
-	if c.config.Token == "" {
+	if c == nil || c.config.Token == "" {
 		return ctx
 	}
 	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+c.config.Token)
@@ -142,6 +128,9 @@ func (c *AgentClient) withAuth(ctx context.Context) context.Context {
 
 // Close 关闭 gRPC 连接。
 func (c *AgentClient) Close() error {
+	if c == nil || c.conn == nil {
+		return nil
+	}
 	return c.conn.Close()
 }
 
@@ -180,41 +169,26 @@ func callUnaryWithTimeout[T any](ctx context.Context, c *AgentClient, timeout ti
 	return resp, nil
 }
 
-// GetCores 获取 Agent 可用核心与实例列表。
+// Legacy synchronous RPCs are retired. These methods intentionally return explicit errors
+// if still invoked so remaining callers can be migrated without silent fallback behavior.
 func (c *AgentClient) GetCores(ctx context.Context) (*agentv1.GetCoresResponse, error) {
-	return callUnary(ctx, c, func(ctx context.Context) (*agentv1.GetCoresResponse, error) {
-		return c.client.GetCores(ctx, &agentv1.GetCoresRequest{})
-	})
+	return nil, fmt.Errorf("legacy panel->agent GetCores RPC is retired")
 }
 
-// SwitchCore 请求 Agent 进行核心切换。
 func (c *AgentClient) SwitchCore(ctx context.Context, req *agentv1.SwitchCoreRequest) (*agentv1.SwitchCoreResponse, error) {
-	if req == nil {
-		req = &agentv1.SwitchCoreRequest{}
-	}
-	return callUnary(ctx, c, func(ctx context.Context) (*agentv1.SwitchCoreResponse, error) {
-		return c.client.SwitchCore(ctx, req)
-	})
+	return nil, fmt.Errorf("legacy panel->agent SwitchCore RPC is retired")
 }
 
-// InstallCore 请求 Agent 进行受控核心安装或升级。
 func (c *AgentClient) InstallCore(ctx context.Context, req *agentv1.InstallCoreRequest) (*agentv1.InstallCoreResponse, error) {
-	if req == nil {
-		req = &agentv1.InstallCoreRequest{}
-	}
-	return callUnaryWithTimeout(ctx, c, c.config.Timeout.Install, func(ctx context.Context) (*agentv1.InstallCoreResponse, error) {
-		return c.client.InstallCore(ctx, req)
-	})
+	return nil, fmt.Errorf("legacy panel->agent InstallCore RPC is retired")
 }
 
-// ReportAccessLogs reports access logs
 func (c *AgentClient) ReportAccessLogs(ctx context.Context, report *agentv1.AccessLogReport) (*agentv1.AccessLogResponse, error) {
 	return callUnary(ctx, c, func(ctx context.Context) (*agentv1.AccessLogResponse, error) {
 		return c.client.ReportAccessLogs(ctx, report)
 	})
 }
 
-// Client 返回底层 AgentServiceClient 供高级用法使用。
 func (c *AgentClient) Client() agentv1.AgentServiceClient {
 	return c.client
 }

@@ -10,9 +10,10 @@ import (
 
 // Build info - injected via ldflags
 var (
-	Version   = "dev"
-	Commit    = "unknown"
-	BuildTime = "unknown"
+	Version    = "dev"
+	Commit     = "unknown"
+	BuildTime  = "unknown"
+	configPath string
 )
 
 var rootCmd = &cobra.Command{
@@ -20,13 +21,16 @@ var rootCmd = &cobra.Command{
 	Short: "XBoard Panel and Node",
 	Long:  `XBoard is a panel and node server for managing proxies.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		// Initialize config
-		_, err := config.Load()
+		_, err := config.LoadWithOptions(config.LoadOptions{ConfigPath: configPath})
 		if err != nil {
 			return fmt.Errorf("failed to load config: %w", err)
 		}
 		return nil
 	},
+}
+
+func init() {
+	rootCmd.PersistentFlags().StringVar(&configPath, "config", "", "Path to configuration file")
 }
 
 func main() {

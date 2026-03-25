@@ -199,7 +199,8 @@ func (x *CoreInstance) GetError() string {
 	return ""
 }
 
-// GetCoresRequest fetches available cores and instances.
+// Legacy synchronous RPC payloads are kept temporarily so transition-period code can compile,
+// but they are no longer exposed as first-class RPCs on AgentService.
 type GetCoresRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -236,7 +237,6 @@ func (*GetCoresRequest) Descriptor() ([]byte, []int) {
 	return file_agent_v1_core_proto_rawDescGZIP(), []int{2}
 }
 
-// GetCoresResponse contains core info and instances.
 type GetCoresResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Cores         []*CoreInfo            `protobuf:"bytes,1,rep,name=cores,proto3" json:"cores,omitempty"`
@@ -289,20 +289,16 @@ func (x *GetCoresResponse) GetInstances() []*CoreInstance {
 	return nil
 }
 
-// SwitchCoreRequest requests core switch.
 type SwitchCoreRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	FromInstanceId string                 `protobuf:"bytes,1,opt,name=from_instance_id,json=fromInstanceId,proto3" json:"from_instance_id,omitempty"`
 	ToCoreType     string                 `protobuf:"bytes,2,opt,name=to_core_type,json=toCoreType,proto3" json:"to_core_type,omitempty"`
 	ConfigJson     []byte                 `protobuf:"bytes,3,opt,name=config_json,json=configJson,proto3" json:"config_json,omitempty"`
 	SwitchId       string                 `protobuf:"bytes,4,opt,name=switch_id,json=switchId,proto3" json:"switch_id,omitempty"`
-	// listen_ports 由 Panel 显式指定，Agent 无需解析配置推导端口
-	// 这避免了脆弱的配置文件解析依赖
-	ListenPorts []int32 `protobuf:"varint,5,rep,packed,name=listen_ports,json=listenPorts,proto3" json:"listen_ports,omitempty"`
-	// zero_downtime 指示是否启用零停机切换
-	ZeroDowntime  bool `protobuf:"varint,6,opt,name=zero_downtime,json=zeroDowntime,proto3" json:"zero_downtime,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	ListenPorts    []int32                `protobuf:"varint,5,rep,packed,name=listen_ports,json=listenPorts,proto3" json:"listen_ports,omitempty"`
+	ZeroDowntime   bool                   `protobuf:"varint,6,opt,name=zero_downtime,json=zeroDowntime,proto3" json:"zero_downtime,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *SwitchCoreRequest) Reset() {
@@ -377,7 +373,6 @@ func (x *SwitchCoreRequest) GetZeroDowntime() bool {
 	return false
 }
 
-// SwitchCoreResponse reports switch result.
 type SwitchCoreResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
@@ -446,7 +441,6 @@ func (x *SwitchCoreResponse) GetError() string {
 	return ""
 }
 
-// InstallCoreRequest requests controlled core installation or upgrade.
 type InstallCoreRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CoreType      string                 `protobuf:"bytes,1,opt,name=core_type,json=coreType,proto3" json:"core_type,omitempty"`
@@ -539,7 +533,6 @@ func (x *InstallCoreRequest) GetRequestId() string {
 	return ""
 }
 
-// InstallCoreResponse reports install or upgrade result.
 type InstallCoreResponse struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	Success         bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
@@ -648,6 +641,734 @@ func (x *InstallCoreResponse) GetRolledBack() bool {
 	return false
 }
 
+type CoreSnapshot struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
+	Version       string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
+	Installed     bool                   `protobuf:"varint,3,opt,name=installed,proto3" json:"installed,omitempty"`
+	Capabilities  []string               `protobuf:"bytes,4,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CoreSnapshot) Reset() {
+	*x = CoreSnapshot{}
+	mi := &file_agent_v1_core_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CoreSnapshot) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CoreSnapshot) ProtoMessage() {}
+
+func (x *CoreSnapshot) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_core_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CoreSnapshot.ProtoReflect.Descriptor instead.
+func (*CoreSnapshot) Descriptor() ([]byte, []int) {
+	return file_agent_v1_core_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *CoreSnapshot) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *CoreSnapshot) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *CoreSnapshot) GetInstalled() bool {
+	if x != nil {
+		return x.Installed
+	}
+	return false
+}
+
+func (x *CoreSnapshot) GetCapabilities() []string {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
+}
+
+type CreateCoreInstancePayload struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	InstanceId       string                 `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	ConfigJson       []byte                 `protobuf:"bytes,2,opt,name=config_json,json=configJson,proto3" json:"config_json,omitempty"`
+	ConfigTemplateId int64                  `protobuf:"varint,3,opt,name=config_template_id,json=configTemplateId,proto3" json:"config_template_id,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *CreateCoreInstancePayload) Reset() {
+	*x = CreateCoreInstancePayload{}
+	mi := &file_agent_v1_core_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateCoreInstancePayload) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateCoreInstancePayload) ProtoMessage() {}
+
+func (x *CreateCoreInstancePayload) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_core_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateCoreInstancePayload.ProtoReflect.Descriptor instead.
+func (*CreateCoreInstancePayload) Descriptor() ([]byte, []int) {
+	return file_agent_v1_core_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *CreateCoreInstancePayload) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
+func (x *CreateCoreInstancePayload) GetConfigJson() []byte {
+	if x != nil {
+		return x.ConfigJson
+	}
+	return nil
+}
+
+func (x *CreateCoreInstancePayload) GetConfigTemplateId() int64 {
+	if x != nil {
+		return x.ConfigTemplateId
+	}
+	return 0
+}
+
+type SwitchCorePayload struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	FromInstanceId   string                 `protobuf:"bytes,1,opt,name=from_instance_id,json=fromInstanceId,proto3" json:"from_instance_id,omitempty"`
+	ToCoreType       string                 `protobuf:"bytes,2,opt,name=to_core_type,json=toCoreType,proto3" json:"to_core_type,omitempty"`
+	ConfigJson       []byte                 `protobuf:"bytes,3,opt,name=config_json,json=configJson,proto3" json:"config_json,omitempty"`
+	SwitchId         string                 `protobuf:"bytes,4,opt,name=switch_id,json=switchId,proto3" json:"switch_id,omitempty"`
+	ListenPorts      []int32                `protobuf:"varint,5,rep,packed,name=listen_ports,json=listenPorts,proto3" json:"listen_ports,omitempty"`
+	ZeroDowntime     bool                   `protobuf:"varint,6,opt,name=zero_downtime,json=zeroDowntime,proto3" json:"zero_downtime,omitempty"`
+	ConfigTemplateId int64                  `protobuf:"varint,7,opt,name=config_template_id,json=configTemplateId,proto3" json:"config_template_id,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *SwitchCorePayload) Reset() {
+	*x = SwitchCorePayload{}
+	mi := &file_agent_v1_core_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SwitchCorePayload) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SwitchCorePayload) ProtoMessage() {}
+
+func (x *SwitchCorePayload) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_core_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SwitchCorePayload.ProtoReflect.Descriptor instead.
+func (*SwitchCorePayload) Descriptor() ([]byte, []int) {
+	return file_agent_v1_core_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *SwitchCorePayload) GetFromInstanceId() string {
+	if x != nil {
+		return x.FromInstanceId
+	}
+	return ""
+}
+
+func (x *SwitchCorePayload) GetToCoreType() string {
+	if x != nil {
+		return x.ToCoreType
+	}
+	return ""
+}
+
+func (x *SwitchCorePayload) GetConfigJson() []byte {
+	if x != nil {
+		return x.ConfigJson
+	}
+	return nil
+}
+
+func (x *SwitchCorePayload) GetSwitchId() string {
+	if x != nil {
+		return x.SwitchId
+	}
+	return ""
+}
+
+func (x *SwitchCorePayload) GetListenPorts() []int32 {
+	if x != nil {
+		return x.ListenPorts
+	}
+	return nil
+}
+
+func (x *SwitchCorePayload) GetZeroDowntime() bool {
+	if x != nil {
+		return x.ZeroDowntime
+	}
+	return false
+}
+
+func (x *SwitchCorePayload) GetConfigTemplateId() int64 {
+	if x != nil {
+		return x.ConfigTemplateId
+	}
+	return 0
+}
+
+type InstallCorePayload struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Action        string                 `protobuf:"bytes,1,opt,name=action,proto3" json:"action,omitempty"`
+	Version       string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
+	Channel       string                 `protobuf:"bytes,3,opt,name=channel,proto3" json:"channel,omitempty"`
+	Flavor        string                 `protobuf:"bytes,4,opt,name=flavor,proto3" json:"flavor,omitempty"`
+	Activate      bool                   `protobuf:"varint,5,opt,name=activate,proto3" json:"activate,omitempty"`
+	RequestId     string                 `protobuf:"bytes,6,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InstallCorePayload) Reset() {
+	*x = InstallCorePayload{}
+	mi := &file_agent_v1_core_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InstallCorePayload) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InstallCorePayload) ProtoMessage() {}
+
+func (x *InstallCorePayload) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_core_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InstallCorePayload.ProtoReflect.Descriptor instead.
+func (*InstallCorePayload) Descriptor() ([]byte, []int) {
+	return file_agent_v1_core_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *InstallCorePayload) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+func (x *InstallCorePayload) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *InstallCorePayload) GetChannel() string {
+	if x != nil {
+		return x.Channel
+	}
+	return ""
+}
+
+func (x *InstallCorePayload) GetFlavor() string {
+	if x != nil {
+		return x.Flavor
+	}
+	return ""
+}
+
+func (x *InstallCorePayload) GetActivate() bool {
+	if x != nil {
+		return x.Activate
+	}
+	return false
+}
+
+func (x *InstallCorePayload) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+type EnsureCorePayload struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Version       string                 `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
+	Channel       string                 `protobuf:"bytes,2,opt,name=channel,proto3" json:"channel,omitempty"`
+	Flavor        string                 `protobuf:"bytes,3,opt,name=flavor,proto3" json:"flavor,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EnsureCorePayload) Reset() {
+	*x = EnsureCorePayload{}
+	mi := &file_agent_v1_core_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EnsureCorePayload) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EnsureCorePayload) ProtoMessage() {}
+
+func (x *EnsureCorePayload) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_core_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EnsureCorePayload.ProtoReflect.Descriptor instead.
+func (*EnsureCorePayload) Descriptor() ([]byte, []int) {
+	return file_agent_v1_core_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *EnsureCorePayload) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *EnsureCorePayload) GetChannel() string {
+	if x != nil {
+		return x.Channel
+	}
+	return ""
+}
+
+func (x *EnsureCorePayload) GetFlavor() string {
+	if x != nil {
+		return x.Flavor
+	}
+	return ""
+}
+
+type CoreOperation struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	AgentHostId    int64                  `protobuf:"varint,2,opt,name=agent_host_id,json=agentHostId,proto3" json:"agent_host_id,omitempty"`
+	OperationType  string                 `protobuf:"bytes,3,opt,name=operation_type,json=operationType,proto3" json:"operation_type,omitempty"`
+	CoreType       string                 `protobuf:"bytes,4,opt,name=core_type,json=coreType,proto3" json:"core_type,omitempty"`
+	Status         string                 `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`
+	RequestPayload []byte                 `protobuf:"bytes,6,opt,name=request_payload,json=requestPayload,proto3" json:"request_payload,omitempty"`
+	ResultPayload  []byte                 `protobuf:"bytes,7,opt,name=result_payload,json=resultPayload,proto3" json:"result_payload,omitempty"`
+	ErrorMessage   string                 `protobuf:"bytes,8,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	CreatedAt      int64                  `protobuf:"varint,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt      int64                  `protobuf:"varint,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	StartedAt      int64                  `protobuf:"varint,11,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	FinishedAt     int64                  `protobuf:"varint,12,opt,name=finished_at,json=finishedAt,proto3" json:"finished_at,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *CoreOperation) Reset() {
+	*x = CoreOperation{}
+	mi := &file_agent_v1_core_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CoreOperation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CoreOperation) ProtoMessage() {}
+
+func (x *CoreOperation) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_core_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CoreOperation.ProtoReflect.Descriptor instead.
+func (*CoreOperation) Descriptor() ([]byte, []int) {
+	return file_agent_v1_core_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *CoreOperation) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *CoreOperation) GetAgentHostId() int64 {
+	if x != nil {
+		return x.AgentHostId
+	}
+	return 0
+}
+
+func (x *CoreOperation) GetOperationType() string {
+	if x != nil {
+		return x.OperationType
+	}
+	return ""
+}
+
+func (x *CoreOperation) GetCoreType() string {
+	if x != nil {
+		return x.CoreType
+	}
+	return ""
+}
+
+func (x *CoreOperation) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *CoreOperation) GetRequestPayload() []byte {
+	if x != nil {
+		return x.RequestPayload
+	}
+	return nil
+}
+
+func (x *CoreOperation) GetResultPayload() []byte {
+	if x != nil {
+		return x.ResultPayload
+	}
+	return nil
+}
+
+func (x *CoreOperation) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
+func (x *CoreOperation) GetCreatedAt() int64 {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return 0
+}
+
+func (x *CoreOperation) GetUpdatedAt() int64 {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return 0
+}
+
+func (x *CoreOperation) GetStartedAt() int64 {
+	if x != nil {
+		return x.StartedAt
+	}
+	return 0
+}
+
+func (x *CoreOperation) GetFinishedAt() int64 {
+	if x != nil {
+		return x.FinishedAt
+	}
+	return 0
+}
+
+type GetCoreOperationsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Statuses      []string               `protobuf:"bytes,1,rep,name=statuses,proto3" json:"statuses,omitempty"`
+	Limit         int32                  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetCoreOperationsRequest) Reset() {
+	*x = GetCoreOperationsRequest{}
+	mi := &file_agent_v1_core_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetCoreOperationsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetCoreOperationsRequest) ProtoMessage() {}
+
+func (x *GetCoreOperationsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_core_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetCoreOperationsRequest.ProtoReflect.Descriptor instead.
+func (*GetCoreOperationsRequest) Descriptor() ([]byte, []int) {
+	return file_agent_v1_core_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *GetCoreOperationsRequest) GetStatuses() []string {
+	if x != nil {
+		return x.Statuses
+	}
+	return nil
+}
+
+func (x *GetCoreOperationsRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+type GetCoreOperationsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Operations    []*CoreOperation       `protobuf:"bytes,2,rep,name=operations,proto3" json:"operations,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetCoreOperationsResponse) Reset() {
+	*x = GetCoreOperationsResponse{}
+	mi := &file_agent_v1_core_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetCoreOperationsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetCoreOperationsResponse) ProtoMessage() {}
+
+func (x *GetCoreOperationsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_core_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetCoreOperationsResponse.ProtoReflect.Descriptor instead.
+func (*GetCoreOperationsResponse) Descriptor() ([]byte, []int) {
+	return file_agent_v1_core_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *GetCoreOperationsResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *GetCoreOperationsResponse) GetOperations() []*CoreOperation {
+	if x != nil {
+		return x.Operations
+	}
+	return nil
+}
+
+type ReportCoreOperationRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OperationId   string                 `protobuf:"bytes,1,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
+	Status        string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
+	ResultPayload []byte                 `protobuf:"bytes,3,opt,name=result_payload,json=resultPayload,proto3" json:"result_payload,omitempty"`
+	ErrorMessage  string                 `protobuf:"bytes,4,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	FinishedAt    int64                  `protobuf:"varint,5,opt,name=finished_at,json=finishedAt,proto3" json:"finished_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReportCoreOperationRequest) Reset() {
+	*x = ReportCoreOperationRequest{}
+	mi := &file_agent_v1_core_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportCoreOperationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportCoreOperationRequest) ProtoMessage() {}
+
+func (x *ReportCoreOperationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_core_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportCoreOperationRequest.ProtoReflect.Descriptor instead.
+func (*ReportCoreOperationRequest) Descriptor() ([]byte, []int) {
+	return file_agent_v1_core_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ReportCoreOperationRequest) GetOperationId() string {
+	if x != nil {
+		return x.OperationId
+	}
+	return ""
+}
+
+func (x *ReportCoreOperationRequest) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *ReportCoreOperationRequest) GetResultPayload() []byte {
+	if x != nil {
+		return x.ResultPayload
+	}
+	return nil
+}
+
+func (x *ReportCoreOperationRequest) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
+func (x *ReportCoreOperationRequest) GetFinishedAt() int64 {
+	if x != nil {
+		return x.FinishedAt
+	}
+	return 0
+}
+
+type ReportCoreOperationResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReportCoreOperationResponse) Reset() {
+	*x = ReportCoreOperationResponse{}
+	mi := &file_agent_v1_core_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportCoreOperationResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportCoreOperationResponse) ProtoMessage() {}
+
+func (x *ReportCoreOperationResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_core_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportCoreOperationResponse.ProtoReflect.Descriptor instead.
+func (*ReportCoreOperationResponse) Descriptor() ([]byte, []int) {
+	return file_agent_v1_core_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *ReportCoreOperationResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *ReportCoreOperationResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
 var File_agent_v1_core_proto protoreflect.FileDescriptor
 
 const file_agent_v1_core_proto_rawDesc = "" +
@@ -708,7 +1429,76 @@ const file_agent_v1_core_proto_rawDesc = "" +
 	"\x10previous_version\x18\a \x01(\tR\x0fpreviousVersion\x12\x1c\n" +
 	"\tactivated\x18\b \x01(\bR\tactivated\x12\x1f\n" +
 	"\vrolled_back\x18\t \x01(\bR\n" +
-	"rolledBackB:Z8github.com/creamcroissant/xboard/pkg/pb/agent/v1;agentv1b\x06proto3"
+	"rolledBack\"~\n" +
+	"\fCoreSnapshot\x12\x12\n" +
+	"\x04type\x18\x01 \x01(\tR\x04type\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\tR\aversion\x12\x1c\n" +
+	"\tinstalled\x18\x03 \x01(\bR\tinstalled\x12\"\n" +
+	"\fcapabilities\x18\x04 \x03(\tR\fcapabilities\"\x8b\x01\n" +
+	"\x19CreateCoreInstancePayload\x12\x1f\n" +
+	"\vinstance_id\x18\x01 \x01(\tR\n" +
+	"instanceId\x12\x1f\n" +
+	"\vconfig_json\x18\x02 \x01(\fR\n" +
+	"configJson\x12,\n" +
+	"\x12config_template_id\x18\x03 \x01(\x03R\x10configTemplateId\"\x93\x02\n" +
+	"\x11SwitchCorePayload\x12(\n" +
+	"\x10from_instance_id\x18\x01 \x01(\tR\x0efromInstanceId\x12 \n" +
+	"\fto_core_type\x18\x02 \x01(\tR\n" +
+	"toCoreType\x12\x1f\n" +
+	"\vconfig_json\x18\x03 \x01(\fR\n" +
+	"configJson\x12\x1b\n" +
+	"\tswitch_id\x18\x04 \x01(\tR\bswitchId\x12!\n" +
+	"\flisten_ports\x18\x05 \x03(\x05R\vlistenPorts\x12#\n" +
+	"\rzero_downtime\x18\x06 \x01(\bR\fzeroDowntime\x12,\n" +
+	"\x12config_template_id\x18\a \x01(\x03R\x10configTemplateId\"\xb3\x01\n" +
+	"\x12InstallCorePayload\x12\x16\n" +
+	"\x06action\x18\x01 \x01(\tR\x06action\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\tR\aversion\x12\x18\n" +
+	"\achannel\x18\x03 \x01(\tR\achannel\x12\x16\n" +
+	"\x06flavor\x18\x04 \x01(\tR\x06flavor\x12\x1a\n" +
+	"\bactivate\x18\x05 \x01(\bR\bactivate\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x06 \x01(\tR\trequestId\"_\n" +
+	"\x11EnsureCorePayload\x12\x18\n" +
+	"\aversion\x18\x01 \x01(\tR\aversion\x12\x18\n" +
+	"\achannel\x18\x02 \x01(\tR\achannel\x12\x16\n" +
+	"\x06flavor\x18\x03 \x01(\tR\x06flavor\"\x92\x03\n" +
+	"\rCoreOperation\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\"\n" +
+	"\ragent_host_id\x18\x02 \x01(\x03R\vagentHostId\x12%\n" +
+	"\x0eoperation_type\x18\x03 \x01(\tR\roperationType\x12\x1b\n" +
+	"\tcore_type\x18\x04 \x01(\tR\bcoreType\x12\x16\n" +
+	"\x06status\x18\x05 \x01(\tR\x06status\x12'\n" +
+	"\x0frequest_payload\x18\x06 \x01(\fR\x0erequestPayload\x12%\n" +
+	"\x0eresult_payload\x18\a \x01(\fR\rresultPayload\x12#\n" +
+	"\rerror_message\x18\b \x01(\tR\ferrorMessage\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\t \x01(\x03R\tcreatedAt\x12\x1d\n" +
+	"\n" +
+	"updated_at\x18\n" +
+	" \x01(\x03R\tupdatedAt\x12\x1d\n" +
+	"\n" +
+	"started_at\x18\v \x01(\x03R\tstartedAt\x12\x1f\n" +
+	"\vfinished_at\x18\f \x01(\x03R\n" +
+	"finishedAt\"L\n" +
+	"\x18GetCoreOperationsRequest\x12\x1a\n" +
+	"\bstatuses\x18\x01 \x03(\tR\bstatuses\x12\x14\n" +
+	"\x05limit\x18\x02 \x01(\x05R\x05limit\"n\n" +
+	"\x19GetCoreOperationsResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x127\n" +
+	"\n" +
+	"operations\x18\x02 \x03(\v2\x17.agent.v1.CoreOperationR\n" +
+	"operations\"\xc4\x01\n" +
+	"\x1aReportCoreOperationRequest\x12!\n" +
+	"\foperation_id\x18\x01 \x01(\tR\voperationId\x12\x16\n" +
+	"\x06status\x18\x02 \x01(\tR\x06status\x12%\n" +
+	"\x0eresult_payload\x18\x03 \x01(\fR\rresultPayload\x12#\n" +
+	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage\x12\x1f\n" +
+	"\vfinished_at\x18\x05 \x01(\x03R\n" +
+	"finishedAt\"Q\n" +
+	"\x1bReportCoreOperationResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessageB:Z8github.com/creamcroissant/xboard/pkg/pb/agent/v1;agentv1b\x06proto3"
 
 var (
 	file_agent_v1_core_proto_rawDescOnce sync.Once
@@ -722,25 +1512,36 @@ func file_agent_v1_core_proto_rawDescGZIP() []byte {
 	return file_agent_v1_core_proto_rawDescData
 }
 
-var file_agent_v1_core_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_agent_v1_core_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_agent_v1_core_proto_goTypes = []any{
-	(*CoreInfo)(nil),            // 0: agent.v1.CoreInfo
-	(*CoreInstance)(nil),        // 1: agent.v1.CoreInstance
-	(*GetCoresRequest)(nil),     // 2: agent.v1.GetCoresRequest
-	(*GetCoresResponse)(nil),    // 3: agent.v1.GetCoresResponse
-	(*SwitchCoreRequest)(nil),   // 4: agent.v1.SwitchCoreRequest
-	(*SwitchCoreResponse)(nil),  // 5: agent.v1.SwitchCoreResponse
-	(*InstallCoreRequest)(nil),  // 6: agent.v1.InstallCoreRequest
-	(*InstallCoreResponse)(nil), // 7: agent.v1.InstallCoreResponse
+	(*CoreInfo)(nil),                    // 0: agent.v1.CoreInfo
+	(*CoreInstance)(nil),                // 1: agent.v1.CoreInstance
+	(*GetCoresRequest)(nil),             // 2: agent.v1.GetCoresRequest
+	(*GetCoresResponse)(nil),            // 3: agent.v1.GetCoresResponse
+	(*SwitchCoreRequest)(nil),           // 4: agent.v1.SwitchCoreRequest
+	(*SwitchCoreResponse)(nil),          // 5: agent.v1.SwitchCoreResponse
+	(*InstallCoreRequest)(nil),          // 6: agent.v1.InstallCoreRequest
+	(*InstallCoreResponse)(nil),         // 7: agent.v1.InstallCoreResponse
+	(*CoreSnapshot)(nil),                // 8: agent.v1.CoreSnapshot
+	(*CreateCoreInstancePayload)(nil),   // 9: agent.v1.CreateCoreInstancePayload
+	(*SwitchCorePayload)(nil),           // 10: agent.v1.SwitchCorePayload
+	(*InstallCorePayload)(nil),          // 11: agent.v1.InstallCorePayload
+	(*EnsureCorePayload)(nil),           // 12: agent.v1.EnsureCorePayload
+	(*CoreOperation)(nil),               // 13: agent.v1.CoreOperation
+	(*GetCoreOperationsRequest)(nil),    // 14: agent.v1.GetCoreOperationsRequest
+	(*GetCoreOperationsResponse)(nil),   // 15: agent.v1.GetCoreOperationsResponse
+	(*ReportCoreOperationRequest)(nil),  // 16: agent.v1.ReportCoreOperationRequest
+	(*ReportCoreOperationResponse)(nil), // 17: agent.v1.ReportCoreOperationResponse
 }
 var file_agent_v1_core_proto_depIdxs = []int32{
-	0, // 0: agent.v1.GetCoresResponse.cores:type_name -> agent.v1.CoreInfo
-	1, // 1: agent.v1.GetCoresResponse.instances:type_name -> agent.v1.CoreInstance
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	0,  // 0: agent.v1.GetCoresResponse.cores:type_name -> agent.v1.CoreInfo
+	1,  // 1: agent.v1.GetCoresResponse.instances:type_name -> agent.v1.CoreInstance
+	13, // 2: agent.v1.GetCoreOperationsResponse.operations:type_name -> agent.v1.CoreOperation
+	3,  // [3:3] is the sub-list for method output_type
+	3,  // [3:3] is the sub-list for method input_type
+	3,  // [3:3] is the sub-list for extension type_name
+	3,  // [3:3] is the sub-list for extension extendee
+	0,  // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_agent_v1_core_proto_init() }
@@ -754,7 +1555,7 @@ func file_agent_v1_core_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agent_v1_core_proto_rawDesc), len(file_agent_v1_core_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

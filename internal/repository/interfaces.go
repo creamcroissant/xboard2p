@@ -2,10 +2,14 @@
 // 模块说明: 这是 internal 模块里的 interfaces 逻辑，下面的注释会用非常通俗的中文帮你理解每一步。
 package repository
 
-import "context"
+import (
+	"context"
+	"encoding/json"
+)
 
 // Store 暴露每个聚合根对应的仓储接口。
 type Store interface {
+	CoreOperations() CoreOperationRepository
 	Users() UserRepository
 	Settings() SettingRepository
 	InviteCodes() InviteCodeRepository
@@ -39,6 +43,16 @@ type Store interface {
 	AgentConfigInventories() AgentConfigInventoryRepository
 	InboundIndexes() InboundIndexRepository
 	DriftStates() DriftStateRepository
+}
+
+// CoreOperationRepository manages asynchronous core management tasks.
+type CoreOperationRepository interface {
+	Create(ctx context.Context, operation *CoreOperation) error
+	UpdateStatus(ctx context.Context, id, status string, resultPayload json.RawMessage, errorMessage string, claimedBy string, claimedAt, startedAt, finishedAt *int64) error
+	FindByID(ctx context.Context, id string) (*CoreOperation, error)
+	List(ctx context.Context, filter CoreOperationFilter) ([]*CoreOperation, error)
+	Count(ctx context.Context, filter CoreOperationFilter) (int64, error)
+	ClaimNext(ctx context.Context, agentHostID int64, statuses []string, claimedBy string, claimedAt int64, reclaimBefore *int64) (*CoreOperation, error)
 }
 
 // UserRepository 定义用户相关数据访问方法。
@@ -420,6 +434,7 @@ type AgentCoreInstanceRepository interface {
 	FindByID(ctx context.Context, id int64) (*AgentCoreInstance, error)
 	FindByInstanceID(ctx context.Context, agentHostID int64, instanceID string) (*AgentCoreInstance, error)
 	ListByAgentHostID(ctx context.Context, agentHostID int64) ([]*AgentCoreInstance, error)
+	ReplaceSnapshot(ctx context.Context, agentHostID int64, instances []*AgentCoreInstance) error
 	UpdateHeartbeat(ctx context.Context, agentHostID int64, instanceID string, heartbeatAt int64) error
 }
 

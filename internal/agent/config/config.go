@@ -310,13 +310,7 @@ func applyDefaults(cfg *Config) error {
 		cfg.Server.AuthToken = cfg.Panel.HostToken
 	}
 
-	// gRPC server defaults
-	if cfg.GRPCServer.Listen == "" {
-		cfg.GRPCServer.Listen = ":19090"
-	}
-	if cfg.GRPCServer.AuthToken == "" && cfg.Panel.HostToken != "" {
-		cfg.GRPCServer.AuthToken = cfg.Panel.HostToken
-	}
+	// gRPC server defaults are retired with agent-grpc-retirement; keep values untouched so legacy configs do not become required.
 
 	// Protocol defaults
 	if cfg.Protocol.ConfigDir == "" {
@@ -349,7 +343,12 @@ func applyDefaults(cfg *Config) error {
 	if strings.TrimSpace(cfg.Core.InstallScriptPath) == "" {
 		cfg.Core.InstallScriptPath = defaultInstallScriptPath
 	}
-
+	if strings.TrimSpace(cfg.Core.SingBoxBinaryPath) == "" {
+		cfg.Core.SingBoxBinaryPath = defaultSingBoxBinaryPath
+	}
+	if strings.TrimSpace(cfg.Core.XrayBinaryPath) == "" {
+		cfg.Core.XrayBinaryPath = defaultXrayBinaryPath
+	}
 	// gRPC defaults
 	if cfg.GRPC.Keepalive.Time == 0 {
 		cfg.GRPC.Keepalive.Time = 30 * time.Second
@@ -629,19 +628,7 @@ func (cfg *Config) Validate() error {
 	if cfg.Panel.HostToken == "" {
 		return fmt.Errorf("panel.host_token is required for gRPC authentication (or provide panel.communication_key for first-boot registration)")
 	}
-	if cfg.GRPCServer.Enabled {
-		if cfg.GRPCServer.Listen == "" {
-			return fmt.Errorf("grpc_server.listen is required when grpc_server is enabled")
-		}
-		if cfg.GRPCServer.AuthToken == "" {
-			return fmt.Errorf("grpc_server.auth_token is required when grpc_server is enabled")
-		}
-		if cfg.GRPCServer.TLS.Enabled {
-			if cfg.GRPCServer.TLS.CertFile == "" || cfg.GRPCServer.TLS.KeyFile == "" {
-				return fmt.Errorf("grpc_server.tls.cert_file and grpc_server.tls.key_file are required when grpc_server.tls is enabled")
-			}
-		}
-	}
+	// Legacy grpc_server validation removed: core control now uses agent -> panel pull/report only.
 	if _, err := protocol.NormalizeServiceAction(cfg.Protocol.ServiceAction, cfg.Protocol.AutoRestart); err != nil {
 		return err
 	}

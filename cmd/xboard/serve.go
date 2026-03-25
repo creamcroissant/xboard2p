@@ -49,7 +49,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	cfg, err := config.Load()
+	cfg, err := config.LoadWithOptions(config.LoadOptions{ConfigPath: configPath})
 	if err != nil {
 		return err
 	}
@@ -211,13 +211,14 @@ func runServe(cmd *cobra.Command, args []string) error {
 	agentService := service.NewAgentService(store.Servers(), store.Users())
 	forwardingService := service.NewForwardingServiceWithLogger(store.ForwardingRules(), store.ForwardingRuleLogs(), store.AgentHosts(), logger)
 	converterRegistry := template.NewConverterRegistry(&template.SingBoxConverter{}, &template.XrayConverter{})
-	agentCoreService := service.NewAgentCoreService(
+	agentCoreService := service.NewAgentCoreServiceWithOptions(
 		store.AgentHosts(),
 		store.AgentCoreInstances(),
 		store.AgentCoreSwitchLogs(),
 		store.ConfigTemplates(),
 		converterRegistry,
 		logger,
+		service.AgentCoreServiceOptions{Operations: store.CoreOperations()},
 	)
 	accessLogService := service.NewAccessLogService(store)
 	artifactCompilerService := service.NewArtifactCompilerService(store.InboundSpecs(), store.DesiredArtifacts())
@@ -226,6 +227,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 	inventoryIngestService := service.NewInventoryIngestService(store.AgentConfigInventories(), store.InboundIndexes())
 	applyOrchestratorService := service.NewApplyOrchestratorService(store.DesiredArtifacts(), store.ApplyRuns(), driftAndDiffService)
 	shortLinkService := service.NewShortLinkService(store.ShortLinks(), store.Users(), store.Settings())
+	coreOperationService := service.NewCoreOperationService(store.CoreOperations())
+	coreSnapshotService := service.NewCoreSnapshotService(store.AgentHosts(), store.AgentCoreInstances())
 
 	scheduler := job.NewScheduler(logger)
 
@@ -348,7 +351,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	var grpcServer *internalgrpc.Server
 	if cfg.GRPC.Enabled {
 		authInterceptor := interceptor.NewAuthInterceptor(agentHostService)
-		agentHandler := handler.NewAgentHandler(
+		agentHandler := handler.NewAgentHandlerWithCoreServices(
 			agentHostService,
 			agentService,
 			serverTelemetryService,
@@ -359,6 +362,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 			adminSystemSettingsService,
 			inventoryIngestService,
 			applyOrchestratorService,
+			coreOperationService,
+			coreSnapshotService,
 			logger,
 		)
 

@@ -24,7 +24,7 @@ var File_agent_v1_agent_proto protoreflect.FileDescriptor
 
 const file_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
-	"\x14agent/v1/agent.proto\x12\bagent.v1\x1a\x15agent/v1/status.proto\x1a\x15agent/v1/config.proto\x1a\x16agent/v1/traffic.proto\x1a\x19agent/v1/forwarding.proto\x1a\x13agent/v1/core.proto\x1a\x19agent/v1/access_log.proto\x1a\x1cagent/v1/config_center.proto2\xc5\b\n" +
+	"\x14agent/v1/agent.proto\x12\bagent.v1\x1a\x15agent/v1/status.proto\x1a\x15agent/v1/config.proto\x1a\x16agent/v1/traffic.proto\x1a\x19agent/v1/forwarding.proto\x1a\x13agent/v1/core.proto\x1a\x19agent/v1/access_log.proto\x1a\x1cagent/v1/config_center.proto2\xaf\b\n" +
 	"\fAgentService\x12D\n" +
 	"\tHeartbeat\x12\x1a.agent.v1.HeartbeatRequest\x1a\x1b.agent.v1.HeartbeatResponse\x12@\n" +
 	"\fReportStatus\x12\x16.agent.v1.StatusReport\x1a\x18.agent.v1.StatusResponse\x12>\n" +
@@ -34,44 +34,40 @@ const file_agent_v1_agent_proto_rawDesc = "" +
 	"\vReportAlive\x12\x15.agent.v1.AliveReport\x1a\x17.agent.v1.AliveResponse\x12C\n" +
 	"\fStatusStream\x12\x16.agent.v1.StatusReport\x1a\x17.agent.v1.StatusCommand(\x010\x01\x12Y\n" +
 	"\x12GetForwardingRules\x12 .agent.v1.ForwardingRulesRequest\x1a!.agent.v1.ForwardingRulesResponse\x12T\n" +
-	"\x16ReportForwardingStatus\x12 .agent.v1.ForwardingStatusReport\x1a\x18.agent.v1.StatusResponse\x12A\n" +
-	"\bGetCores\x12\x19.agent.v1.GetCoresRequest\x1a\x1a.agent.v1.GetCoresResponse\x12G\n" +
-	"\n" +
-	"SwitchCore\x12\x1b.agent.v1.SwitchCoreRequest\x1a\x1c.agent.v1.SwitchCoreResponse\x12J\n" +
-	"\vInstallCore\x12\x1c.agent.v1.InstallCoreRequest\x1a\x1d.agent.v1.InstallCoreResponse\x12J\n" +
+	"\x16ReportForwardingStatus\x12 .agent.v1.ForwardingStatusReport\x1a\x18.agent.v1.StatusResponse\x12\\\n" +
+	"\x11GetCoreOperations\x12\".agent.v1.GetCoreOperationsRequest\x1a#.agent.v1.GetCoreOperationsResponse\x12b\n" +
+	"\x13ReportCoreOperation\x12$.agent.v1.ReportCoreOperationRequest\x1a%.agent.v1.ReportCoreOperationResponse\x12J\n" +
 	"\x10ReportAccessLogs\x12\x19.agent.v1.AccessLogReport\x1a\x1b.agent.v1.AccessLogResponse\x12J\n" +
 	"\rGetApplyBatch\x12\x1b.agent.v1.ApplyBatchRequest\x1a\x1c.agent.v1.ApplyBatchResponse\x12F\n" +
 	"\x0eReportApplyRun\x12\x18.agent.v1.ApplyRunReport\x1a\x1a.agent.v1.ApplyRunResponseB:Z8github.com/creamcroissant/xboard/pkg/pb/agent/v1;agentv1b\x06proto3"
 
 var file_agent_v1_agent_proto_goTypes = []any{
-	(*HeartbeatRequest)(nil),        // 0: agent.v1.HeartbeatRequest
-	(*StatusReport)(nil),            // 1: agent.v1.StatusReport
-	(*ConfigRequest)(nil),           // 2: agent.v1.ConfigRequest
-	(*UsersRequest)(nil),            // 3: agent.v1.UsersRequest
-	(*TrafficReport)(nil),           // 4: agent.v1.TrafficReport
-	(*AliveReport)(nil),             // 5: agent.v1.AliveReport
-	(*ForwardingRulesRequest)(nil),  // 6: agent.v1.ForwardingRulesRequest
-	(*ForwardingStatusReport)(nil),  // 7: agent.v1.ForwardingStatusReport
-	(*GetCoresRequest)(nil),         // 8: agent.v1.GetCoresRequest
-	(*SwitchCoreRequest)(nil),       // 9: agent.v1.SwitchCoreRequest
-	(*InstallCoreRequest)(nil),      // 10: agent.v1.InstallCoreRequest
-	(*AccessLogReport)(nil),         // 11: agent.v1.AccessLogReport
-	(*ApplyBatchRequest)(nil),       // 12: agent.v1.ApplyBatchRequest
-	(*ApplyRunReport)(nil),          // 13: agent.v1.ApplyRunReport
-	(*HeartbeatResponse)(nil),       // 14: agent.v1.HeartbeatResponse
-	(*StatusResponse)(nil),          // 15: agent.v1.StatusResponse
-	(*ConfigResponse)(nil),          // 16: agent.v1.ConfigResponse
-	(*UsersResponse)(nil),           // 17: agent.v1.UsersResponse
-	(*TrafficResponse)(nil),         // 18: agent.v1.TrafficResponse
-	(*AliveResponse)(nil),           // 19: agent.v1.AliveResponse
-	(*StatusCommand)(nil),           // 20: agent.v1.StatusCommand
-	(*ForwardingRulesResponse)(nil), // 21: agent.v1.ForwardingRulesResponse
-	(*GetCoresResponse)(nil),        // 22: agent.v1.GetCoresResponse
-	(*SwitchCoreResponse)(nil),      // 23: agent.v1.SwitchCoreResponse
-	(*InstallCoreResponse)(nil),     // 24: agent.v1.InstallCoreResponse
-	(*AccessLogResponse)(nil),       // 25: agent.v1.AccessLogResponse
-	(*ApplyBatchResponse)(nil),      // 26: agent.v1.ApplyBatchResponse
-	(*ApplyRunResponse)(nil),        // 27: agent.v1.ApplyRunResponse
+	(*HeartbeatRequest)(nil),            // 0: agent.v1.HeartbeatRequest
+	(*StatusReport)(nil),                // 1: agent.v1.StatusReport
+	(*ConfigRequest)(nil),               // 2: agent.v1.ConfigRequest
+	(*UsersRequest)(nil),                // 3: agent.v1.UsersRequest
+	(*TrafficReport)(nil),               // 4: agent.v1.TrafficReport
+	(*AliveReport)(nil),                 // 5: agent.v1.AliveReport
+	(*ForwardingRulesRequest)(nil),      // 6: agent.v1.ForwardingRulesRequest
+	(*ForwardingStatusReport)(nil),      // 7: agent.v1.ForwardingStatusReport
+	(*GetCoreOperationsRequest)(nil),    // 8: agent.v1.GetCoreOperationsRequest
+	(*ReportCoreOperationRequest)(nil),  // 9: agent.v1.ReportCoreOperationRequest
+	(*AccessLogReport)(nil),             // 10: agent.v1.AccessLogReport
+	(*ApplyBatchRequest)(nil),           // 11: agent.v1.ApplyBatchRequest
+	(*ApplyRunReport)(nil),              // 12: agent.v1.ApplyRunReport
+	(*HeartbeatResponse)(nil),           // 13: agent.v1.HeartbeatResponse
+	(*StatusResponse)(nil),              // 14: agent.v1.StatusResponse
+	(*ConfigResponse)(nil),              // 15: agent.v1.ConfigResponse
+	(*UsersResponse)(nil),               // 16: agent.v1.UsersResponse
+	(*TrafficResponse)(nil),             // 17: agent.v1.TrafficResponse
+	(*AliveResponse)(nil),               // 18: agent.v1.AliveResponse
+	(*StatusCommand)(nil),               // 19: agent.v1.StatusCommand
+	(*ForwardingRulesResponse)(nil),     // 20: agent.v1.ForwardingRulesResponse
+	(*GetCoreOperationsResponse)(nil),   // 21: agent.v1.GetCoreOperationsResponse
+	(*ReportCoreOperationResponse)(nil), // 22: agent.v1.ReportCoreOperationResponse
+	(*AccessLogResponse)(nil),           // 23: agent.v1.AccessLogResponse
+	(*ApplyBatchResponse)(nil),          // 24: agent.v1.ApplyBatchResponse
+	(*ApplyRunResponse)(nil),            // 25: agent.v1.ApplyRunResponse
 }
 var file_agent_v1_agent_proto_depIdxs = []int32{
 	0,  // 0: agent.v1.AgentService.Heartbeat:input_type -> agent.v1.HeartbeatRequest
@@ -83,29 +79,27 @@ var file_agent_v1_agent_proto_depIdxs = []int32{
 	1,  // 6: agent.v1.AgentService.StatusStream:input_type -> agent.v1.StatusReport
 	6,  // 7: agent.v1.AgentService.GetForwardingRules:input_type -> agent.v1.ForwardingRulesRequest
 	7,  // 8: agent.v1.AgentService.ReportForwardingStatus:input_type -> agent.v1.ForwardingStatusReport
-	8,  // 9: agent.v1.AgentService.GetCores:input_type -> agent.v1.GetCoresRequest
-	9,  // 10: agent.v1.AgentService.SwitchCore:input_type -> agent.v1.SwitchCoreRequest
-	10, // 11: agent.v1.AgentService.InstallCore:input_type -> agent.v1.InstallCoreRequest
-	11, // 12: agent.v1.AgentService.ReportAccessLogs:input_type -> agent.v1.AccessLogReport
-	12, // 13: agent.v1.AgentService.GetApplyBatch:input_type -> agent.v1.ApplyBatchRequest
-	13, // 14: agent.v1.AgentService.ReportApplyRun:input_type -> agent.v1.ApplyRunReport
-	14, // 15: agent.v1.AgentService.Heartbeat:output_type -> agent.v1.HeartbeatResponse
-	15, // 16: agent.v1.AgentService.ReportStatus:output_type -> agent.v1.StatusResponse
-	16, // 17: agent.v1.AgentService.GetConfig:output_type -> agent.v1.ConfigResponse
-	17, // 18: agent.v1.AgentService.GetUsers:output_type -> agent.v1.UsersResponse
-	18, // 19: agent.v1.AgentService.ReportTraffic:output_type -> agent.v1.TrafficResponse
-	19, // 20: agent.v1.AgentService.ReportAlive:output_type -> agent.v1.AliveResponse
-	20, // 21: agent.v1.AgentService.StatusStream:output_type -> agent.v1.StatusCommand
-	21, // 22: agent.v1.AgentService.GetForwardingRules:output_type -> agent.v1.ForwardingRulesResponse
-	15, // 23: agent.v1.AgentService.ReportForwardingStatus:output_type -> agent.v1.StatusResponse
-	22, // 24: agent.v1.AgentService.GetCores:output_type -> agent.v1.GetCoresResponse
-	23, // 25: agent.v1.AgentService.SwitchCore:output_type -> agent.v1.SwitchCoreResponse
-	24, // 26: agent.v1.AgentService.InstallCore:output_type -> agent.v1.InstallCoreResponse
-	25, // 27: agent.v1.AgentService.ReportAccessLogs:output_type -> agent.v1.AccessLogResponse
-	26, // 28: agent.v1.AgentService.GetApplyBatch:output_type -> agent.v1.ApplyBatchResponse
-	27, // 29: agent.v1.AgentService.ReportApplyRun:output_type -> agent.v1.ApplyRunResponse
-	15, // [15:30] is the sub-list for method output_type
-	0,  // [0:15] is the sub-list for method input_type
+	8,  // 9: agent.v1.AgentService.GetCoreOperations:input_type -> agent.v1.GetCoreOperationsRequest
+	9,  // 10: agent.v1.AgentService.ReportCoreOperation:input_type -> agent.v1.ReportCoreOperationRequest
+	10, // 11: agent.v1.AgentService.ReportAccessLogs:input_type -> agent.v1.AccessLogReport
+	11, // 12: agent.v1.AgentService.GetApplyBatch:input_type -> agent.v1.ApplyBatchRequest
+	12, // 13: agent.v1.AgentService.ReportApplyRun:input_type -> agent.v1.ApplyRunReport
+	13, // 14: agent.v1.AgentService.Heartbeat:output_type -> agent.v1.HeartbeatResponse
+	14, // 15: agent.v1.AgentService.ReportStatus:output_type -> agent.v1.StatusResponse
+	15, // 16: agent.v1.AgentService.GetConfig:output_type -> agent.v1.ConfigResponse
+	16, // 17: agent.v1.AgentService.GetUsers:output_type -> agent.v1.UsersResponse
+	17, // 18: agent.v1.AgentService.ReportTraffic:output_type -> agent.v1.TrafficResponse
+	18, // 19: agent.v1.AgentService.ReportAlive:output_type -> agent.v1.AliveResponse
+	19, // 20: agent.v1.AgentService.StatusStream:output_type -> agent.v1.StatusCommand
+	20, // 21: agent.v1.AgentService.GetForwardingRules:output_type -> agent.v1.ForwardingRulesResponse
+	14, // 22: agent.v1.AgentService.ReportForwardingStatus:output_type -> agent.v1.StatusResponse
+	21, // 23: agent.v1.AgentService.GetCoreOperations:output_type -> agent.v1.GetCoreOperationsResponse
+	22, // 24: agent.v1.AgentService.ReportCoreOperation:output_type -> agent.v1.ReportCoreOperationResponse
+	23, // 25: agent.v1.AgentService.ReportAccessLogs:output_type -> agent.v1.AccessLogResponse
+	24, // 26: agent.v1.AgentService.GetApplyBatch:output_type -> agent.v1.ApplyBatchResponse
+	25, // 27: agent.v1.AgentService.ReportApplyRun:output_type -> agent.v1.ApplyRunResponse
+	14, // [14:28] is the sub-list for method output_type
+	0,  // [0:14] is the sub-list for method input_type
 	0,  // [0:0] is the sub-list for extension type_name
 	0,  // [0:0] is the sub-list for extension extendee
 	0,  // [0:0] is the sub-list for field type_name

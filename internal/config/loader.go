@@ -9,130 +9,131 @@ import (
 	"github.com/spf13/viper"
 )
 
+type LoadOptions struct {
+	ConfigPath string
+	WorkingDir string
+}
+
 func Load() (*Config, error) {
+	return LoadWithOptions(LoadOptions{})
+}
+
+func LoadWithOptions(opts LoadOptions) (*Config, error) {
 	v := viper.New()
-
-	// Default settings
 	setDefaults(v)
-
-	// Config file settings
-	v.SetConfigName("config")
 	v.SetConfigType("yaml")
-	v.AddConfigPath(".")
-	v.AddConfigPath("/etc/xboard/")
-
-	// CLI flag overrides can be bound here if needed
-
-	// Environment variable settings
+	if err := configureConfigFile(v, opts); err != nil {
+		return nil, err
+	}
 	v.SetEnvPrefix("XBOARD")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
-	if err := v.BindEnv("grpc.enabled", "XBOARD_GRPC_ENABLED"); err != nil {
-		return nil, fmt.Errorf("bind env grpc.enabled: %w", err)
+	if err := bindEnv(v); err != nil {
+		return nil, err
 	}
-	if err := v.BindEnv("grpc.addr", "XBOARD_GRPC_ADDR"); err != nil {
-		return nil, fmt.Errorf("bind env grpc.addr: %w", err)
-	}
-	if err := v.BindEnv("grpc.tls.enabled", "XBOARD_GRPC_TLS_ENABLED"); err != nil {
-		return nil, fmt.Errorf("bind env grpc.tls.enabled: %w", err)
-	}
-	if err := v.BindEnv("grpc.tls.cert_file", "XBOARD_GRPC_TLS_CERT_FILE"); err != nil {
-		return nil, fmt.Errorf("bind env grpc.tls.cert_file: %w", err)
-	}
-	if err := v.BindEnv("grpc.tls.key_file", "XBOARD_GRPC_TLS_KEY_FILE"); err != nil {
-		return nil, fmt.Errorf("bind env grpc.tls.key_file: %w", err)
-	}
-	if err := v.BindEnv("ui.install.enabled", "XBOARD_UI_INSTALL_ENABLED", "XBOARD_INSTALL_UI_ENABLED", "INSTALL_UI_ENABLED"); err != nil {
-		return nil, fmt.Errorf("bind env ui.install.enabled: %w", err)
-	}
-	if err := v.BindEnv("ui.install.dir", "XBOARD_UI_INSTALL_DIR", "XBOARD_INSTALL_UI_DIR", "INSTALL_UI_DIR"); err != nil {
-		return nil, fmt.Errorf("bind env ui.install.dir: %w", err)
-	}
-	if err := v.BindEnv("scheduler.stat_user_hourly", "XBOARD_SCHEDULER_STAT_USER_HOURLY"); err != nil {
-		return nil, fmt.Errorf("bind env scheduler.stat_user_hourly: %w", err)
-	}
-	if err := v.BindEnv("scheduler.traffic_fetch", "XBOARD_SCHEDULER_TRAFFIC_FETCH"); err != nil {
-		return nil, fmt.Errorf("bind env scheduler.traffic_fetch: %w", err)
-	}
-	if err := v.BindEnv("scheduler.email_notify", "XBOARD_SCHEDULER_EMAIL_NOTIFY"); err != nil {
-		return nil, fmt.Errorf("bind env scheduler.email_notify: %w", err)
-	}
-	if err := v.BindEnv("scheduler.telegram_notify", "XBOARD_SCHEDULER_TELEGRAM_NOTIFY"); err != nil {
-		return nil, fmt.Errorf("bind env scheduler.telegram_notify: %w", err)
-	}
-
-	// 1. Try to read config file
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			return nil, fmt.Errorf("read config: %w", err)
 		}
-		// It's okay if config file is missing, we might rely on Envs/Defaults
-		fmt.Println("Config file not found")
-	} else {
-		fmt.Printf("Using config file: %s\n", v.ConfigFileUsed())
 	}
-
-	// 2. Load .env file (backward compatibility)
-	if err := loadDotEnv(v); err != nil {
+	configDir := configuredDir(v.ConfigFileUsed())
+	if err := loadDotEnv(v, configDir); err != nil {
 		return nil, err
 	}
-
 	if strings.TrimSpace(v.GetString("grpc.addr")) == "" {
 		if legacyAddr := strings.TrimSpace(v.GetString("grpc.address")); legacyAddr != "" {
 			v.Set("grpc.addr", legacyAddr)
 		}
 	}
-
-	fmt.Printf("Viper database.path: %s\n", v.GetString("database.path"))
-
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
-	fmt.Printf("Config struct DB.Path: %s\n", cfg.DB.Path)
-
+	resolveRelativePaths(&cfg, configDir)
 	return &cfg, nil
+}
+
+func configureConfigFile(v *viper.Viper, opts LoadOptions) error {
+	if v == nil {
+		return fmt.Errorf("viper is nil")
+	}
+	if configPath := strings.TrimSpace(opts.ConfigPath); configPath != "" {
+		absPath, err := filepath.Abs(configPath)
+		if err != nil {
+			return fmt.Errorf("resolve config path: %w", err)
+		}
+		v.SetConfigFile(absPath)
+		return nil
+	}
+	v.SetConfigName("config")
+	workingDir := strings.TrimSpace(opts.WorkingDir)
+	if workingDir != "" {
+		v.AddConfigPath(workingDir)
+		v.AddConfigPath(filepath.Join(workingDir, "etc"))
+	}
+	v.AddConfigPath("/etc/xboard/")
+	return nil
+}
+
+func bindEnv(v *viper.Viper) error {
+	bindings := map[string][]string{
+		"grpc.enabled":               {"XBOARD_GRPC_ENABLED"},
+		"grpc.addr":                  {"XBOARD_GRPC_ADDR"},
+		"grpc.tls.enabled":           {"XBOARD_GRPC_TLS_ENABLED"},
+		"grpc.tls.cert_file":         {"XBOARD_GRPC_TLS_CERT_FILE"},
+		"grpc.tls.key_file":          {"XBOARD_GRPC_TLS_KEY_FILE"},
+		"ui.install.enabled":         {"XBOARD_UI_INSTALL_ENABLED", "XBOARD_INSTALL_UI_ENABLED", "INSTALL_UI_ENABLED"},
+		"ui.install.dir":             {"XBOARD_UI_INSTALL_DIR", "XBOARD_INSTALL_UI_DIR", "INSTALL_UI_DIR"},
+		"scheduler.stat_user_hourly": {"XBOARD_SCHEDULER_STAT_USER_HOURLY"},
+		"scheduler.traffic_fetch":    {"XBOARD_SCHEDULER_TRAFFIC_FETCH"},
+		"scheduler.email_notify":     {"XBOARD_SCHEDULER_EMAIL_NOTIFY"},
+		"scheduler.telegram_notify":  {"XBOARD_SCHEDULER_TELEGRAM_NOTIFY"},
+	}
+	for key, envs := range bindings {
+		args := append([]string{key}, envs...)
+		if err := v.BindEnv(args...); err != nil {
+			return fmt.Errorf("bind env %s: %w", key, err)
+		}
+	}
+	return nil
 }
 
 func setDefaults(v *viper.Viper) {
 	v.SetDefault("http.addr", "0.0.0.0:8080")
 	v.SetDefault("http.shutdown_timeout", "15s")
-
 	v.SetDefault("log.level", "info")
 	v.SetDefault("log.format", "json")
 	v.SetDefault("log.environment", "production")
-
 	v.SetDefault("database.driver", "sqlite")
 	v.SetDefault("database.path", "data/xboard.db")
-
 	v.SetDefault("auth.signing_key", "change-me")
 	v.SetDefault("auth.token_ttl", "24h")
 	v.SetDefault("auth.issuer", "xboard")
 	v.SetDefault("auth.audience", "xboard-client")
 	v.SetDefault("auth.leeway", "30s")
 	v.SetDefault("auth.bcrypt_cost", 12)
-
 	v.SetDefault("ui.admin.enabled", true)
 	v.SetDefault("ui.admin.dir", "web/user-vite/dist")
 	v.SetDefault("ui.admin.title", "XBoard Admin")
 	v.SetDefault("ui.admin.version", "1.0.0")
 	v.SetDefault("ui.admin.hidden_modules", []string{"payment", "ticket", "gift-card", "plugin", "theme"})
-
 	v.SetDefault("ui.user.enabled", true)
 	v.SetDefault("ui.user.dir", "web/user-vite/dist")
 	v.SetDefault("ui.user.title", "XBoard")
-
 	v.SetDefault("ui.install.enabled", true)
 	v.SetDefault("ui.install.dir", "web/install")
-
 	v.SetDefault("scheduler.stat_user_hourly", "@every 5m")
 	v.SetDefault("scheduler.traffic_fetch", "@every 1m")
 	v.SetDefault("scheduler.email_notify", "@every 1m")
 	v.SetDefault("scheduler.telegram_notify", "@every 1m")
 }
 
-func loadDotEnv(v *viper.Viper) error {
-	candidates := []string{".", "..", "../.."}
+func loadDotEnv(v *viper.Viper, configDir string) error {
+	candidates := []string{}
+	if configDir != "" {
+		candidates = append(candidates, configDir)
+	}
+	candidates = append(candidates, "/etc/xboard")
 	for _, path := range candidates {
 		file := filepath.Clean(filepath.Join(path, ".env"))
 		if _, err := os.Stat(file); err != nil {
@@ -141,23 +142,17 @@ func loadDotEnv(v *viper.Viper) error {
 			}
 			return fmt.Errorf("stat .env: %w", err)
 		}
-
-		// Create a separate viper instance for .env to avoid type confusion with main config
 		envViper := viper.New()
 		envViper.SetConfigFile(file)
 		envViper.SetConfigType("env")
 		if err := envViper.ReadInConfig(); err != nil {
 			return fmt.Errorf("read .env: %w", err)
 		}
-
-		// Manually map legacy env vars to new structure
-		// This ensures backward compatibility with existing .env files
 		bindLegacyEnv(v, envViper)
 	}
 	return nil
 }
 
-// bindLegacyEnv maps old flat ENV variables to the new hierarchical structure
 func bindLegacyEnv(target *viper.Viper, source *viper.Viper) {
 	mappings := map[string]string{
 		"HTTP_ADDR":               "http.addr",
@@ -189,14 +184,36 @@ func bindLegacyEnv(target *viper.Viper, source *viper.Viper) {
 		"INSTALL_UI_ENABLED":      "ui.install.enabled",
 		"INSTALL_UI_DIR":          "ui.install.dir",
 	}
-
 	for oldKey, newKey := range mappings {
 		if val := source.GetString(oldKey); val != "" {
-			// Only set if not already set by config.yml (which has higher priority than .env but lower than real ENV vars)
-			// But Viper.Set overrides everything except real ENVs.
-			// Strategy: We just set it. If user has real ENV vars, they will override this because AutomaticEnv is on.
-			// But wait, AutomaticEnv works on Get().
 			target.Set(newKey, val)
 		}
 	}
+}
+
+func configuredDir(configPath string) string {
+	if strings.TrimSpace(configPath) == "" {
+		return ""
+	}
+	return filepath.Dir(configPath)
+}
+
+func resolveRelativePaths(cfg *Config, baseDir string) {
+	if cfg == nil || baseDir == "" {
+		return
+	}
+	cfg.DB.Path = resolveRelativePath(baseDir, cfg.DB.Path)
+	cfg.UI.Admin.Dir = resolveRelativePath(baseDir, cfg.UI.Admin.Dir)
+	cfg.UI.User.Dir = resolveRelativePath(baseDir, cfg.UI.User.Dir)
+	cfg.UI.Install.Dir = resolveRelativePath(baseDir, cfg.UI.Install.Dir)
+	cfg.GRPC.TLS.CertFile = resolveRelativePath(baseDir, cfg.GRPC.TLS.CertFile)
+	cfg.GRPC.TLS.KeyFile = resolveRelativePath(baseDir, cfg.GRPC.TLS.KeyFile)
+}
+
+func resolveRelativePath(baseDir, value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || filepath.IsAbs(trimmed) {
+		return trimmed
+	}
+	return filepath.Clean(filepath.Join(baseDir, trimmed))
 }
