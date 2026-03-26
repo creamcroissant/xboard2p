@@ -16,6 +16,8 @@ var (
 	ErrApplyOrchestratorNotFound         = errors.New("service: apply run not found / 发布记录不存在")
 	ErrApplyOrchestratorPermissionDenied = errors.New("service: apply run permission denied / 发布记录无权限")
 	ErrApplyOrchestratorInvalidState     = errors.New("service: invalid apply run state / 发布状态无效")
+	ErrApplyOrchestratorNoArtifacts      = errors.New("service: no desired artifacts available / 当前无可下发产物")
+	ErrApplyOrchestratorNoPayload        = errors.New("service: desired artifacts contain no valid payload / 产物不含有效内容")
 )
 
 const (
@@ -369,7 +371,14 @@ func (s *applyOrchestratorService) GetApplyBatch(ctx context.Context, req GetApp
 		return nil, err
 	}
 	if targetRevision == 0 {
-		return nil, fmt.Errorf("desired artifacts missing for agent_host_id=%d core_type=%s", req.AgentHostID, coreType)
+		return &GetApplyBatchResult{
+			NotModified:      true,
+			RunID:            "",
+			CoreType:         coreType,
+			TargetRevision:   0,
+			PreviousRevision: req.CurrentRevision,
+			Artifacts:        nil,
+		}, nil
 	}
 	if targetRevision <= req.CurrentRevision {
 		return &GetApplyBatchResult{
@@ -393,7 +402,7 @@ func (s *applyOrchestratorService) GetApplyBatch(ctx context.Context, req GetApp
 		return nil, err
 	}
 	if len(artifacts) == 0 {
-		return nil, fmt.Errorf("latest revision has no artifacts (agent_host_id=%d core_type=%s target_revision=%d)", req.AgentHostID, coreType, targetRevision)
+		return nil, fmt.Errorf("%w (agent_host_id=%d core_type=%s target_revision=%d)", ErrApplyOrchestratorNoArtifacts, req.AgentHostID, coreType, targetRevision)
 	}
 
 	payload := make([]ApplyBatchArtifact, 0, len(artifacts))
@@ -409,7 +418,7 @@ func (s *applyOrchestratorService) GetApplyBatch(ctx context.Context, req GetApp
 		})
 	}
 	if len(payload) == 0 {
-		return nil, fmt.Errorf("latest revision has no valid artifacts (agent_host_id=%d core_type=%s target_revision=%d)", req.AgentHostID, coreType, targetRevision)
+		return nil, fmt.Errorf("%w (agent_host_id=%d core_type=%s target_revision=%d)", ErrApplyOrchestratorNoPayload, req.AgentHostID, coreType, targetRevision)
 	}
 
 	run, err := s.PrepareApplyRun(ctx, PrepareApplyRunRequest{

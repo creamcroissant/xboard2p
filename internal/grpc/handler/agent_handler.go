@@ -323,14 +323,22 @@ func (h *AgentHandler) GetCoreOperations(ctx context.Context, req *agentv1.GetCo
 	if h.coreOperations == nil {
 		return nil, status.Error(codes.FailedPrecondition, "core operation service not available")
 	}
-	op, err := h.coreOperations.ClaimNext(ctx, service.ClaimCoreOperationRequest{AgentHostID: agentHost.ID, ClaimedBy: fmt.Sprintf("agent-%d", agentHost.ID), Statuses: req.GetStatuses()})
-	if err != nil {
-		if errors.Is(err, service.ErrCoreOperationNotFound) {
-			return &agentv1.GetCoreOperationsResponse{Success: true}, nil
-		}
-		return nil, mapCoreOperationGRPCError(err)
+	limit := req.GetLimit()
+	if limit <= 0 {
+		limit = 1
 	}
-	return &agentv1.GetCoreOperationsResponse{Success: true, Operations: []*agentv1.CoreOperation{convertCoreOperation(op)}}, nil
+	operations := make([]*agentv1.CoreOperation, 0, limit)
+	for i := int32(0); i < limit; i++ {
+		op, err := h.coreOperations.ClaimNext(ctx, service.ClaimCoreOperationRequest{AgentHostID: agentHost.ID, ClaimedBy: fmt.Sprintf("agent-%d", agentHost.ID), Statuses: req.GetStatuses()})
+		if err != nil {
+			if errors.Is(err, service.ErrCoreOperationNotFound) {
+				break
+			}
+			return nil, mapCoreOperationGRPCError(err)
+		}
+		operations = append(operations, convertCoreOperation(op))
+	}
+	return &agentv1.GetCoreOperationsResponse{Success: true, Operations: operations}, nil
 }
 
 // ReportCoreOperation 处理 Agent 上报的 core operation 结果。
@@ -457,7 +465,9 @@ func (h *AgentHandler) StatusStream(stream grpc.BidiStreamingServer[agentv1.Stat
 			for i, p := range report.Protocols {
 				protocols[i] = service.ProtocolInfo{Name: p.Name, Type: p.Type, Running: p.Running, Details: convertProtocolDetails(p.Details)}
 			}
-			_ = h.agentHostService.UpdateProtocols(ctx, agentHost.Token, protocols)
+			if err := h.agentHostService.UpdateProtocols(ctx, agentHost.Token, protocols); err != nil {
+				h.logger.Error("failed to update protocols from stream", "agent_host_id", agentHost.ID, "error", err)
+			}
 		}
 		if report.ClientConfigs != nil && len(report.ClientConfigs.Configs) > 0 {
 			clientConfigs := make([]service.ClientConfigInfo, len(report.ClientConfigs.Configs))
@@ -468,7 +478,9 @@ func (h *AgentHandler) StatusStream(stream grpc.BidiStreamingServer[agentv1.Stat
 				}
 				clientConfigs[i] = service.ClientConfigInfo{Name: cfg.Name, Protocol: cfg.Protocol, Port: int(cfg.Port), RawConfigs: rawConfigs}
 			}
-			_ = h.agentHostService.UpdateClientConfigs(ctx, agentHost.Token, clientConfigs)
+			if err := h.agentHostService.UpdateClientConfigs(ctx, agentHost.Token, clientConfigs); err != nil {
+				h.logger.Error("failed to update client configs from stream", "agent_host_id", agentHost.ID, "error", err)
+			}
 		}
 		h.ingestInventoryReport(ctx, agentHost, report.GetTimestamp(), report.Inventory, report.InboundIndex, "stream")
 	}
@@ -510,6 +522,8 @@ func mapApplyOrchestratorGRPCError(err error) error {
 	case errors.Is(err, service.ErrApplyOrchestratorPermissionDenied):
 		return status.Error(codes.PermissionDenied, err.Error())
 	case errors.Is(err, service.ErrApplyOrchestratorInvalidState):
+		return status.Error(codes.FailedPrecondition, err.Error())
+	case errors.Is(err, service.ErrApplyOrchestratorNoArtifacts), errors.Is(err, service.ErrApplyOrchestratorNoPayload):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	default:
 		return status.Error(codes.Internal, "apply orchestrator operation failed")
