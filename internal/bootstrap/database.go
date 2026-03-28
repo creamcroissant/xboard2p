@@ -1,5 +1,3 @@
-// 文件路径: internal/bootstrap/database.go
-// 模块说明: 这是 internal 模块里的 database 逻辑，下面的注释会用非常通俗的中文帮你理解每一步。
 package bootstrap
 
 import (
@@ -7,9 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
+
+const sqliteBusyRetryLimit = 3
 
 // OpenSQLite ensures the parent directory exists, then opens a SQLite connection with sane pragmas.
 func OpenSQLite(path string) (*sql.DB, error) {
@@ -24,20 +26,53 @@ func OpenSQLite(path string) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
-
-	// Double check PRAGMAs
-	if _, err := db.Exec("PRAGMA journal_mode=WAL;"); err != nil {
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	db.SetConnMaxLifetime(0)
+	if err := WithSQLiteBusyRetry(func() error {
+		_, err := db.Exec("PRAGMA journal_mode=WAL;")
+		return err
+	}); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("set wal mode: %w", err)
 	}
-	if _, err := db.Exec("PRAGMA busy_timeout=30000;"); err != nil {
+	if err := WithSQLiteBusyRetry(func() error {
+		_, err := db.Exec("PRAGMA busy_timeout=30000;")
+		return err
+	}); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("set busy timeout: %w", err)
 	}
-
 	if err := db.Ping(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("ping sqlite: %w", err)
 	}
 	return db, nil
+}
+
+func WithSQLiteBusyRetry(fn func() error) error {
+	if fn == nil {
+		return nil
+	}
+	var lastErr error
+	for attempt := 0; attempt < sqliteBusyRetryLimit; attempt++ {
+		if err := fn(); err != nil {
+			lastErr = err
+			if !isSQLiteBusyError(err) {
+				return err
+			}
+			time.Sleep(time.Duration(attempt+1) * 50 * time.Millisecond)
+			continue
+		}
+		return nil
+	}
+	return lastErr
+}
+
+func isSQLiteBusyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "sqlite_busy") || strings.Contains(message, "database is locked") || strings.Contains(message, "database table is locked")
 }
