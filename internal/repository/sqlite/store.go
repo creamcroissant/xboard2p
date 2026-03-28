@@ -19,7 +19,6 @@ type Store struct {
 	plans                  repository.PlanRepository
 	loginLogs              repository.LoginLogRepository
 	tokens                 repository.TokenRepository
-	payments               repository.PaymentRepository
 	servers                repository.ServerRepository
 	groups                 repository.ServerGroupRepository
 	routes                 repository.ServerRouteRepository
@@ -61,7 +60,6 @@ func NewStore(db *sql.DB) *Store {
 		plans:                  &planRepo{db: db},
 		loginLogs:              &loginLogRepo{db: db},
 		tokens:                 &tokenRepo{db: db},
-		payments:               &paymentRepo{db: db},
 		servers:                &serverRepo{db: db},
 		groups:                 &serverGroupRepo{db: db},
 		routes:                 &serverRouteRepo{db: db},
@@ -122,10 +120,6 @@ func (s *Store) LoginLogs() repository.LoginLogRepository {
 
 func (s *Store) Tokens() repository.TokenRepository {
 	return s.tokens
-}
-
-func (s *Store) Payments() repository.PaymentRepository {
-	return s.payments
 }
 
 func (s *Store) Servers() repository.ServerRepository {

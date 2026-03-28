@@ -17,7 +17,6 @@ type Store interface {
 	Plans() PlanRepository
 	LoginLogs() LoginLogRepository
 	Tokens() TokenRepository
-	Payments() PaymentRepository
 	Servers() ServerRepository
 	ServerGroups() ServerGroupRepository
 	ServerRoutes() ServerRouteRepository
@@ -118,11 +117,6 @@ type PlanRepository interface {
 	ReplaceGroups(ctx context.Context, planID int64, groupIDs []int64) error
 	UpdateWithGroups(ctx context.Context, plan *Plan, groupIDs []int64) error
 	GetGroups(ctx context.Context, planID int64) ([]int64, error)
-}
-
-// PaymentRepository 管理支付方式相关数据。
-type PaymentRepository interface {
-	ListEnabled(ctx context.Context) ([]*Payment, error)
 }
 
 // ServerRepository 管理节点相关数据。

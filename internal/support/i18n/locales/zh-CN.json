@@ -140,8 +140,6 @@
   "config.telegram": "Telegram 设置",
   "config.telegram_bot_token": "Telegram Bot Token",
   "config.telegram_chat_id": "Telegram Chat ID",
-  "config.payment": "支付设置",
-  "config.payment_gateways": "支付网关",
   "config.advanced": "高级设置",
   "config.support_email": "客服邮箱",
 

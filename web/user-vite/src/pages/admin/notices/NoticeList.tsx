@@ -2,10 +2,11 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Plus, MoreVertical, Pencil, Trash2, Eye, EyeOff } from "lucide-react";
+import { Plus, MoreVertical, Pencil, Trash2, Eye, EyeOff, RefreshCw } from "lucide-react";
 import { QUERY_KEYS } from "@/lib/constants";
 import { getNotices, createNotice, updateNotice, deleteNotice, toggleNoticeVisibility } from "@/api/admin";
 import type { AdminNotice, CreateNoticeRequest } from "@/types";
+import { AdminPageShell } from "@/components/admin";
 import {
   Badge,
   Button,
@@ -18,6 +19,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  EmptyState,
   Input,
   Loading,
   Switch,
@@ -115,65 +117,57 @@ export default function NoticeList() {
     }
   };
 
-  const formatDate = (timestamp: number) => {
-    return new Date(timestamp * 1000).toLocaleString();
-  };
+  const formatDate = (timestamp: number) => new Date(timestamp * 1000).toLocaleString();
 
   const notices: AdminNotice[] = data?.data || [];
 
-  if (isLoading) return <Loading />;
+  const actions = (
+    <>
+      <Button variant="outline" onClick={() => refetch()} disabled={isLoading}>
+        <RefreshCw className="mr-2 h-4 w-4" />
+        {t("common.refresh")}
+      </Button>
+      <Button onClick={() => setIsDialogOpen(true)}>
+        <Plus className="mr-2 h-4 w-4" />
+        {t("admin.notices.add")}
+      </Button>
+    </>
+  );
+
+  let content = <Loading />;
 
   if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-3 py-20">
-        <p className="text-sm text-destructive">{t("admin.notices.loadError")}</p>
-        <Button variant="outline" onClick={() => refetch()}>
-          {t("common.retry")}
-        </Button>
-      </div>
+    content = (
+      <EmptyState
+        title={t("admin.notices.loadError")}
+        action={
+          <Button variant="outline" onClick={() => refetch()}>
+            {t("common.retry")}
+          </Button>
+        }
+      />
     );
-  }
-
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">{t("admin.notices.title")}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t("admin.notices.total", { count: notices.length })}
-          </p>
-        </div>
-        <Button onClick={() => setIsDialogOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          {t("admin.notices.add")}
-        </Button>
-      </div>
-
-      <Table aria-label={t("admin.notices.title")}>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{t("admin.notices.titleCol")}</TableHead>
-            <TableHead>{t("admin.notices.createdAt")}</TableHead>
-            <TableHead>{t("admin.notices.status")}</TableHead>
-            <TableHead>{t("common.actions")}</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {notices.length === 0 ? (
+  } else if (!isLoading && notices.length === 0) {
+    content = <EmptyState title={t("admin.notices.empty")} />;
+  } else if (!isLoading) {
+    content = (
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <Table aria-label={t("admin.notices.title")}>
+          <TableHeader>
             <TableRow>
-              <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
-                {t("admin.notices.empty")}
-              </TableCell>
+              <TableHead>{t("admin.notices.titleCol")}</TableHead>
+              <TableHead>{t("admin.notices.createdAt")}</TableHead>
+              <TableHead>{t("admin.notices.status")}</TableHead>
+              <TableHead>{t("common.actions")}</TableHead>
             </TableRow>
-          ) : (
-            notices.map((notice) => (
+          </TableHeader>
+          <TableBody>
+            {notices.map((notice) => (
               <TableRow key={notice.id}>
-                <TableCell className="font-medium max-w-xs truncate">
-                  {notice.title}
-                </TableCell>
+                <TableCell className="max-w-xs truncate font-medium">{notice.title}</TableCell>
                 <TableCell>{formatDate(notice.created_at)}</TableCell>
                 <TableCell>
-                  <Badge variant={notice.show ? "success" : "default"}>
+                  <Badge variant={notice.show ? "success" : "secondary"}>
                     {notice.show ? t("admin.notices.visible") : t("admin.notices.hidden")}
                   </Badge>
                 </TableCell>
@@ -197,7 +191,7 @@ export default function NoticeList() {
                         {t("common.edit")}
                       </DropdownMenuItem>
                       <DropdownMenuItem
-                        className="gap-2 text-red-600 focus:text-red-600"
+                        className="gap-2 text-destructive focus:text-destructive"
                         onSelect={() => deleteMutation.mutate(notice.id)}
                       >
                         <Trash2 className="h-4 w-4" />
@@ -207,10 +201,22 @@ export default function NoticeList() {
                   </DropdownMenu>
                 </TableCell>
               </TableRow>
-            ))
-          )}
-        </TableBody>
-      </Table>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <AdminPageShell
+        title={t("admin.notices.title")}
+        description={t("admin.notices.total", { count: notices.length })}
+        actions={actions}
+      >
+        {content}
+      </AdminPageShell>
 
       <Dialog open={isDialogOpen} onOpenChange={handleDialogChange}>
         <DialogContent className="sm:max-w-2xl">
@@ -272,12 +278,12 @@ export default function NoticeList() {
               {createMutation.isPending || updateMutation.isPending
                 ? t("common.loading")
                 : editingNotice
-                ? t("common.save")
-                : t("common.create")}
+                  ? t("common.save")
+                  : t("common.create")}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }

@@ -57,45 +57,6 @@ func (h *AdminStatHandler) handleGetStats(w http.ResponseWriter, r *http.Request
 	respondJSON(w, http.StatusOK, stats)
 }
 
-func (h *AdminStatHandler) handleGetOrder(w http.ResponseWriter, r *http.Request) {
-	if h.stats == nil {
-		RespondErrorI18nAction(r.Context(), w, http.StatusServiceUnavailable, "admin.stat.order", "error.service_unavailable", h.i18n)
-		return
-	}
-	claims := requestctx.AdminFromContext(r.Context())
-	if claims.ID == "" {
-		RespondErrorI18nAction(r.Context(), w, http.StatusUnauthorized, "admin.stat.order", "error.unauthorized", h.i18n)
-		return
-	}
-	query := r.URL.Query()
-	startUnix := pickFirstNonEmpty(query.Get("start_time"), query.Get("startTime"))
-	startAt, err := parseDateOrUnix(startUnix, pickFirstNonEmpty(query.Get("start_date"), query.Get("startDate")), false)
-	if err != nil {
-		RespondErrorI18nAction(r.Context(), w, http.StatusBadRequest, "admin.stat.order", "error.bad_request", h.i18n)
-		return
-	}
-	endUnix := pickFirstNonEmpty(query.Get("end_time"), query.Get("endTime"))
-	endAt, err := parseDateOrUnix(endUnix, pickFirstNonEmpty(query.Get("end_date"), query.Get("endDate")), strings.TrimSpace(endUnix) == "")
-	if err != nil {
-		RespondErrorI18nAction(r.Context(), w, http.StatusBadRequest, "admin.stat.order", "error.bad_request", h.i18n)
-		return
-	}
-	seriesType := query.Get("series_type")
-	if seriesType == "" {
-		seriesType = query.Get("seriesType")
-	}
-	result, err := h.stats.GetOrderStats(r.Context(), service.AdminStatOrderInput{
-		StartAt:    startAt,
-		EndAt:      endAt,
-		SeriesType: strings.TrimSpace(seriesType),
-	})
-	if err != nil {
-		RespondErrorI18nAction(r.Context(), w, http.StatusInternalServerError, "admin.stat.order", "error.internal_server_error", h.i18n)
-		return
-	}
-	respondJSON(w, http.StatusOK, result)
-}
-
 func (h *AdminStatHandler) handleGetTrafficRank(w http.ResponseWriter, r *http.Request) {
 	if h.stats == nil {
 		RespondErrorI18nAction(r.Context(), w, http.StatusServiceUnavailable, "admin.stat.traffic", "error.service_unavailable", h.i18n)

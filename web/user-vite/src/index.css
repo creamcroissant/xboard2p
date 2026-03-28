@@ -21,6 +21,12 @@
   --muted: 210 40% 96.1%;
   --muted-foreground: 215.4 16.3% 46.9%;
   --border: 214.3 31.8% 91.4%;
+  --destructive: 0 72.2% 50.6%;
+  --destructive-foreground: 210 40% 98%;
+  --success: 142.1 76.2% 36.3%;
+  --success-foreground: 210 40% 98%;
+  --warning: 38 92% 50%;
+  --warning-foreground: 222.2 47.4% 11.2%;
   --sidebar-width-expanded: 240px;
   --sidebar-width-collapsed: 64px;
   --sidebar-width: var(--sidebar-width-expanded);
@@ -45,6 +51,12 @@
   --muted: 0 0% 14.9%;
   --muted-foreground: 0 0% 63.9%;
   --border: 0 0% 14.9%;
+  --destructive: 0 62.8% 50.6%;
+  --destructive-foreground: 0 0% 98%;
+  --success: 142.1 70.6% 45.3%;
+  --success-foreground: 222.2 47.4% 11.2%;
+  --warning: 38 92% 50%;
+  --warning-foreground: 222.2 47.4% 11.2%;
   --toast-border: hsl(var(--border));
   --toast-bg: hsl(var(--card));
   --toast-color: hsl(var(--card-foreground));

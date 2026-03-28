@@ -24,7 +24,6 @@ const (
 type AdminStatService interface {
 	GetUserStats(ctx context.Context, input AdminStatUserInput) ([]AdminStatUserView, error)
 	GetDashboardStats(ctx context.Context) (*AdminDashboardStats, error)
-	GetOrderStats(ctx context.Context, input AdminStatOrderInput) (*AdminStatOrderResult, error)
 	GetTrafficRank(ctx context.Context, input AdminStatTrafficInput) (*AdminStatTrafficResult, error)
 }
 
@@ -71,51 +70,6 @@ type AdminTrafficTotals struct {
 	Total    int64 `json:"total"`
 }
 
-// AdminStatOrderInput filters revenue charts.
-type AdminStatOrderInput struct {
-	StartAt    int64
-	EndAt      int64
-	SeriesType string
-}
-
-// AdminStatOrderSummary mirrors the legacy payload.
-type AdminStatOrderSummary struct {
-	PaidTotal           float64 `json:"paid_total"`
-	PaidCount           int64   `json:"paid_count"`
-	CommissionTotal     float64 `json:"commission_total"`
-	CommissionCount     int64   `json:"commission_count"`
-	StartDate           string  `json:"start_date"`
-	EndDate             string  `json:"end_date"`
-	AvgPaidAmount       float64 `json:"avg_paid_amount"`
-	AvgCommissionAmount float64 `json:"avg_commission_amount"`
-	CommissionRate      float64 `json:"commission_rate"`
-}
-
-// AdminStatOrderDailyView includes all tracked metrics.
-type AdminStatOrderDailyView struct {
-	Date                string  `json:"date"`
-	PaidTotal           float64 `json:"paid_total"`
-	PaidCount           int64   `json:"paid_count"`
-	CommissionTotal     float64 `json:"commission_total"`
-	CommissionCount     int64   `json:"commission_count"`
-	AvgOrderAmount      float64 `json:"avg_order_amount"`
-	AvgCommissionAmount float64 `json:"avg_commission_amount"`
-}
-
-// AdminStatOrderMetricView collapses to a single series when requested.
-type AdminStatOrderMetricView struct {
-	Date  string  `json:"date"`
-	Value float64 `json:"value"`
-	Type  string  `json:"type"`
-}
-
-// AdminStatOrderResult wraps the list + summary.
-type AdminStatOrderResult struct {
-	List    any                   `json:"list"`
-	Summary AdminStatOrderSummary `json:"summary"`
-}
-
-// AdminStatTrafficInput controls rank queries.
 type AdminStatTrafficInput struct {
 	Type      string
 	StartTime int64
@@ -293,20 +247,6 @@ func (s *adminStatService) GetDashboardStats(ctx context.Context) (*AdminDashboa
 		},
 	}
 	return stats, nil
-}
-
-func (s *adminStatService) GetOrderStats(ctx context.Context, input AdminStatOrderInput) (*AdminStatOrderResult, error) {
-	if s == nil {
-		return nil, fmt.Errorf("admin stat service not configured / 管理统计服务未配置")
-	}
-	startAt, endAt := normalizeRange(input.StartAt, input.EndAt, s.nowOrDefault())
-	summary := AdminStatOrderSummary{
-		StartDate: time.Unix(startAt, 0).UTC().Format("2006-01-02"),
-		EndDate:   time.Unix(endAt-secondsPerDay, 0).UTC().Format("2006-01-02"),
-	}
-	// Orders have been removed; return zeroed metrics and empty list.
-	result := &AdminStatOrderResult{Summary: summary, List: []AdminStatOrderDailyView{}}
-	return result, nil
 }
 
 func (s *adminStatService) GetTrafficRank(ctx context.Context, input AdminStatTrafficInput) (*AdminStatTrafficResult, error) {

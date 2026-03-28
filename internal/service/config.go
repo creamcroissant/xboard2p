@@ -84,7 +84,6 @@ func defaultConfigSnapshot() map[string]any {
 		"support_email":    "support@example.com",
 		"default_theme":    "v2board",
 		"telegram_enabled": false,
-		"payment_gateways": []string{"alipay", "stripe"},
 		"updated_at":       "",
 	}
 }
@@ -134,8 +133,6 @@ func categorizeSettingKey(key string) string {
 	switch {
 	case strings.HasPrefix(key, "theme"):
 		return "theme"
-	case strings.HasPrefix(key, "payment"):
-		return "payment"
 	default:
 		return "general"
 	}

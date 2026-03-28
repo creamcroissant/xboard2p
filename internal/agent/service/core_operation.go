@@ -14,21 +14,30 @@ import (
 
 func (a *Agent) syncCoreOperations(ctx context.Context) {
 	if a.grpc == nil {
+		slog.Debug("skip core operation sync: grpc client unavailable")
 		return
 	}
+	slog.Debug("sync core operations: requesting pending/claimed tasks")
 	resp, err := a.grpc.GetCoreOperations(ctx, []string{"pending", "claimed"}, 1)
 	if err != nil {
 		slog.Error("Failed to fetch core operations", "error", err)
+		return
+	}
+	if len(resp.GetOperations()) == 0 {
+		slog.Debug("sync core operations: no tasks returned")
 		return
 	}
 	for _, operation := range resp.GetOperations() {
 		if operation == nil {
 			continue
 		}
+		slog.Info("sync core operations: claimed task", "operation_id", operation.GetId(), "type", operation.GetOperationType(), "core_type", operation.GetCoreType(), "status", operation.GetStatus())
 		statusValue, resultPayload, errMessage := a.executeCoreOperation(ctx, operation)
 		if _, err := a.grpc.ReportCoreOperation(ctx, &agentv1.ReportCoreOperationRequest{OperationId: operation.GetId(), Status: statusValue, ResultPayload: resultPayload, ErrorMessage: errMessage}); err != nil {
 			slog.Error("Failed to report core operation", "operation_id", operation.GetId(), "error", err)
+			continue
 		}
+		slog.Info("sync core operations: reported task result", "operation_id", operation.GetId(), "status", statusValue)
 	}
 }
 

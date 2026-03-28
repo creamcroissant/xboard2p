@@ -25,6 +25,7 @@ type Store interface {
 	Delete(ctx context.Context, key string)
 	TTL(ctx context.Context, key string) (time.Duration, bool)
 	Namespace(prefix string) Store
+	Keys(ctx context.Context) []string
 
 	// Increment adds delta to the stored integer, returning the updated value.
 	Increment(ctx context.Context, key string, delta int64, ttl time.Duration) (int64, error)
@@ -158,6 +159,24 @@ func (s *goCacheStore) Namespace(prefix string) Store {
 		defaultTTL: s.defaultTTL,
 		prefix:     joinPrefixes(s.prefix, prefix),
 	}
+}
+
+func (s *goCacheStore) Keys(_ context.Context) []string {
+	items := s.backend.Items()
+	keys := make([]string, 0, len(items))
+	prefix := s.prefix
+	for key := range items {
+		if prefix != "" {
+			prefixValue := prefix + ":"
+			if !strings.HasPrefix(key, prefixValue) {
+				continue
+			}
+			keys = append(keys, strings.TrimPrefix(key, prefixValue))
+			continue
+		}
+		keys = append(keys, key)
+	}
+	return keys
 }
 
 func (s *goCacheStore) Increment(_ context.Context, key string, delta int64, ttl time.Duration) (int64, error) {

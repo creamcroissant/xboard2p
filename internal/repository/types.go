@@ -133,23 +133,6 @@ type Plan struct {
 	UpdatedAt          int64
 }
 
-// Payment mirrors enabled payment channels users can choose during checkout.
-type Payment struct {
-	ID                 int64
-	UUID               string
-	PaymentCode        string
-	Name               string
-	Icon               *string
-	Config             string
-	NotifyDomain       *string
-	HandlingFeeFixed   *int64
-	HandlingFeePercent *float64
-	Enable             bool
-	Sort               *int64
-	CreatedAt          int64
-	UpdatedAt          int64
-}
-
 // ServerGroup represents a logical grouping of servers.
 type ServerGroup struct {
 	ID        int64

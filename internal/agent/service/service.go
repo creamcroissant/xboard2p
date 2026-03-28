@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"log/slog"
 	"sync/atomic"
 	"time"
@@ -94,6 +95,19 @@ func New(cfg *config.Config) (*Agent, error) {
 	if err != nil {
 		return nil, err
 	}
+	initSysSingBox := initSys
+	initSysXray := initSys
+	if generic, ok := initSys.(*initsys.Generic); ok {
+		singInit := *generic
+		singInit.BinaryPath = cfg.Core.SingBoxBinaryPath
+		singInit.Args = []string{"run", "-c", filepath.Join(cfg.Protocol.ConfigDir, "config.json")}
+		initSysSingBox = &singInit
+
+		xrayInit := *generic
+		xrayInit.BinaryPath = cfg.Core.XrayBinaryPath
+		xrayInit.Args = []string{"run", "-config", filepath.Join(cfg.Protocol.ConfigDir, "config.json")}
+		initSysXray = &xrayInit
+	}
 
 	// Initialize protocol manager
 	protoCfg := protocol.Config{
@@ -112,14 +126,9 @@ func New(cfg *config.Config) (*Agent, error) {
 
 	capDet := capability.NewDetector(cfg.Core.SingBoxBinaryPath, cfg.Core.XrayBinaryPath)
 	coreMgr := core.NewManager()
-	coreMgr.Register(core.NewSingBoxCore(initSys, capDet, cfg.Protocol.ServiceName, cfg.Protocol.ConfigDir))
-	coreMgr.Register(core.NewXrayCore(initSys, capDet, cfg.Protocol.ServiceName, cfg.Traffic.Address, cfg.Protocol.ConfigDir))
-	installer := core.NewInstaller(core.InstallerConfig{
-		ScriptPath:        cfg.Core.InstallScriptPath,
-		SingBoxBinaryPath: cfg.Core.SingBoxBinaryPath,
-		XrayBinaryPath:    cfg.Core.XrayBinaryPath,
-		ServiceName:       cfg.Protocol.ServiceName,
-	}, initSys, slog.Default())
+	coreMgr.Register(core.NewSingBoxCore(initSysSingBox, capDet, cfg.Protocol.ServiceName, cfg.Protocol.ConfigDir))
+	coreMgr.Register(core.NewXrayCore(initSysXray, capDet, cfg.Protocol.ServiceName, cfg.Traffic.Address, cfg.Protocol.ConfigDir))
+
 
 	var switcher *proxy.Switcher
 	if cfg.Proxy.Enabled {
@@ -178,23 +187,7 @@ func New(cfg *config.Config) (*Agent, error) {
 	agent.currentSyncInterval.Store(int32(cfg.Interval.Sync))
 	agent.currentReportInterval.Store(int32(cfg.Interval.Report))
 
-	if cfg.GRPCServer.Enabled {
-		handler := agentgrpc.NewHandler(coreMgr, cfg.Core.OutputPath, slog.Default(), switcher, installer)
-		authInterceptor := agentgrpc.NewAuthInterceptor(cfg.GRPCServer.AuthToken)
-		grpcCfg := agentgrpc.Config{
-			Address: cfg.GRPCServer.Listen,
-			TLS: &agentgrpc.TLSConfig{
-				Enabled:  cfg.GRPCServer.TLS.Enabled,
-				CertFile: cfg.GRPCServer.TLS.CertFile,
-				KeyFile:  cfg.GRPCServer.TLS.KeyFile,
-			},
-		}
-		grpcServer, err := agentgrpc.NewServer(grpcCfg, handler, authInterceptor, slog.Default())
-		if err != nil {
-			return nil, err
-		}
-		agent.grpcServer = grpcServer
-	}
+	// Legacy agent-side passive gRPC server retired; keep config fields inert for transition period.
 	if cfg.GRPC.Retry != nil {
 		retryCfg = transport.RetryConfig{
 			Enabled:         cfg.GRPC.Retry.Enabled,
@@ -339,9 +332,7 @@ func (a *Agent) Run(ctx context.Context) {
 				a.server.Shutdown(shutdownCtx)
 				cancel()
 			}
-			if a.grpcServer != nil {
-				a.grpcServer.Stop()
-			}
+			// passive gRPC server retired
 			if a.grpc != nil {
 				a.grpc.Close()
 			}
@@ -387,6 +378,7 @@ func (a *Agent) sync(ctx context.Context) {
 
 func (a *Agent) syncGRPC(ctx context.Context) {
 	a.syncApplyBatch(ctx)
+	a.syncCoreOperations(ctx)
 
 	// NodeID kept for compatibility; gRPC identifies agent host by token
 	nodeID := int32(a.cfg.Panel.NodeID)

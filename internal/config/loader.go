@@ -116,7 +116,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("ui.admin.dir", "web/user-vite/dist")
 	v.SetDefault("ui.admin.title", "XBoard Admin")
 	v.SetDefault("ui.admin.version", "1.0.0")
-	v.SetDefault("ui.admin.hidden_modules", []string{"payment", "ticket", "gift-card", "plugin", "theme"})
+	v.SetDefault("ui.admin.hidden_modules", []string{"ticket", "gift-card", "plugin", "theme"})
 	v.SetDefault("ui.user.enabled", true)
 	v.SetDefault("ui.user.dir", "web/user-vite/dist")
 	v.SetDefault("ui.user.title", "XBoard")

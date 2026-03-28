@@ -2,11 +2,11 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Plus, MoreVertical, Pencil, Trash2, Package } from "lucide-react";
+import { Plus, MoreVertical, Pencil, Trash2, Package, RefreshCw } from "lucide-react";
 import { QUERY_KEYS } from "@/lib/constants";
 import { getPlans, createPlan, updatePlan, deletePlan } from "@/api/admin";
 import type { AdminPlan, CreatePlanRequest } from "@/types";
-import { formatBytes } from "@/components/admin";
+import { AdminPageShell, formatBytes } from "@/components/admin";
 import {
   Badge,
   Button,
@@ -39,7 +39,7 @@ export default function PlanList() {
   const [editingPlan, setEditingPlan] = useState<AdminPlan | null>(null);
   const [formData, setFormData] = useState<CreatePlanRequest>({
     name: "",
-    transfer_enable: 107374182400, // 100GB default
+    transfer_enable: 107374182400,
     show: true,
     sell: true,
     renew: true,
@@ -125,110 +125,117 @@ export default function PlanList() {
 
   const plans: AdminPlan[] = data?.data || [];
 
-  if (isLoading) return <Loading />;
+  const actions = (
+    <>
+      <Button variant="outline" onClick={() => refetch()} disabled={isLoading}>
+        <RefreshCw className="mr-2 h-4 w-4" />
+        {t("common.refresh")}
+      </Button>
+      <Button data-testid="admin-plans-add-button" onClick={() => setIsDialogOpen(true)}>
+        <Plus className="mr-2 h-4 w-4" />
+        {t("admin.plans.add")}
+      </Button>
+    </>
+  );
+
+  let content = <Loading />;
 
   if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-3 py-20">
-        <p className="text-sm text-destructive">{t("admin.plans.loadError")}</p>
-        <Button variant="outline" onClick={() => refetch()}>
-          {t("common.retry")}
-        </Button>
+    content = (
+      <EmptyState
+        title={t("admin.plans.loadError")}
+        action={
+          <Button variant="outline" onClick={() => refetch()}>
+            {t("common.retry")}
+          </Button>
+        }
+      />
+    );
+  } else if (!isLoading && plans.length === 0) {
+    content = (
+      <EmptyState
+        icon={<Package className="h-full w-full" />}
+        title={t("admin.plans.empty")}
+        description={t("admin.plans.emptyDescription")}
+        action={
+          <Button data-testid="admin-plans-add-button-empty" onClick={() => setIsDialogOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            {t("admin.plans.add")}
+          </Button>
+        }
+      />
+    );
+  } else if (!isLoading) {
+    content = (
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <Table aria-label={t("admin.plans.title")}>
+          <TableHeader>
+            <TableRow className="bg-muted/40">
+              <TableHead>{t("admin.plans.name")}</TableHead>
+              <TableHead>{t("admin.plans.traffic")}</TableHead>
+              <TableHead>{t("admin.plans.speedLimit")}</TableHead>
+              <TableHead>{t("admin.plans.deviceLimit")}</TableHead>
+              <TableHead>{t("admin.plans.status")}</TableHead>
+              <TableHead>{t("common.actions")}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {plans.map((plan) => (
+              <TableRow key={plan.id} className="h-12">
+                <TableCell className="font-medium">{plan.name}</TableCell>
+                <TableCell>{formatBytes(plan.transfer_enable)}</TableCell>
+                <TableCell>
+                  {plan.speed_limit ? `${plan.speed_limit} Mbps` : t("admin.plans.unlimited")}
+                </TableCell>
+                <TableCell>
+                  {plan.device_limit ? plan.device_limit : t("admin.plans.unlimited")}
+                </TableCell>
+                <TableCell>
+                  <div className="flex flex-wrap gap-1">
+                    {plan.show && <Badge variant="success">{t("admin.plans.visible")}</Badge>}
+                    {plan.sell && <Badge variant="secondary">{t("admin.plans.selling")}</Badge>}
+                    {plan.renew && <Badge variant="default">{t("admin.plans.renewable")}</Badge>}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" aria-label={t("common.actions")}>
+                        <MoreVertical className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem className="gap-2" onSelect={() => handleEdit(plan)}>
+                        <Pencil className="h-4 w-4" />
+                        {t("common.edit")}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="gap-2 text-destructive focus:text-destructive"
+                        onSelect={() => deleteMutation.mutate(plan.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        {t("common.delete")}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">{t("admin.plans.title")}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t("admin.plans.total", { count: plans.length })}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => refetch()} disabled={isLoading}>
-            {t("common.refresh")}
-          </Button>
-          <Button data-testid="admin-plans-add-button" onClick={() => setIsDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            {t("admin.plans.add")}
-          </Button>
-        </div>
-      </div>
-
-      {plans.length === 0 ? (
-        <EmptyState
-          icon={<Package className="h-full w-full" />}
-          title={t("admin.plans.empty")}
-          description={t("admin.plans.emptyDescription")}
-          action={
-            <Button data-testid="admin-plans-add-button-empty" onClick={() => setIsDialogOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              {t("admin.plans.add")}
-            </Button>
-          }
-        />
-      ) : (
-        <div className="overflow-x-auto rounded-lg border border-border">
-          <Table aria-label={t("admin.plans.title")}>
-            <TableHeader>
-              <TableRow className="bg-muted/40">
-                <TableHead>{t("admin.plans.name")}</TableHead>
-                <TableHead>{t("admin.plans.traffic")}</TableHead>
-                <TableHead>{t("admin.plans.speedLimit")}</TableHead>
-                <TableHead>{t("admin.plans.deviceLimit")}</TableHead>
-                <TableHead>{t("admin.plans.status")}</TableHead>
-                <TableHead>{t("common.actions")}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {plans.map((plan) => (
-                <TableRow key={plan.id} className="h-12">
-                  <TableCell className="font-medium">{plan.name}</TableCell>
-                  <TableCell>{formatBytes(plan.transfer_enable)}</TableCell>
-                  <TableCell>
-                    {plan.speed_limit ? `${plan.speed_limit} Mbps` : t("admin.plans.unlimited")}
-                  </TableCell>
-                  <TableCell>
-                    {plan.device_limit ? plan.device_limit : t("admin.plans.unlimited")}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap gap-1">
-                      {plan.show && <Badge variant="success">{t("admin.plans.visible")}</Badge>}
-                      {plan.sell && <Badge variant="secondary">{t("admin.plans.selling")}</Badge>}
-                      {plan.renew && <Badge variant="default">{t("admin.plans.renewable")}</Badge>}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" aria-label={t("common.actions")}>
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem className="gap-2" onSelect={() => handleEdit(plan)}>
-                          <Pencil className="h-4 w-4" />
-                          {t("common.edit")}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          className="gap-2 text-red-600 focus:text-red-600"
-                          onSelect={() => deleteMutation.mutate(plan.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          {t("common.delete")}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
+    <>
+      <AdminPageShell
+        title={t("admin.plans.title")}
+        description={t("admin.plans.total", { count: plans.length })}
+        actions={actions}
+      >
+        {content}
+      </AdminPageShell>
 
       <Dialog open={isDialogOpen} onOpenChange={handleDialogChange}>
         <DialogContent className="sm:max-w-lg">
@@ -324,12 +331,12 @@ export default function PlanList() {
               {createMutation.isPending || updateMutation.isPending
                 ? t("common.loading")
                 : editingPlan
-                ? t("common.save")
-                : t("common.create")}
+                  ? t("common.save")
+                  : t("common.create")}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }

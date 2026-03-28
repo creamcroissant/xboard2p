@@ -207,7 +207,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		Audit:             infra.Audit,
 	})
 
-	agentHostService := service.NewAgentHostService(store.AgentHosts(), store.Servers(), store.ServerClientConfigs(), store.ConfigTemplates(), store.Users(), store.Settings())
+	agentHostService := service.NewAgentHostServiceWithOptions(store.AgentHosts(), store.Servers(), store.ServerClientConfigs(), store.ConfigTemplates(), store.Users(), store.Settings(), service.AgentHostServiceOptions{Cache: infra.Cache, Logger: logger})
 	agentService := service.NewAgentService(store.Servers(), store.Users())
 	forwardingService := service.NewForwardingServiceWithLogger(store.ForwardingRules(), store.ForwardingRuleLogs(), store.AgentHosts(), logger)
 	converterRegistry := template.NewConverterRegistry(&template.SingBoxConverter{}, &template.XrayConverter{})
@@ -271,6 +271,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 	accessLogCleanupJob := job.NewAccessLogCleanupJob(accessLogService, logger)
 	if _, err := scheduler.Register("@every 1h", accessLogCleanupJob); err != nil {
+		return err
+	}
+	agentHostMetricsFlushJob := job.NewAgentHostMetricsFlushJob(agentHostService)
+	if _, err := scheduler.Register("@every 3s", agentHostMetricsFlushJob); err != nil {
 		return err
 	}
 	scheduler.Start()

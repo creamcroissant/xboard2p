@@ -342,7 +342,7 @@ ensure_download_dependencies() {
         return 1
     fi
 
-    if ! ensure_dependency "python3"; then
+    if ! ensure_dependency "unzip"; then
         return 1
     fi
 
@@ -706,6 +706,33 @@ parse_xray_dgst_sha256() {
     sed -n 's/^SHA2-256=[[:space:]]*//p' "$dgst_file" | head -n 1 | tr -d '\r'
 }
 
+resolve_release_manifest_checksum() {
+    repo=$1
+    version=$2
+    asset_name=$3
+    workdir=$4
+
+    release_base="${XBOARD_RELEASE_BASE_URL%/}"
+    checksum_file="$workdir/SHA256SUMS.txt"
+
+    if [ "$version" = "" ] || [ "$version" = "latest" ]; then
+        checksum_url="${release_base}/${repo}/releases/latest/download/SHA256SUMS.txt"
+    else
+        checksum_url="${release_base}/${repo}/releases/download/${version}/SHA256SUMS.txt"
+    fi
+
+    if ! download_file "$checksum_url" "$checksum_file" "checksum manifest"; then
+        return 1
+    fi
+
+    checksum_value=$(lookup_expected_checksum "$asset_name" "$checksum_file" || true)
+    if [ -z "$checksum_value" ]; then
+        echo "Error: checksum entry not found for ${asset_name} in release manifest."
+        return 1
+    fi
+    printf 'sha256:%s' "$checksum_value"
+    return 0
+}
 resolve_core_asset_digest() {
     metadata_file=$1
     core_type=$2
@@ -716,6 +743,12 @@ resolve_core_asset_digest() {
     if [ -n "$asset_digest" ]; then
         printf '%s' "$asset_digest"
         return 0
+    fi
+
+    release_tag=$(json_get_release_tag "$metadata_file")
+    if [ -z "$release_tag" ]; then
+        echo "Error: failed to resolve release tag while looking up digest for ${asset_name}."
+        return 1
     fi
 
     if [ "$core_type" = "xray" ]; then
@@ -736,7 +769,16 @@ resolve_core_asset_digest() {
         fi
     fi
 
-    return 0
+    if manifest_digest=$(resolve_release_manifest_checksum "$CORE_RELEASE_REPO" "$release_tag" "$asset_name" "$workdir"); then
+        printf '%s' "$manifest_digest"
+        return 0
+    fi
+
+    if [ "$core_type" = "sing-box" ]; then
+        return 0
+    fi
+
+    return 1
 }
 
 extract_archive() {
@@ -911,6 +953,28 @@ for current_root, _, files in os.walk(root):
 PY
 }
 
+resolve_downloaded_core_binary() {
+    asset_path=$1
+    extract_dir=$2
+    binary_name=$3
+
+    case "$asset_path" in
+        *.tar.gz|*.tgz|*.zip)
+            mkdir -p "$extract_dir"
+            if ! extract_archive "$asset_path" "$extract_dir"; then
+                return 1
+            fi
+            find_extracted_binary "$extract_dir" "$binary_name"
+            return 0
+            ;;
+        *)
+            printf '%s' "$asset_path"
+            return 0
+            ;;
+    esac
+}
+
+
 install_core_release() {
     core_type=$1
     action=$2
@@ -980,19 +1044,16 @@ install_core_release() {
     if ! download_file "$download_url" "$archive_path" "$CORE_ASSET_NAME"; then
         return 1
     fi
-    if ! verify_digest_value "$archive_path" "$asset_digest" "$CORE_ASSET_NAME"; then
-        return 1
+    if [ -n "$asset_digest" ]; then
+        if ! verify_digest_value "$archive_path" "$asset_digest" "$CORE_ASSET_NAME"; then
+            return 1
+        fi
     fi
 
     extract_dir="$workdir/extracted"
-    mkdir -p "$extract_dir"
-    if ! extract_archive "$archive_path" "$extract_dir"; then
-        return 1
-    fi
-
-    binary_path=$(find_extracted_binary "$extract_dir" "$CORE_BINARY_NAME")
+    binary_path=$(resolve_downloaded_core_binary "$archive_path" "$extract_dir" "$CORE_BINARY_NAME")
     if [ -z "$binary_path" ] || [ ! -f "$binary_path" ]; then
-        echo "Error: failed to locate extracted binary '${CORE_BINARY_NAME}'."
+        echo "Error: failed to locate downloaded binary '${CORE_BINARY_NAME}'."
         return 1
     fi
 

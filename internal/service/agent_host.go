@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/creamcroissant/xboard/internal/cache"
 	"github.com/creamcroissant/xboard/internal/repository"
 	"github.com/creamcroissant/xboard/internal/template"
 )
@@ -38,8 +39,8 @@ type AgentHostService interface {
 	AssignTemplate(ctx context.Context, agentID, templateID int64) error
 	CheckTemplateCompatibility(ctx context.Context, agentID, templateID int64) (*TemplateCompatibilityResult, error)
 
-	// Config generation
 	GenerateConfig(ctx context.Context, agentID int64) ([]byte, error)
+	FlushMetrics(ctx context.Context) error
 }
 
 // TemplateCompatibilityResult contains the result of a template compatibility check.
@@ -150,12 +151,18 @@ type AgentHostMetricsReport struct {
 	DownloadTotal int64
 }
 
+
 // ClientConfigInfo represents a client configuration reported by the agent.
 type ClientConfigInfo struct {
 	Name       string            // Protocol name/tag
 	Protocol   string            // vless, hysteria2, etc.
 	Port       int               // Main port
 	RawConfigs map[string]string // format -> content
+}
+
+type AgentHostServiceOptions struct {
+	Cache  cache.Store
+	Logger *slog.Logger
 }
 
 type agentHostService struct {
@@ -165,6 +172,27 @@ type agentHostService struct {
 	configTemplates     repository.ConfigTemplateRepository
 	users               repository.UserRepository
 	settings            repository.SettingRepository
+	metricsBuffer       *agentHostMetricsBuffer
+}
+
+func NewAgentHostServiceWithOptions(
+	agentHosts repository.AgentHostRepository,
+	servers repository.ServerRepository,
+	serverClientConfigs repository.ServerClientConfigRepository,
+	configTemplates repository.ConfigTemplateRepository,
+	users repository.UserRepository,
+	settings repository.SettingRepository,
+	opts AgentHostServiceOptions,
+) AgentHostService {
+	return &agentHostService{
+		agentHosts:          agentHosts,
+		servers:             servers,
+		serverClientConfigs: serverClientConfigs,
+		configTemplates:     configTemplates,
+		users:               users,
+		settings:            settings,
+		metricsBuffer:       newAgentHostMetricsBuffer(opts.Cache, agentHosts, opts.Logger),
+	}
 }
 
 // NewAgentHostService creates a new agent host service.
@@ -176,15 +204,9 @@ func NewAgentHostService(
 	users repository.UserRepository,
 	settings repository.SettingRepository,
 ) AgentHostService {
-	return &agentHostService{
-		agentHosts:          agentHosts,
-		servers:             servers,
-		serverClientConfigs: serverClientConfigs,
-		configTemplates:     configTemplates,
-		users:               users,
-		settings:            settings,
-	}
+	return NewAgentHostServiceWithOptions(agentHosts, servers, serverClientConfigs, configTemplates, users, settings, AgentHostServiceOptions{})
 }
+
 
 func (s *agentHostService) Create(ctx context.Context, req CreateAgentHostRequest) (*repository.AgentHost, error) {
 	token, err := generateAgentHostToken()
@@ -193,10 +215,11 @@ func (s *agentHostService) Create(ctx context.Context, req CreateAgentHostReques
 	}
 
 	host := &repository.AgentHost{
-		Name:   strings.TrimSpace(req.Name),
-		Host:   strings.TrimSpace(req.Host),
-		Token:  token,
-		Status: 0, // Offline initially
+		Name:            strings.TrimSpace(req.Name),
+		Host:            strings.TrimSpace(req.Host),
+		Token:           token,
+		Status:          0, // Offline initially
+		ProvisionStatus: 0, // Active by default for manual creation
 	}
 
 	if host.Name == "" || host.Host == "" {
@@ -252,10 +275,11 @@ func (s *agentHostService) RegisterByCommunicationKey(ctx context.Context, req R
 	}
 
 	host := &repository.AgentHost{
-		Name:   name,
-		Host:   hostValue,
-		Token:  token,
-		Status: 0,
+		Name:            name,
+		Host:            hostValue,
+		Token:           token,
+		Status:          0,
+		ProvisionStatus: 1,
 	}
 	if err := s.agentHosts.Create(ctx, host); err != nil {
 		return nil, err
@@ -286,6 +310,9 @@ func (s *agentHostService) Update(ctx context.Context, id int64, req UpdateAgent
 	if host.Name == "" || host.Host == "" {
 		return fmt.Errorf("name and host are required / 名称和主机地址不能为空")
 	}
+	if host.ProvisionStatus != 0 {
+		host.ProvisionStatus = 0
+	}
 
 	return s.agentHosts.Update(ctx, host)
 }
@@ -297,6 +324,14 @@ func (s *agentHostService) Delete(ctx context.Context, id int64) error {
 func (s *agentHostService) List(ctx context.Context) ([]*repository.AgentHost, error) {
 	return s.agentHosts.ListAll(ctx)
 }
+
+func (s *agentHostService) FlushMetrics(ctx context.Context) error {
+	if s == nil || s.metricsBuffer == nil {
+		return nil
+	}
+	return s.metricsBuffer.Flush(ctx)
+}
+
 
 func (s *agentHostService) UpdateMetrics(ctx context.Context, token string, metrics AgentHostMetricsReport) error {
 	host, err := s.agentHosts.FindByToken(ctx, token)
@@ -315,6 +350,9 @@ func (s *agentHostService) UpdateMetrics(ctx context.Context, token string, metr
 		DownloadTotal: metrics.DownloadTotal,
 	}
 
+	if s.metricsBuffer != nil {
+		return s.metricsBuffer.Enqueue(ctx, host.ID, repoMetrics)
+	}
 	return s.agentHosts.UpdateMetrics(ctx, host.ID, repoMetrics)
 }
 
@@ -645,41 +683,6 @@ func (s *agentHostService) buildTemplateContext(ctx context.Context, host *repos
 }
 
 // parseAgentCapabilities constructs AgentCapabilities from host data.
-func generateAgentHostToken() (string, error) {
-	tokenBytes := make([]byte, 32)
-	if _, err := rand.Read(tokenBytes); err != nil {
-		return "", fmt.Errorf("generate token: %v / 生成 token 失败: %w", err, err)
-	}
-	return hex.EncodeToString(tokenBytes), nil
-}
-
-func buildPendingAgentName() string {
-	suffix, err := randomHex(4)
-	if err != nil {
-		return "Agent-pending"
-	}
-	return fmt.Sprintf("Agent-%s", suffix)
-}
-
-func buildPendingAgentHostPlaceholder() string {
-	suffix, err := randomHex(6)
-	if err != nil {
-		return "pending-host"
-	}
-	return fmt.Sprintf("pending-%s", suffix)
-}
-
-func randomHex(n int) (string, error) {
-	if n <= 0 {
-		return "", nil
-	}
-	buf := make([]byte, n)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(buf), nil
-}
-
 func (s *agentHostService) parseAgentCapabilities(host *repository.AgentHost) *template.AgentCapabilities {
 	caps := &template.AgentCapabilities{
 		CoreType:    "sing-box", // Default
@@ -946,6 +949,41 @@ func (s *agentHostService) AssignTemplate(ctx context.Context, agentID, template
 	// Assign the template
 	host.TemplateID = templateID
 	return s.agentHosts.Update(ctx, host)
+}
+
+func generateAgentHostToken() (string, error) {
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return "", fmt.Errorf("generate token: %v / 生成 token 失败: %w", err, err)
+	}
+	return hex.EncodeToString(tokenBytes), nil
+}
+
+func buildPendingAgentName() string {
+	suffix, err := randomHex(4)
+	if err != nil {
+		return "Agent-pending"
+	}
+	return fmt.Sprintf("Agent-%s", suffix)
+}
+
+func buildPendingAgentHostPlaceholder() string {
+	suffix, err := randomHex(6)
+	if err != nil {
+		return "pending-host"
+	}
+	return fmt.Sprintf("pending-%s", suffix)
+}
+
+func randomHex(n int) (string, error) {
+	if n <= 0 {
+		return "", nil
+	}
+	buf := make([]byte, n)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf), nil
 }
 
 // CheckTemplateCompatibility checks if a template is compatible with an agent's capabilities.

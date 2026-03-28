@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/creamcroissant/xboard/internal/bootstrap"
 	"github.com/creamcroissant/xboard/internal/repository"
 )
 
@@ -40,13 +41,13 @@ func (r *agentHostRepo) Create(ctx context.Context, host *repository.AgentHost) 
 
 	result, err := r.db.ExecContext(ctx, `
 		INSERT INTO agent_hosts (
-			name, host, token, status, template_id, core_version, capabilities, build_tags,
+			name, host, token, status, provision_status, template_id, core_version, capabilities, build_tags,
 			cpu_total, cpu_used, mem_total, mem_used,
 			disk_total, disk_used, upload_total, download_total,
 			last_heartbeat_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
-		host.Name, host.Host, host.Token, host.Status, host.TemplateID,
+		host.Name, host.Host, host.Token, host.Status, host.ProvisionStatus, host.TemplateID,
 		host.CoreVersion, string(capsJSON), string(tagsJSON),
 		host.CPUTotal, host.CPUUsed, host.MemTotal, host.MemUsed,
 		host.DiskTotal, host.DiskUsed, host.UploadTotal, host.DownloadTotal,
@@ -66,7 +67,7 @@ func (r *agentHostRepo) Create(ctx context.Context, host *repository.AgentHost) 
 
 func (r *agentHostRepo) FindByID(ctx context.Context, id int64) (*repository.AgentHost, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, name, host, token, status, template_id, core_version, capabilities, build_tags,
+		SELECT id, name, host, token, status, provision_status, template_id, core_version, capabilities, build_tags,
 			cpu_total, cpu_used, mem_total, mem_used,
 			disk_total, disk_used, upload_total, download_total,
 			last_heartbeat_at, created_at, updated_at
@@ -78,7 +79,7 @@ func (r *agentHostRepo) FindByID(ctx context.Context, id int64) (*repository.Age
 
 func (r *agentHostRepo) FindByHost(ctx context.Context, host string) (*repository.AgentHost, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, name, host, token, status, template_id, core_version, capabilities, build_tags,
+		SELECT id, name, host, token, status, provision_status, template_id, core_version, capabilities, build_tags,
 			cpu_total, cpu_used, mem_total, mem_used,
 			disk_total, disk_used, upload_total, download_total,
 			last_heartbeat_at, created_at, updated_at
@@ -90,7 +91,7 @@ func (r *agentHostRepo) FindByHost(ctx context.Context, host string) (*repositor
 
 func (r *agentHostRepo) FindByToken(ctx context.Context, token string) (*repository.AgentHost, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, name, host, token, status, template_id, core_version, capabilities, build_tags,
+		SELECT id, name, host, token, status, provision_status, template_id, core_version, capabilities, build_tags,
 			cpu_total, cpu_used, mem_total, mem_used,
 			disk_total, disk_used, upload_total, download_total,
 			last_heartbeat_at, created_at, updated_at
@@ -120,14 +121,14 @@ func (r *agentHostRepo) Update(ctx context.Context, host *repository.AgentHost) 
 
 	_, err = r.db.ExecContext(ctx, `
 		UPDATE agent_hosts SET
-			name = ?, host = ?, token = ?, status = ?, template_id = ?,
+			name = ?, host = ?, token = ?, status = ?, provision_status = ?, template_id = ?,
 			core_version = ?, capabilities = ?, build_tags = ?,
 			cpu_total = ?, cpu_used = ?, mem_total = ?, mem_used = ?,
 			disk_total = ?, disk_used = ?, upload_total = ?, download_total = ?,
 			last_heartbeat_at = ?, updated_at = ?
 		WHERE id = ?
 	`,
-		host.Name, host.Host, host.Token, host.Status, host.TemplateID,
+		host.Name, host.Host, host.Token, host.Status, host.ProvisionStatus, host.TemplateID,
 		host.CoreVersion, string(capsJSON), string(tagsJSON),
 		host.CPUTotal, host.CPUUsed, host.MemTotal, host.MemUsed,
 		host.DiskTotal, host.DiskUsed, host.UploadTotal, host.DownloadTotal,
@@ -143,7 +144,7 @@ func (r *agentHostRepo) Delete(ctx context.Context, id int64) error {
 
 func (r *agentHostRepo) ListAll(ctx context.Context) ([]*repository.AgentHost, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, name, host, token, status, template_id, core_version, capabilities, build_tags,
+		SELECT id, name, host, token, status, provision_status, template_id, core_version, capabilities, build_tags,
 			cpu_total, cpu_used, mem_total, mem_used,
 			disk_total, disk_used, upload_total, download_total,
 			last_heartbeat_at, created_at, updated_at
@@ -166,35 +167,39 @@ func (r *agentHostRepo) ListAll(ctx context.Context) ([]*repository.AgentHost, e
 }
 
 func (r *agentHostRepo) UpdateStatus(ctx context.Context, id int64, status int, heartbeatAt int64) error {
-	_, err := r.db.ExecContext(ctx, `
-		UPDATE agent_hosts SET
-			status = ?,
-			last_heartbeat_at = ?,
-			updated_at = ?
-		WHERE id = ?
-	`, status, heartbeatAt, time.Now().Unix(), id)
-	return err
+	return bootstrap.WithSQLiteBusyRetry(func() error {
+		_, err := r.db.ExecContext(ctx, `
+			UPDATE agent_hosts SET
+				status = ?,
+				last_heartbeat_at = ?,
+				updated_at = ?
+			WHERE id = ?
+		`, status, heartbeatAt, time.Now().Unix(), id)
+		return err
+	})
 }
 
 func (r *agentHostRepo) UpdateMetrics(ctx context.Context, id int64, metrics repository.AgentHostMetrics) error {
-	_, err := r.db.ExecContext(ctx, `
-		UPDATE agent_hosts SET
-			cpu_total = ?, cpu_used = ?,
-			mem_total = ?, mem_used = ?,
-			disk_total = ?, disk_used = ?,
-			upload_total = ?, download_total = ?,
-			last_heartbeat_at = ?,
-			status = 1,
-			updated_at = ?
-		WHERE id = ?
-	`,
-		metrics.CPUTotal, metrics.CPUUsed,
-		metrics.MemTotal, metrics.MemUsed,
-		metrics.DiskTotal, metrics.DiskUsed,
-		metrics.UploadTotal, metrics.DownloadTotal,
-		time.Now().Unix(), time.Now().Unix(), id,
-	)
-	return err
+	return bootstrap.WithSQLiteBusyRetry(func() error {
+		_, err := r.db.ExecContext(ctx, `
+			UPDATE agent_hosts SET
+				cpu_total = ?, cpu_used = ?,
+				mem_total = ?, mem_used = ?,
+				disk_total = ?, disk_used = ?,
+				upload_total = ?, download_total = ?,
+				last_heartbeat_at = ?,
+				status = 1,
+				updated_at = ?
+			WHERE id = ?
+		`,
+			metrics.CPUTotal, metrics.CPUUsed,
+			metrics.MemTotal, metrics.MemUsed,
+			metrics.DiskTotal, metrics.DiskUsed,
+			metrics.UploadTotal, metrics.DownloadTotal,
+			time.Now().Unix(), time.Now().Unix(), id,
+		)
+		return err
+	})
 }
 
 func (r *agentHostRepo) scanHost(row *sql.Row) (*repository.AgentHost, error) {
@@ -202,7 +207,7 @@ func (r *agentHostRepo) scanHost(row *sql.Row) (*repository.AgentHost, error) {
 	var capsJSON, tagsJSON string
 
 	err := row.Scan(
-		&h.ID, &h.Name, &h.Host, &h.Token, &h.Status, &h.TemplateID,
+		&h.ID, &h.Name, &h.Host, &h.Token, &h.Status, &h.ProvisionStatus, &h.TemplateID,
 		&h.CoreVersion, &capsJSON, &tagsJSON,
 		&h.CPUTotal, &h.CPUUsed, &h.MemTotal, &h.MemUsed,
 		&h.DiskTotal, &h.DiskUsed, &h.UploadTotal, &h.DownloadTotal,
@@ -241,7 +246,7 @@ func (r *agentHostRepo) scanHostFromRows(rows *sql.Rows) (*repository.AgentHost,
 	var capsJSON, tagsJSON string
 
 	err := rows.Scan(
-		&h.ID, &h.Name, &h.Host, &h.Token, &h.Status, &h.TemplateID,
+		&h.ID, &h.Name, &h.Host, &h.Token, &h.Status, &h.ProvisionStatus, &h.TemplateID,
 		&h.CoreVersion, &capsJSON, &tagsJSON,
 		&h.CPUTotal, &h.CPUUsed, &h.MemTotal, &h.MemUsed,
 		&h.DiskTotal, &h.DiskUsed, &h.UploadTotal, &h.DownloadTotal,
@@ -289,12 +294,14 @@ func (r *agentHostRepo) UpdateCapabilities(ctx context.Context, id int64, coreVe
 		tagsJSON = []byte("[]")
 	}
 
-	_, err = r.db.ExecContext(ctx, `
-		UPDATE agent_hosts SET
-			core_version = ?, capabilities = ?, build_tags = ?, updated_at = ?
-		WHERE id = ?
-	`, coreVersion, string(capsJSON), string(tagsJSON), time.Now().Unix(), id)
-	return err
+	return bootstrap.WithSQLiteBusyRetry(func() error {
+		_, err := r.db.ExecContext(ctx, `
+			UPDATE agent_hosts SET
+				core_version = ?, capabilities = ?, build_tags = ?, updated_at = ?
+			WHERE id = ?
+		`, coreVersion, string(capsJSON), string(tagsJSON), time.Now().Unix(), id)
+		return err
+	})
 }
 
 func (r *agentHostRepo) Count(ctx context.Context) (int64, error) {

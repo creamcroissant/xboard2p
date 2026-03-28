@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/md5"
 	"encoding/hex"
@@ -310,21 +311,76 @@ func (s *agentCoreService) GetOperation(ctx context.Context, operationID string)
 }
 
 func (s *agentCoreService) GetSwitchLogs(ctx context.Context, filter SwitchLogFilter) ([]*repository.AgentCoreSwitchLog, int64, error) {
-	if s.switchLogs == nil {
-		return nil, 0, fmt.Errorf("agent core switch log repository unavailable / 核心切换日志仓库不可用")
-	}
 	if filter.AgentHostID == 0 {
 		return nil, 0, fmt.Errorf("agent host id required / 需要节点 ID")
 	}
-	logs, err := s.switchLogs.List(ctx, repository.AgentCoreSwitchLogFilter{AgentHostID: filter.AgentHostID, Status: filter.Status, StartAt: filter.StartAt, EndAt: filter.EndAt, Limit: normalizeLimit(filter.Limit, 50), Offset: normalizeOffset(filter.Offset)})
+	if s.switchLogs != nil {
+		logs, err := s.switchLogs.List(ctx, repository.AgentCoreSwitchLogFilter{AgentHostID: filter.AgentHostID, Status: filter.Status, StartAt: filter.StartAt, EndAt: filter.EndAt, Limit: normalizeLimit(filter.Limit, 50), Offset: normalizeOffset(filter.Offset)})
+		if err != nil {
+			return nil, 0, err
+		}
+		count, err := s.switchLogs.Count(ctx, repository.AgentCoreSwitchLogFilter{AgentHostID: filter.AgentHostID, Status: filter.Status, StartAt: filter.StartAt, EndAt: filter.EndAt, Limit: normalizeLimit(filter.Limit, 50), Offset: normalizeOffset(filter.Offset)})
+		if err != nil {
+			return nil, 0, err
+		}
+		if count > 0 {
+			return logs, count, nil
+		}
+	}
+	if s.operations == nil {
+		return nil, 0, fmt.Errorf("agent core switch log repository unavailable / 核心切换日志仓库不可用")
+	}
+	items, total, err := s.operations.List(ctx, ListCoreOperationsRequest{AgentHostID: &filter.AgentHostID, OperationType: coreOperationTypeSwitch, Statuses: statusFilterToOperationStatuses(filter.Status), StartAt: filter.StartAt, EndAt: filter.EndAt, Limit: normalizeLimit(filter.Limit, 50), Offset: normalizeOffset(filter.Offset)})
 	if err != nil {
 		return nil, 0, err
 	}
-	count, err := s.switchLogs.Count(ctx, repository.AgentCoreSwitchLogFilter{AgentHostID: filter.AgentHostID, Status: filter.Status, StartAt: filter.StartAt, EndAt: filter.EndAt, Limit: normalizeLimit(filter.Limit, 50), Offset: normalizeOffset(filter.Offset)})
-	if err != nil {
-		return nil, 0, err
+	return buildSwitchLogsFromOperations(items), total, nil
+}
+
+func statusFilterToOperationStatuses(status *string) []string {
+	if status == nil || strings.TrimSpace(*status) == "" {
+		return nil
 	}
-	return logs, count, nil
+	return []string{strings.TrimSpace(*status)}
+}
+
+func buildSwitchLogsFromOperations(items []*repository.CoreOperation) []*repository.AgentCoreSwitchLog {
+	logs := make([]*repository.AgentCoreSwitchLog, 0, len(items))
+	for _, op := range items {
+		if op == nil {
+			continue
+		}
+		var req agentv1.SwitchCorePayload
+		_ = json.Unmarshal(op.RequestPayload, &req)
+		var result map[string]any
+		_ = json.Unmarshal(op.ResultPayload, &result)
+		var fromCoreType *string
+		fromInstanceID := strings.TrimSpace(req.GetFromInstanceId())
+		var fromPtr *string
+		if fromInstanceID != "" {
+			fromPtr = &fromInstanceID
+		}
+		newInstanceID := strings.TrimSpace(stringValue(result["new_instance_id"]))
+		if newInstanceID == "" {
+			newInstanceID = strings.TrimSpace(req.GetSwitchId())
+		}
+		createdAt := op.CreatedAt
+		log := &repository.AgentCoreSwitchLog{ID: 0, AgentHostID: op.AgentHostID, FromInstanceID: fromPtr, FromCoreType: fromCoreType, ToInstanceID: newInstanceID, ToCoreType: strings.TrimSpace(req.GetToCoreType()), OperatorID: op.OperatorID, Status: op.Status, Detail: strings.TrimSpace(op.ErrorMessage), CreatedAt: createdAt, CompletedAt: op.FinishedAt}
+		if log.Detail == "" {
+			log.Detail = string(op.ResultPayload)
+		}
+		logs = append(logs, log)
+	}
+	return logs
+}
+
+func stringValue(v any) string {
+	switch value := v.(type) {
+	case string:
+		return value
+	default:
+		return ""
+	}
 }
 
 func (s *agentCoreService) ConvertConfig(ctx context.Context, req ConvertRequest) (*ConvertResult, error) {
@@ -351,6 +407,27 @@ func (s *agentCoreService) ConvertConfig(ctx context.Context, req ConvertRequest
 	return &ConvertResult{ConfigJSON: converted}, nil
 }
 
+func normalizeRawConfigJSON(payload []byte) ([]byte, error) {
+	trimmed := bytes.TrimSpace(payload)
+	if len(trimmed) == 0 {
+		return nil, fmt.Errorf("config json is empty / 配置 JSON 为空")
+	}
+	if json.Valid(trimmed) && len(trimmed) > 0 && trimmed[0] != '"' {
+		return trimmed, nil
+	}
+	var encoded string
+	if err := json.Unmarshal(trimmed, &encoded); err != nil {
+		return nil, fmt.Errorf("config json is invalid / 配置 JSON 无效")
+	}
+	normalized := bytes.TrimSpace([]byte(encoded))
+	if !json.Valid(normalized) {
+		return nil, fmt.Errorf("config json is invalid / 配置 JSON 无效")
+	}
+	return normalized, nil
+}
+
+
+
 func (s *agentCoreService) resolveConfigJSON(ctx context.Context, templateID int64, configJSON json.RawMessage) ([]byte, string, *int64, error) {
 	var payload []byte
 	var tplID *int64
@@ -372,13 +449,13 @@ func (s *agentCoreService) resolveConfigJSON(ctx context.Context, templateID int
 	} else {
 		return nil, "", nil, fmt.Errorf("config json required / 需要配置 JSON")
 	}
-	if !json.Valid(payload) {
-		return nil, "", nil, fmt.Errorf("config json is invalid / 配置 JSON 无效")
+	normalized, err := normalizeRawConfigJSON(payload)
+	if err != nil {
+		return nil, "", nil, err
 	}
-	hash := md5.Sum(payload)
-	return payload, hex.EncodeToString(hash[:]), tplID, nil
+	hash := md5.Sum(normalized)
+	return normalized, hex.EncodeToString(hash[:]), tplID, nil
 }
-
 func normalizeLimit(limit int, fallback int) int {
 	if limit <= 0 {
 		return fallback

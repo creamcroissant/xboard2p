@@ -4,7 +4,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import ThemeToggle from "../ThemeToggle";
 import LanguageSwitcher from "../LanguageSwitcher";
 import { useAuth } from "@/providers/AuthProvider";
-import { ADMIN_ROUTES, ROUTES } from "@/lib/constants";
+import { getRouteLabelKey, ROUTES } from "@/lib/constants";
 import {
   Button,
   DropdownMenu,
@@ -17,34 +17,6 @@ import { cn } from "@/lib/utils";
 
 interface HeaderProps {
   onMenuClick: () => void;
-}
-
-const ROUTE_LABEL_KEYS: Array<{ route: string; labelKey: string }> = [
-  { route: ROUTES.DASHBOARD, labelKey: "nav.dashboard" },
-  { route: ROUTES.SERVERS, labelKey: "nav.servers" },
-  { route: ROUTES.PLANS, labelKey: "nav.plans" },
-  { route: ROUTES.TRAFFIC, labelKey: "nav.traffic" },
-  { route: ROUTES.KNOWLEDGE, labelKey: "nav.knowledge" },
-  { route: ROUTES.SETTINGS, labelKey: "nav.settings" },
-  { route: ADMIN_ROUTES.AGENTS, labelKey: "admin.nav.agents" },
-  { route: ADMIN_ROUTES.USERS, labelKey: "admin.nav.users" },
-  { route: ADMIN_ROUTES.PLANS, labelKey: "admin.nav.plans" },
-  { route: ADMIN_ROUTES.NOTICES, labelKey: "admin.nav.notices" },
-  { route: ADMIN_ROUTES.FORWARDING, labelKey: "admin.nav.forwarding" },
-  { route: ADMIN_ROUTES.SYSTEM, labelKey: "admin.nav.system" },
-];
-
-function getRouteLabelKey(pathname: string) {
-  const exact = ROUTE_LABEL_KEYS.find((item) => item.route === pathname);
-  if (exact) {
-    return exact.labelKey;
-  }
-
-  const prefix = ROUTE_LABEL_KEYS.filter((item) => pathname.startsWith(item.route))
-    .sort((a, b) => b.route.length - a.route.length)
-    .at(0);
-
-  return prefix?.labelKey ?? "";
 }
 
 function getInitial(email?: string) {
@@ -67,10 +39,9 @@ export default function Header({ onMenuClick }: HeaderProps) {
   };
 
   return (
-    <header className="sticky top-0 z-30 h-12 bg-card/80 backdrop-blur-md border-b border-border">
-      <div className="flex items-center justify-between h-full px-3">
-        {/* Left side */}
-        <div className="flex items-center gap-3 min-w-0">
+    <header className="sticky top-0 z-30 h-12 border-b border-border bg-card/80 backdrop-blur-md">
+      <div className="flex h-full items-center justify-between px-3">
+        <div className="flex min-w-0 items-center gap-3">
           <Button
             variant="ghost"
             size="icon"
@@ -82,14 +53,13 @@ export default function Header({ onMenuClick }: HeaderProps) {
           </Button>
           {currentLabelKey && (
             <div className="min-w-0">
-              <span className="text-sm font-medium text-foreground truncate block max-w-[160px] sm:max-w-[260px] md:max-w-[360px] lg:max-w-[520px]">
+              <span className="block max-w-[160px] truncate text-sm font-medium text-foreground sm:max-w-[260px] md:max-w-[360px] lg:max-w-[520px]">
                 {t(currentLabelKey)}
               </span>
             </div>
           )}
         </div>
 
-        {/* Right side */}
         <div className="flex items-center gap-2">
           <LanguageSwitcher />
           <ThemeToggle />
@@ -100,12 +70,12 @@ export default function Header({ onMenuClick }: HeaderProps) {
                 <span
                   className={cn(
                     "inline-flex h-8 w-8 items-center justify-center rounded-full",
-                    "bg-primary text-primary-foreground text-xs font-semibold"
+                    "bg-primary text-xs font-semibold text-primary-foreground"
                   )}
                 >
                   {getInitial(user?.email)}
                 </span>
-                <span className="hidden md:inline text-sm max-w-[120px] truncate">
+                <span className="hidden max-w-[120px] truncate text-sm md:inline">
                   {user?.email ?? "-"}
                 </span>
               </Button>
@@ -116,11 +86,8 @@ export default function Header({ onMenuClick }: HeaderProps) {
                 {t("nav.settings")}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="text-red-600 focus:text-red-600"
-                onSelect={handleLogout}
-              >
-                <LogOut className="mr-2 h-4 w-4" />
+              <DropdownMenuItem className="gap-2 text-destructive focus:text-destructive" onSelect={handleLogout}>
+                <LogOut className="h-4 w-4" />
                 {t("nav.logout")}
               </DropdownMenuItem>
             </DropdownMenuContent>

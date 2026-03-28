@@ -334,6 +334,26 @@ func (f adminUserTableFilter) firstInt() (int, bool) {
 	return parsed, true
 }
 
+func isSelfAdminTarget(claims requestctx.AdminClaims, id int64) bool {
+	if id <= 0 {
+		return false
+	}
+	return strings.TrimSpace(claims.ID) == strconv.FormatInt(id, 10)
+}
+
+func isSelfRestrictedAdminUpdate(claims requestctx.AdminClaims, payload service.AdminUserUpdateInput) bool {
+	if !isSelfAdminTarget(claims, payload.ID) {
+		return false
+	}
+	if payload.Banned != nil && *payload.Banned {
+		return true
+	}
+	if payload.Status != nil && *payload.Status != 1 {
+		return true
+	}
+	return false
+}
+
 // requireAdmin checks admin authentication
 func (h *AdminUserHandler) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 	claims := requestctx.AdminFromContext(r.Context())
@@ -384,6 +404,12 @@ func (h *AdminUserHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	claims := requestctx.AdminFromContext(r.Context())
+	if claims.ID == "" {
+		RespondErrorI18n(r.Context(), w, http.StatusUnauthorized, "error.unauthorized", h.users.I18n())
+		return
+	}
+
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
@@ -399,6 +425,11 @@ func (h *AdminUserHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	// Set ID from URL path
 	payload.ID = id
+
+	if isSelfRestrictedAdminUpdate(claims, payload) {
+		RespondErrorI18n(r.Context(), w, http.StatusBadRequest, "admin.user.update", h.users.I18n())
+		return
+	}
 
 	user, err := h.users.Update(r.Context(), payload)
 	if err != nil {
@@ -419,9 +450,20 @@ func (h *AdminUserHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	claims := requestctx.AdminFromContext(r.Context())
+	if claims.ID == "" {
+		RespondErrorI18n(r.Context(), w, http.StatusUnauthorized, "error.unauthorized", h.users.I18n())
+		return
+	}
+
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
+		RespondErrorI18n(r.Context(), w, http.StatusBadRequest, "admin.user.delete", h.users.I18n())
+		return
+	}
+
+	if isSelfAdminTarget(claims, id) {
 		RespondErrorI18n(r.Context(), w, http.StatusBadRequest, "admin.user.delete", h.users.I18n())
 		return
 	}
