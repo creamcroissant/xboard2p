@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/creamcroissant/xboard/internal/api/requestctx"
 	"github.com/creamcroissant/xboard/internal/service"
@@ -19,7 +20,6 @@ func NewAdminInviteHandler(invites service.InviteService, i18nMgr *i18n.Manager)
 }
 
 func (h *AdminInviteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// TODO: Add actions like list, generate
 	action := adminInviteActionPath(r.URL.Path)
 	switch {
 	case action == "/generate" && r.Method == http.MethodPost:
@@ -40,8 +40,6 @@ func (h *AdminInviteHandler) handleFetch(w http.ResponseWriter, r *http.Request)
 
 	limit := 20
 	offset := 0
-	// Parse pagination if needed (for now simplified or assume default)
-	// If payload is JSON, decode it.
 
 	codes, total, err := h.invites.Fetch(r.Context(), limit, offset)
 	if err != nil {
@@ -74,10 +72,6 @@ func (h *AdminInviteHandler) handleGenerate(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Assuming 0 userID for admin generated codes or use admin's ID if available/needed
-	// Since AdminFromContext returns ID as string (UUID?), we need to resolve it to int64 if required by InviteService.
-	// But InviteService.GenerateBatch takes userID int64.
-	// For now, let's pass 0 for system/admin generated.
 	err := h.invites.GenerateBatch(r.Context(), req.Count, req.Limit, req.ExpireAt, 0)
 	if err != nil {
 		RespondErrorI18nAction(r.Context(), w, http.StatusInternalServerError, "admin.invite.generate", "error.internal_server_error", h.i18n)
@@ -88,5 +82,19 @@ func (h *AdminInviteHandler) handleGenerate(w http.ResponseWriter, r *http.Reque
 }
 
 func adminInviteActionPath(fullPath string) string {
-	return adminActionPath(fullPath)
+	idx := strings.Index(fullPath, "/invite")
+	if idx == -1 {
+		return "/"
+	}
+	action := fullPath[idx+len("/invite"):]
+	if queryIdx := strings.Index(action, "?"); queryIdx >= 0 {
+		action = action[:queryIdx]
+	}
+	if action == "" || action == "/" {
+		return "/"
+	}
+	if !strings.HasPrefix(action, "/") {
+		action = "/" + action
+	}
+	return action
 }
