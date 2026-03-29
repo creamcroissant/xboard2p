@@ -27,6 +27,8 @@ func (h *UserNoticeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case action == "/unread" && r.Method == http.MethodGet:
 		h.handleUnread(w, r)
+	case action == "/fetch" && r.Method == http.MethodGet:
+		h.handleUnread(w, r)
 	case action == "/read" && r.Method == http.MethodPost:
 		h.handleRead(w, r)
 	default:

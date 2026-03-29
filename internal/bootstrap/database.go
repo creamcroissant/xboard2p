@@ -13,15 +13,32 @@ import (
 
 const sqliteBusyRetryLimit = 3
 
+// ResolveSQLitePath normalizes the SQLite file path to an absolute path.
+func ResolveSQLitePath(path string) (string, error) {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return "", fmt.Errorf("SQLite 路径不能为空 / SQLite path is required")
+	}
+	if filepath.IsAbs(trimmed) {
+		return filepath.Clean(trimmed), nil
+	}
+	absPath, err := filepath.Abs(trimmed)
+	if err != nil {
+		return "", fmt.Errorf("resolve sqlite path: %w", err)
+	}
+	return filepath.Clean(absPath), nil
+}
+
 // OpenSQLite ensures the parent directory exists, then opens a SQLite connection with sane pragmas.
 func OpenSQLite(path string) (*sql.DB, error) {
-	if path == "" {
-		return nil, fmt.Errorf("SQLite 路径不能为空 / SQLite path is required")
+	resolvedPath, err := ResolveSQLitePath(path)
+	if err != nil {
+		return nil, err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(resolvedPath), 0o755); err != nil {
 		return nil, fmt.Errorf("create sqlite dir: %w", err)
 	}
-	dsn := fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_busy_timeout=30000&_journal_mode=WAL", path)
+	dsn := fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_busy_timeout=30000&_journal_mode=WAL", resolvedPath)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)

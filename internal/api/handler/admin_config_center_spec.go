@@ -252,7 +252,7 @@ func (h *AdminConfigCenterSpecHandler) respondSpecError(ctx context.Context, w h
 	if errors.Is(err, service.ErrNotFound) {
 		status = http.StatusNotFound
 		key = "error.not_found"
-	} else if errors.Is(err, service.ErrInboundSpecInvalid) {
+	} else if errors.Is(err, service.ErrInboundSpecInvalid) || errors.Is(err, service.ErrArtifactCompileInvalidRequest) {
 		status = http.StatusBadRequest
 		key = "error.bad_request"
 	} else if errors.Is(err, service.ErrInboundSpecTagConflict) || errors.Is(err, service.ErrInboundSpecListenConflict) {

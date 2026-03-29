@@ -488,6 +488,7 @@ func registerV2AdminRoutes(v2 chi.Router, configService service.ConfigService, a
 		admin.Get("/config-center/snapshot", adminConfigCenterDriftHandler.ListAppliedSnapshot)
 		admin.Get("/config-center/drift", adminConfigCenterDriftHandler.ListDriftStates)
 		admin.Get("/config-center/recover", adminConfigCenterDriftHandler.ListRecoveryStates)
+		admin.Post("/config-center/recover", adminConfigCenterDriftHandler.ListRecoveryStates)
 
 		// Config center apply run endpoints
 		admin.Post("/config-center/apply-runs", adminConfigCenterApplyHandler.CreateApplyRun)

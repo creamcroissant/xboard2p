@@ -33,10 +33,15 @@ func init() {
 		Short: "Database migration management",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load()
+			cfg, err := config.LoadWithOptions(config.LoadOptions{ConfigPath: configPath})
 			if err != nil {
 				return err
 			}
+			resolvedDBPath, err := bootstrap.ResolveSQLitePath(cfg.DB.Path)
+			if err != nil {
+				return err
+			}
+			cfg.DB.Path = resolvedDBPath
 			db, err := bootstrap.OpenSQLite(cfg.DB.Path)
 			if err != nil {
 				return err
@@ -79,10 +84,15 @@ func init() {
 		Use:   "backup",
 		Short: "Backup database",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load()
+			cfg, err := config.LoadWithOptions(config.LoadOptions{ConfigPath: configPath})
 			if err != nil {
 				return err
 			}
+			resolvedDBPath, err := bootstrap.ResolveSQLitePath(cfg.DB.Path)
+			if err != nil {
+				return err
+			}
+			cfg.DB.Path = resolvedDBPath
 			target := backupOutput
 			if target == "" {
 				backupDir := "data/backups"
@@ -138,10 +148,15 @@ func init() {
 		Short: "Restore database from backup",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load()
+			cfg, err := config.LoadWithOptions(config.LoadOptions{ConfigPath: configPath})
 			if err != nil {
 				return err
 			}
+			resolvedDBPath, err := bootstrap.ResolveSQLitePath(cfg.DB.Path)
+			if err != nil {
+				return err
+			}
+			cfg.DB.Path = resolvedDBPath
 			backupPath := args[0]
 			if _, err := os.Stat(backupPath); err != nil {
 				return fmt.Errorf("backup file not found: %w", err)
@@ -195,7 +210,7 @@ func init() {
 			return runUserList(store)
 		},
 	})
-	
+
 	var createUserEmail, createUserPassword string
 	var createUserAdmin bool
 	var createUserCmd = &cobra.Command{
@@ -351,10 +366,15 @@ func init() {
 // Helper functions
 
 func getStore() (*sqlite.Store, *config.Config, error) {
-	cfg, err := config.Load()
+	cfg, err := config.LoadWithOptions(config.LoadOptions{ConfigPath: configPath})
 	if err != nil {
 		return nil, nil, err
 	}
+	resolvedDBPath, err := bootstrap.ResolveSQLitePath(cfg.DB.Path)
+	if err != nil {
+		return nil, nil, err
+	}
+	cfg.DB.Path = resolvedDBPath
 	db, err := bootstrap.OpenSQLite(cfg.DB.Path)
 	if err != nil {
 		return nil, nil, err
@@ -490,16 +510,16 @@ func getJobs(store *sqlite.Store) map[string]job.Runnable {
 	trafficQueue := async.NewTrafficQueue()
 	notificationQueue := async.NewNotificationQueue()
 	statAccumulator := job.NewStatUserAccumulator()
-	
+
 	// Store might be nil if just listing
 	var trafficSvc service.ServerTrafficService
 	var statRepo repository.StatUserRepository
-	
+
 	if store != nil {
 		trafficSvc = service.NewServerTrafficService(store.Users(), nil)
 		statRepo = store.StatUsers()
 	}
-	
+
 	notifierSvc := notifier.NewLoggerService(nil)
 
 	return map[string]job.Runnable{

@@ -37,6 +37,9 @@ func LoadWithOptions(opts LoadOptions) (*Config, error) {
 		}
 	}
 	configDir := configuredDir(v.ConfigFileUsed())
+	if configDir == "" {
+		configDir = effectiveWorkingDir(opts.WorkingDir)
+	}
 	if err := loadDotEnv(v, configDir); err != nil {
 		return nil, err
 	}
@@ -66,7 +69,7 @@ func configureConfigFile(v *viper.Viper, opts LoadOptions) error {
 		return nil
 	}
 	v.SetConfigName("config")
-	workingDir := strings.TrimSpace(opts.WorkingDir)
+	workingDir := effectiveWorkingDir(opts.WorkingDir)
 	if workingDir != "" {
 		v.AddConfigPath(workingDir)
 		v.AddConfigPath(filepath.Join(workingDir, "etc"))
@@ -216,4 +219,16 @@ func resolveRelativePath(baseDir, value string) string {
 		return trimmed
 	}
 	return filepath.Clean(filepath.Join(baseDir, trimmed))
+}
+
+func effectiveWorkingDir(workingDir string) string {
+	trimmed := strings.TrimSpace(workingDir)
+	if trimmed != "" {
+		return trimmed
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	return cwd
 }

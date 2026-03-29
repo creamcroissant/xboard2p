@@ -37,6 +37,8 @@ func (h *AdminKnowledgeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 	case action == "/" && r.Method == http.MethodGet:
 		// GET /knowledge - 返回知识库列表
 		h.handleFetch(w, r)
+	case action == "/" && r.Method == http.MethodPost:
+		h.handleSave(w, r)
 	case action == "/fetch" && r.Method == http.MethodGet:
 		h.handleFetch(w, r)
 	case action == "/getCategory" && r.Method == http.MethodGet:

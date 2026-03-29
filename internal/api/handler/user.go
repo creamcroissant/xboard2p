@@ -33,6 +33,8 @@ func (h *UserHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleProfileUpdate(w, r)
 	case action == "/info" && r.Method == http.MethodGet:
 		h.handleInfo(w, r)
+	case action == "/getUserInfo" && r.Method == http.MethodGet:
+		h.handleInfo(w, r)
 	case action == "/changePassword" && r.Method == http.MethodPost:
 		h.handleChangePassword(w, r)
 	case action == "/resetSecurity" && r.Method == http.MethodGet:

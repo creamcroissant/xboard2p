@@ -54,11 +54,18 @@ func runServe(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	resolvedDBPath, err := bootstrap.ResolveSQLitePath(cfg.DB.Path)
+	if err != nil {
+		return err
+	}
+	cfg.DB.Path = resolvedDBPath
+
 	logger := logging.New(logging.Options{
 		Level:     cfg.Log.SlogLevel(),
 		Format:    cfg.Log.Format,
 		AddSource: cfg.Log.AddSource,
 	})
+	logger.Info("database path resolved", "path", cfg.DB.Path)
 
 	db, err := bootstrap.OpenSQLite(cfg.DB.Path)
 	if err != nil {
