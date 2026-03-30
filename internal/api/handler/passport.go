@@ -23,11 +23,12 @@ type PassportHandler struct {
 	passwd   service.PasswordService
 	register service.RegistrationService
 	mailLink service.MailLinkService
+	comm     service.CommService
 	i18n     *i18n.Manager
 }
 
-func NewPassportHandler(auth service.AuthService, verify service.VerificationService, invite service.InviteService, passwd service.PasswordService, register service.RegistrationService, mailLink service.MailLinkService, i18n *i18n.Manager) *PassportHandler {
-	return &PassportHandler{auth: auth, verify: verify, invite: invite, passwd: passwd, register: register, mailLink: mailLink, i18n: i18n}
+func NewPassportHandler(auth service.AuthService, verify service.VerificationService, invite service.InviteService, passwd service.PasswordService, register service.RegistrationService, mailLink service.MailLinkService, comm service.CommService, i18n *i18n.Manager) *PassportHandler {
+	return &PassportHandler{auth: auth, verify: verify, invite: invite, passwd: passwd, register: register, mailLink: mailLink, comm: comm, i18n: i18n}
 }
 
 func (h *PassportHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -49,6 +50,8 @@ func (h *PassportHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleMailLinkLogin(w, r)
 	case strings.HasPrefix(path, "/auth/getQuickLoginUrl") && r.Method == http.MethodPost:
 		h.handleQuickLoginURL(w, r)
+	case strings.HasPrefix(path, "/comm/config") && r.Method == http.MethodGet:
+		h.handleCommConfig(w, r)
 	case strings.HasPrefix(path, "/comm/sendEmailVerify") && r.Method == http.MethodPost:
 		h.handleSendEmailVerify(w, r)
 	case strings.HasPrefix(path, "/comm/pv") && r.Method == http.MethodPost:
@@ -439,6 +442,19 @@ func (h *PassportHandler) handleSendEmailVerify(w http.ResponseWriter, r *http.R
 		return
 	}
 	respondJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+}
+
+func (h *PassportHandler) handleCommConfig(w http.ResponseWriter, r *http.Request) {
+	if h.comm == nil {
+		RespondErrorI18n(r.Context(), w, http.StatusServiceUnavailable, "error.service_unavailable", h.i18n)
+		return
+	}
+	cfg, err := h.comm.GuestConfig(r.Context())
+	if err != nil {
+		RespondErrorI18n(r.Context(), w, http.StatusInternalServerError, "error.internal_server_error", h.i18n)
+		return
+	}
+	respondJSON(w, http.StatusOK, cfg)
 }
 
 func (h *PassportHandler) handleInvitePV(w http.ResponseWriter, r *http.Request) {

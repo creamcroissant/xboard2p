@@ -173,7 +173,7 @@
   "admin": {
     "nav": {
       "title": "管理",
-      "agents": "服务器",
+      "agents": "探针",
       "users": "用户",
       "plans": "套餐",
       "notices": "公告",
@@ -267,6 +267,8 @@
       "version": "版本",
       "installed": "已安装",
       "uninstalled": "未安装",
+      "install": "安装核心",
+      "installError": "核心安装失败",
       "empty": "暂无核心数据",
       "emptyDescription": "该 Agent 暂未上报核心信息。",
       "instancesTitle": "核心实例",
@@ -290,6 +292,25 @@
       "fieldsRequired": "核心类型和实例 ID 为必填项",
       "switchFieldsRequired": "源实例与目标核心为必填项",
       "loadError": "加载核心数据失败",
+      "operationsTitle": "任务进度",
+      "operationsSummaryTitle": "最近任务",
+      "operationsEmpty": "暂无任务",
+      "operationsEmptyDescription": "提交 create / switch / install 后，这里会显示任务进度。",
+      "operationsPolling": "检测到进行中的任务，面板会自动刷新。",
+      "operationsIdle": "当前没有进行中的任务。",
+      "operationsType": "任务类型",
+      "operationsTypePlaceholder": "选择任务类型",
+      "operationsTarget": "目标",
+      "operationsFinishedAt": "完成时间",
+      "operationSubmitted": "任务已提交",
+      "operationCompleted": "任务已完成",
+      "operationFailed": "任务执行失败",
+      "operationType": {
+        "create": "创建实例",
+        "switch": "切换核心",
+        "install": "安装核心",
+        "ensure": "确保核心"
+      },
       "logsTitle": "切换日志",
       "logsStart": "开始日期",
       "logsEnd": "结束日期",
@@ -322,9 +343,11 @@
       },
       "status": {
         "pending": "待处理",
+        "claimed": "已领取",
         "in_progress": "进行中",
         "completed": "已完成",
-        "failed": "失败"
+        "failed": "失败",
+        "rolled_back": "已回滚"
       }
     },
     "users": {

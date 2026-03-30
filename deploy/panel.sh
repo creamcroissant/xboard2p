@@ -4,8 +4,8 @@ set -e
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 INSTALL_DIR="${INSTALL_DIR:-/opt/xboard}"
-USER_VITE_DIST="${USER_VITE_DIST:-web/user-vite/dist}"
-INSTALL_UI_DIR="${INSTALL_UI_DIR:-web/install}"
+FRONTEND_RELEASE_ASSET="${XBOARD_FRONTEND_RELEASE_ASSET:-frontend-dist.tar.gz}"
+INSTALL_UI_RELEASE_ASSET="${XBOARD_INSTALL_UI_RELEASE_ASSET:-install-ui.tar.gz}"
 SKIP_SYSTEMD="${XBOARD_INSTALL_SKIP_SYSTEMD:-0}"
 
 XBOARD_RELEASE_REPO="${XBOARD_RELEASE_REPO:-creamcroissant/xboard2p}"
@@ -314,6 +314,10 @@ ensure_download_dependencies() {
         return 1
     fi
 
+    if ! ensure_dependency "tar"; then
+        return 1
+    fi
+
     return 0
 }
 
@@ -444,96 +448,151 @@ is_systemd_available() {
     return 0
 }
 
-download_release_binary() {
-    bin_name=$1
+install_release_asset() {
+    asset_name=$1
     target_path=$2
 
-    ext=""
-    if [ "$OS" = "windows" ]; then
-        ext=".exe"
-    fi
-
-    asset="${bin_name}-${OS}-${ARCH}${ext}"
     base="${XBOARD_RELEASE_BASE_URL%/}"
 
     if [ "$XBOARD_RELEASE_TAG" = "latest" ]; then
-        url="${base}/${XBOARD_RELEASE_REPO}/releases/latest/download/${asset}"
+        url="${base}/${XBOARD_RELEASE_REPO}/releases/latest/download/${asset_name}"
         checksum_url="${base}/${XBOARD_RELEASE_REPO}/releases/latest/download/SHA256SUMS.txt"
     else
-        url="${base}/${XBOARD_RELEASE_REPO}/releases/download/${XBOARD_RELEASE_TAG}/${asset}"
+        url="${base}/${XBOARD_RELEASE_REPO}/releases/download/${XBOARD_RELEASE_TAG}/${asset_name}"
         checksum_url="${base}/${XBOARD_RELEASE_REPO}/releases/download/${XBOARD_RELEASE_TAG}/SHA256SUMS.txt"
     fi
 
     if ! command -v curl >/dev/null 2>&1; then
-        echo "Error: curl not found for release download of ${bin_name}."
+        echo "Error: curl not found for release download of ${asset_name}."
         echo "repo=${XBOARD_RELEASE_REPO} tag=${XBOARD_RELEASE_TAG} os=${OS} arch=${ARCH} url=${url}"
         return 1
     fi
 
     if ! has_ca_certificates; then
-        echo "Error: CA certificates not found for release download of ${bin_name}."
+        echo "Error: CA certificates not found for release download of ${asset_name}."
         echo "repo=${XBOARD_RELEASE_REPO} tag=${XBOARD_RELEASE_TAG} os=${OS} arch=${ARCH} url=${url}"
         return 1
     fi
 
-    tmp_bin=$(mktemp)
-    if [ -z "$tmp_bin" ]; then
-        echo "Error: failed to create temporary file for ${asset}."
+    download_tmp_asset=$(mktemp)
+    if [ -z "$download_tmp_asset" ]; then
+        echo "Error: failed to create temporary file for ${asset_name}."
         echo "repo=${XBOARD_RELEASE_REPO} tag=${XBOARD_RELEASE_TAG} os=${OS} arch=${ARCH} url=${url}"
         return 1
     fi
 
-    tmp_checksums=$(mktemp)
-    if [ -z "$tmp_checksums" ]; then
+    download_tmp_checksums=$(mktemp)
+    if [ -z "$download_tmp_checksums" ]; then
         echo "Error: failed to create temporary file for checksum manifest."
-        rm -f "$tmp_bin"
+        rm -f "$download_tmp_asset"
         return 1
     fi
 
-    if ! curl --fail --silent --show-error --location --retry 3 --retry-delay 1 --output "$tmp_bin" "$url"; then
-        echo "Error: failed to download release asset ${asset}."
+    if ! curl --fail --silent --show-error --location --retry 3 --retry-delay 1 --output "$download_tmp_asset" "$url"; then
+        echo "Error: failed to download release asset ${asset_name}."
         echo "repo=${XBOARD_RELEASE_REPO} tag=${XBOARD_RELEASE_TAG} os=${OS} arch=${ARCH} url=${url}"
-        rm -f "$tmp_bin" "$tmp_checksums"
+        rm -f "$download_tmp_asset" "$download_tmp_checksums"
         return 1
     fi
 
-    if [ ! -s "$tmp_bin" ]; then
-        echo "Error: downloaded ${asset} is empty."
+    if [ ! -s "$download_tmp_asset" ]; then
+        echo "Error: downloaded ${asset_name} is empty."
         echo "repo=${XBOARD_RELEASE_REPO} tag=${XBOARD_RELEASE_TAG} os=${OS} arch=${ARCH} url=${url}"
-        rm -f "$tmp_bin" "$tmp_checksums"
+        rm -f "$download_tmp_asset" "$download_tmp_checksums"
         return 1
     fi
 
-    if ! curl --fail --silent --show-error --location --retry 3 --retry-delay 1 --output "$tmp_checksums" "$checksum_url"; then
+    if ! curl --fail --silent --show-error --location --retry 3 --retry-delay 1 --output "$download_tmp_checksums" "$checksum_url"; then
         echo "Error: failed to download checksum manifest SHA256SUMS.txt."
         echo "repo=${XBOARD_RELEASE_REPO} tag=${XBOARD_RELEASE_TAG} os=${OS} arch=${ARCH} checksum_url=${checksum_url}"
-        rm -f "$tmp_bin" "$tmp_checksums"
+        rm -f "$download_tmp_asset" "$download_tmp_checksums"
         return 1
     fi
 
-    if [ ! -s "$tmp_checksums" ]; then
+    if [ ! -s "$download_tmp_checksums" ]; then
         echo "Error: downloaded checksum manifest is empty."
         echo "repo=${XBOARD_RELEASE_REPO} tag=${XBOARD_RELEASE_TAG} checksum_url=${checksum_url}"
-        rm -f "$tmp_bin" "$tmp_checksums"
+        rm -f "$download_tmp_asset" "$download_tmp_checksums"
         return 1
     fi
 
-    if ! verify_checksum "$asset" "$tmp_bin" "$tmp_checksums"; then
-        echo "Error: checksum verification failed for release asset ${asset}."
+    if ! verify_checksum "$asset_name" "$download_tmp_asset" "$download_tmp_checksums"; then
+        echo "Error: checksum verification failed for release asset ${asset_name}."
         echo "repo=${XBOARD_RELEASE_REPO} tag=${XBOARD_RELEASE_TAG} checksum_url=${checksum_url}"
-        rm -f "$tmp_bin" "$tmp_checksums"
+        rm -f "$download_tmp_asset" "$download_tmp_checksums"
         return 1
     fi
 
-    if ! install_executable_file "$tmp_bin" "$target_path"; then
-        echo "Error: failed to install ${asset} into ${target_path}."
+    if ! install_file "$download_tmp_asset" "$target_path"; then
+        echo "Error: failed to install ${asset_name} into ${target_path}."
         echo "repo=${XBOARD_RELEASE_REPO} tag=${XBOARD_RELEASE_TAG} os=${OS} arch=${ARCH} url=${url}"
-        rm -f "$tmp_bin" "$tmp_checksums"
+        rm -f "$download_tmp_asset" "$download_tmp_checksums"
         return 1
     fi
 
-    rm -f "$tmp_bin" "$tmp_checksums"
-    echo "Installed ${bin_name} from release asset: ${url}"
+    rm -f "$download_tmp_asset" "$download_tmp_checksums"
+    echo "Installed release asset: ${url}"
+    return 0
+}
+
+install_release_archive_dir() {
+    asset_name=$1
+    extract_parent=$2
+    extracted_dir_name=$3
+    target_dir=$4
+
+    archive_tmp_asset=$(mktemp)
+    if [ -z "$archive_tmp_asset" ]; then
+        echo "Error: failed to create temporary file for ${asset_name}."
+        return 1
+    fi
+
+    archive_tmp_extract=$(mktemp -d)
+    if [ -z "$archive_tmp_extract" ]; then
+        echo "Error: failed to create temporary directory for ${asset_name}."
+        rm -f "$archive_tmp_asset"
+        return 1
+    fi
+
+    if ! install_release_asset "$asset_name" "$archive_tmp_asset"; then
+        rm -f "$archive_tmp_asset"
+        rm -rf "$archive_tmp_extract"
+        return 1
+    fi
+
+    if ! tar -C "$archive_tmp_extract" -xzf "$archive_tmp_asset"; then
+        echo "Error: failed to extract ${asset_name}."
+        rm -f "$archive_tmp_asset"
+        rm -rf "$archive_tmp_extract"
+        return 1
+    fi
+
+    extracted_path="${archive_tmp_extract}/${extracted_dir_name}"
+    if [ ! -d "$extracted_path" ]; then
+        echo "Error: extracted directory ${extracted_dir_name} not found in ${asset_name}."
+        rm -f "$archive_tmp_asset"
+        rm -rf "$archive_tmp_extract"
+        return 1
+    fi
+
+    if ! ensure_dir "$extract_parent"; then
+        echo "Error: failed to create install directory ${extract_parent}."
+        rm -f "$archive_tmp_asset"
+        rm -rf "$archive_tmp_extract"
+        return 1
+    fi
+
+    run_privileged rm -rf "$target_dir"
+    if ! run_privileged mv "$extracted_path" "$target_dir"; then
+        echo "Error: failed to install extracted directory ${target_dir}."
+        rm -f "$archive_tmp_asset"
+        rm -rf "$archive_tmp_extract"
+        return 1
+    fi
+
+    rm -f "$archive_tmp_asset"
+    rm -rf "$archive_tmp_extract"
+    echo "Installed ${asset_name} into ${target_dir}"
     return 0
 }
 
@@ -625,8 +684,20 @@ install_binary() {
         exit 1
     fi
 
-    if ! download_release_binary "$bin_name" "$INSTALL_DIR/$target_bin"; then
+    asset_name="${target_bin}-${OS}-${ARCH}"
+    if [ "$OS" = "windows" ]; then
+        asset_name="${bin_name}-${OS}-${ARCH}.exe"
+    else
+        asset_name="${bin_name}-${OS}-${ARCH}"
+    fi
+
+    if ! install_release_asset "$asset_name" "$INSTALL_DIR/$target_bin"; then
         echo "Error: failed to install ${bin_name} from GitHub release asset."
+        exit 1
+    fi
+
+    if ! set_file_mode +x "$INSTALL_DIR/$target_bin"; then
+        echo "Error: failed to set executable permission on $INSTALL_DIR/$target_bin."
         exit 1
     fi
 
@@ -740,30 +811,14 @@ fi
 
 install_binary "xboard" "./cmd/xboard/main.go"
 
-if [ -d "$USER_VITE_DIST" ]; then
-    echo "Copying frontend assets..."
-    if ! ensure_dir "$INSTALL_DIR/web/user-vite"; then
-        exit 1
-    fi
-    if ! copy_recursive "$USER_VITE_DIST" "$INSTALL_DIR/web/user-vite/"; then
-        echo "Error: failed to copy frontend assets."
-        exit 1
-    fi
-else
-    echo "Warning: Frontend assets not found at $USER_VITE_DIST. Skipping."
+if ! install_release_archive_dir "$FRONTEND_RELEASE_ASSET" "$INSTALL_DIR/web/user-vite" "dist" "$INSTALL_DIR/web/user-vite/dist"; then
+    echo "Error: failed to install frontend assets from GitHub release asset."
+    exit 1
 fi
 
-if [ -d "$INSTALL_UI_DIR" ]; then
-    echo "Copying install UI assets..."
-    if ! ensure_dir "$INSTALL_DIR/web"; then
-        exit 1
-    fi
-    if ! copy_recursive "$INSTALL_UI_DIR" "$INSTALL_DIR/web/"; then
-        echo "Error: failed to copy install UI assets."
-        exit 1
-    fi
-else
-    echo "Warning: Install UI assets not found at $INSTALL_UI_DIR. Skipping."
+if ! install_release_archive_dir "$INSTALL_UI_RELEASE_ASSET" "$INSTALL_DIR/web" "install" "$INSTALL_DIR/web/install"; then
+    echo "Error: failed to install install UI assets from GitHub release asset."
+    exit 1
 fi
 
 if [ ! -f "$INSTALL_DIR/config.yml" ] && [ ! -f "$INSTALL_DIR/.env" ]; then

@@ -26,6 +26,8 @@ func (h *GuestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case action == "/comm/config" && r.Method == http.MethodGet:
 		h.handleCommConfig(w, r)
+	case action == "/telegram/get" && r.Method == http.MethodGet:
+		h.handleTelegramGet(w, r)
 	default:
 		respondNotImplemented(w, "guest", r)
 	}
@@ -49,14 +51,14 @@ func (h *GuestHandler) HandleI18n(w http.ResponseWriter, r *http.Request) {
 	// iterate through keys?
 	// Actually, the frontend expects a JSON file.
 	// We should add GetTranslations(lang) to i18n.Manager.
-	
+
 	// Assuming GetTranslations exists or we add it.
 	translations := h.i18n.GetTranslations(lang)
 	if translations == nil {
 		// Fallback to default or empty
 		translations = map[string]string{}
 	}
-	
+
 	respondJSON(w, http.StatusOK, translations)
 }
 
@@ -71,6 +73,23 @@ func (h *GuestHandler) handleCommConfig(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	respondJSON(w, http.StatusOK, cfg)
+}
+
+func (h *GuestHandler) handleTelegramGet(w http.ResponseWriter, r *http.Request) {
+	if h.comm == nil {
+		RespondErrorI18n(r.Context(), w, http.StatusServiceUnavailable, "error.service_unavailable", h.i18n)
+		return
+	}
+	cfg, err := h.comm.GuestConfig(r.Context())
+	if err != nil {
+		RespondErrorI18n(r.Context(), w, http.StatusInternalServerError, "error.internal_server_error", h.i18n)
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]any{
+		"telegram_enabled":      cfg.TelegramLoginEnable,
+		"telegram_bot_username": cfg.TelegramBotUsername,
+		"telegram_login_domain": cfg.TelegramLoginDomain,
+	})
 }
 
 func guestActionPath(fullPath string) string {

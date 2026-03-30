@@ -31,11 +31,24 @@ jobs:
           npm ci
           npm run build
 
-      - name: Upload frontend artifact
+      - name: Package UI release assets
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist/release
+          test -f web/user-vite/dist/index.html
+          test -f web/install/index.html
+
+          tar -C web/user-vite -czf dist/release/frontend-dist.tar.gz dist
+          tar -C web -czf dist/release/install-ui.tar.gz install
+
+      - name: Upload UI release assets
         uses: actions/upload-artifact@v4
         with:
-          name: frontend-dist
-          path: web/user-vite/dist
+          name: ui-release-assets
+          path: |
+            dist/release/frontend-dist.tar.gz
+            dist/release/install-ui.tar.gz
           if-no-files-found: error
 
   build-binaries:
@@ -67,11 +80,19 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download frontend artifact
+      - name: Download UI release assets
         uses: actions/download-artifact@v4
         with:
-          name: frontend-dist
-          path: web/user-vite/dist
+          name: ui-release-assets
+          path: dist/release
+
+      - name: Extract UI release assets
+        run: |
+          set -euo pipefail
+
+          mkdir -p web/user-vite web
+          tar -C web/user-vite -xzf dist/release/frontend-dist.tar.gz
+          tar -C web -xzf dist/release/install-ui.tar.gz
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -134,7 +155,13 @@ jobs:
           pattern: release-*
           merge-multiple: true
 
-      - name: Verify expected binaries exist
+      - name: Download UI release assets
+        uses: actions/download-artifact@v4
+        with:
+          name: ui-release-assets
+          path: dist/release
+
+      - name: Verify expected release assets exist
         run: |
           set -euo pipefail
           test -f dist/release/xboard-linux-amd64
@@ -148,6 +175,9 @@ jobs:
           test -f dist/release/agent-darwin-amd64
           test -f dist/release/agent-darwin-arm64
           test -f dist/release/agent-windows-amd64.exe
+
+          test -f dist/release/frontend-dist.tar.gz
+          test -f dist/release/install-ui.tar.gz
 
       - name: Verify deploy script shell compatibility
         run: |
@@ -175,16 +205,24 @@ jobs:
           cp dist/release/agent-linux-amd64 "${WORKDIR_BASH}/local/local/releases/download/local/agent-linux-amd64"
           cp dist/release/xboard-linux-amd64 "${WORKDIR_SH}/local/local/releases/download/local/xboard-linux-amd64"
           cp dist/release/xboard-linux-amd64 "${WORKDIR_BASH}/local/local/releases/download/local/xboard-linux-amd64"
+          cp dist/release/frontend-dist.tar.gz "${WORKDIR_SH}/local/local/releases/download/local/frontend-dist.tar.gz"
+          cp dist/release/frontend-dist.tar.gz "${WORKDIR_BASH}/local/local/releases/download/local/frontend-dist.tar.gz"
+          cp dist/release/install-ui.tar.gz "${WORKDIR_SH}/local/local/releases/download/local/install-ui.tar.gz"
+          cp dist/release/install-ui.tar.gz "${WORKDIR_BASH}/local/local/releases/download/local/install-ui.tar.gz"
 
           AGENT_SHA="$(sha256sum dist/release/agent-linux-amd64 | awk '{print $1}')"
           XBOARD_SHA="$(sha256sum dist/release/xboard-linux-amd64 | awk '{print $1}')"
+          FRONTEND_SHA="$(sha256sum dist/release/frontend-dist.tar.gz | awk '{print $1}')"
+          INSTALL_UI_SHA="$(sha256sum dist/release/install-ui.tar.gz | awk '{print $1}')"
           SCRIPT_SHA="$(sha256sum deploy/agent.sh | awk '{print $1}')"
           SERVICE_SHA="$(sha256sum deploy/agent.service | awk '{print $1}')"
-          printf '%s  %s\n%s  %s\n%s  %s\n%s  %s\n' \
+          printf '%s  %s\n%s  %s\n%s  %s\n%s  %s\n%s  %s\n%s  %s\n' \
             "${AGENT_SHA}" "agent-linux-amd64" \
             "${XBOARD_SHA}" "xboard-linux-amd64" \
-            "${SCRIPT_SHA}" "agent.sh" \
-            "${SERVICE_SHA}" "agent.service" \
+            "${FRONTEND_SHA}" "frontend-dist.tar.gz" \
+            "${INSTALL_UI_SHA}" "install-ui.tar.gz" \
+            "${SCRIPT_SHA}" "deploy/agent.sh" \
+            "${SERVICE_SHA}" "deploy/agent.service" \
             > "${WORKDIR_SH}/local/local/releases/download/local/SHA256SUMS.txt"
           cp "${WORKDIR_SH}/local/local/releases/download/local/SHA256SUMS.txt" "${WORKDIR_BASH}/local/local/releases/download/local/SHA256SUMS.txt"
 
@@ -221,6 +259,12 @@ jobs:
             XBOARD_RELEASE_TAG="local" \
             sh ./panel.sh
             test -x "${WORKDIR_SH}/panel-out/xboard"
+            test -f "${WORKDIR_SH}/panel-out/web/user-vite/dist/index.html"
+            test -f "${WORKDIR_SH}/panel-out/web/install/index.html"
+            mkdir -p "${WORKDIR_SH}/panel-out/web/user-vite/dist/assets"
+            touch "${WORKDIR_SH}/panel-out/web/user-vite/dist/assets/stale.txt"
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_SH}/panel-out" XBOARD_RELEASE_BASE_URL="file://${WORKDIR_SH}" XBOARD_RELEASE_REPO="local/local" XBOARD_RELEASE_TAG="local" sh ./panel.sh
+            test ! -e "${WORKDIR_SH}/panel-out/web/user-vite/dist/assets/stale.txt"
             XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_SH}/panel-out" XBOARD_RELEASE_BASE_URL="file://${WORKDIR_SH}" XBOARD_RELEASE_REPO="local/local" XBOARD_RELEASE_TAG="local" sh ./panel.sh --uninstall
             XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_SH}/panel-out" XBOARD_RELEASE_BASE_URL="file://${WORKDIR_SH}" XBOARD_RELEASE_REPO="local/local" XBOARD_RELEASE_TAG="local" sh ./panel.sh --uninstall
             test ! -e "${WORKDIR_SH}/panel-out/xboard"
@@ -238,6 +282,12 @@ jobs:
             XBOARD_RELEASE_TAG="local" \
             bash ./panel.sh
             test -x "${WORKDIR_BASH}/panel-out/xboard"
+            test -f "${WORKDIR_BASH}/panel-out/web/user-vite/dist/index.html"
+            test -f "${WORKDIR_BASH}/panel-out/web/install/index.html"
+            mkdir -p "${WORKDIR_BASH}/panel-out/web/user-vite/dist/assets"
+            touch "${WORKDIR_BASH}/panel-out/web/user-vite/dist/assets/stale.txt"
+            XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_BASH}/panel-out" XBOARD_RELEASE_BASE_URL="file://${WORKDIR_BASH}" XBOARD_RELEASE_REPO="local/local" XBOARD_RELEASE_TAG="local" bash ./panel.sh
+            test ! -e "${WORKDIR_BASH}/panel-out/web/user-vite/dist/assets/stale.txt"
             XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_BASH}/panel-out" XBOARD_RELEASE_BASE_URL="file://${WORKDIR_BASH}" XBOARD_RELEASE_REPO="local/local" XBOARD_RELEASE_TAG="local" bash ./panel.sh --uninstall
             XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_BASH}/panel-out" XBOARD_RELEASE_BASE_URL="file://${WORKDIR_BASH}" XBOARD_RELEASE_REPO="local/local" XBOARD_RELEASE_TAG="local" bash ./panel.sh --uninstall
             test ! -e "${WORKDIR_BASH}/panel-out/xboard"
@@ -647,6 +697,7 @@ jobs:
           set -euo pipefail
 
           cat dist/release/*.sha256 > dist/release/SHA256SUMS.txt
+          sha256sum dist/release/frontend-dist.tar.gz dist/release/install-ui.tar.gz >> dist/release/SHA256SUMS.txt
           sha256sum deploy/agent.sh deploy/agent.service >> dist/release/SHA256SUMS.txt
           sort -k2 dist/release/SHA256SUMS.txt -o dist/release/SHA256SUMS.txt
 
@@ -654,6 +705,8 @@ jobs:
         run: |
           set -euo pipefail
 
+          grep -Eq '[[:space:]]frontend-dist\.tar\.gz$' dist/release/SHA256SUMS.txt
+          grep -Eq '[[:space:]]install-ui\.tar\.gz$' dist/release/SHA256SUMS.txt
           grep -Eq '[[:space:]]deploy/agent\.sh$' dist/release/SHA256SUMS.txt
           grep -Eq '[[:space:]]deploy/agent\.service$' dist/release/SHA256SUMS.txt
 
@@ -663,6 +716,8 @@ jobs:
           files: |
             dist/release/xboard-*
             dist/release/agent-*
+            dist/release/frontend-dist.tar.gz
+            dist/release/install-ui.tar.gz
             dist/release/SHA256SUMS.txt
           generate_release_notes: true
           draft: false

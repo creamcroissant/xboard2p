@@ -144,7 +144,7 @@ func LoadConfig() (*Config, error) {
 	cfg.UI.Admin.Dir = fallback(firstNonEmpty(
 		v.GetString("ADMIN_UI_DIR"),
 		os.Getenv("XBOARD_ADMIN_UI_DIR"),
-	), filepath.Join("web", "admin-vite", "dist"))
+	), filepath.Join("web", "user-vite", "dist"))
 	cfg.UI.Admin.Title = fallback(firstNonEmpty(
 		v.GetString("ADMIN_UI_TITLE"),
 		os.Getenv("XBOARD_ADMIN_UI_TITLE"),

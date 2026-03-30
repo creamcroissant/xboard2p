@@ -44,6 +44,7 @@ function getStatusConfig(status: AgentStatus, t: (key: string) => string) {
 export default function AgentStatusCard({ agent, onClick, onEdit }: AgentStatusCardProps) {
   const { t } = useTranslation();
   const statusConfig = getStatusConfig(agent.status, t);
+  const hostLabel = agent.port ? `${agent.host}:${agent.port}` : agent.host;
 
   return (
     <Card
@@ -68,7 +69,7 @@ export default function AgentStatusCard({ agent, onClick, onEdit }: AgentStatusC
             <span className="font-semibold text-foreground">{agent.name}</span>
           </div>
           <span className="text-xs text-muted-foreground">
-            {agent.host}:{agent.port}
+            {hostLabel}
           </span>
         </div>
         <div className="flex items-center gap-2">
