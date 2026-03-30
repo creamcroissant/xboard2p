@@ -33,6 +33,8 @@ DISTRO_ID=""
 DISTRO_ID_LIKE=""
 PKG_MANAGER=""
 PKG_CACHE_UPDATED=0
+OPENRC_SERVICE_CMD=""
+OPENRC_UPDATE_CMD=""
 
 strip_quotes() {
     value=$1
@@ -448,6 +450,133 @@ is_systemd_available() {
     return 0
 }
 
+resolve_openrc_commands() {
+    if [ -n "$OPENRC_SERVICE_CMD" ] && [ -n "$OPENRC_UPDATE_CMD" ]; then
+        return 0
+    fi
+
+    OPENRC_SERVICE_CMD=""
+    OPENRC_UPDATE_CMD=""
+
+    for candidate in rc-service /sbin/rc-service /usr/sbin/rc-service; do
+        if [ "$candidate" = "rc-service" ]; then
+            if command -v rc-service >/dev/null 2>&1; then
+                OPENRC_SERVICE_CMD=$(command -v rc-service)
+                break
+            fi
+        elif [ -x "$candidate" ]; then
+            OPENRC_SERVICE_CMD="$candidate"
+            break
+        fi
+    done
+
+    for candidate in rc-update /sbin/rc-update /usr/sbin/rc-update; do
+        if [ "$candidate" = "rc-update" ]; then
+            if command -v rc-update >/dev/null 2>&1; then
+                OPENRC_UPDATE_CMD=$(command -v rc-update)
+                break
+            fi
+        elif [ -x "$candidate" ]; then
+            OPENRC_UPDATE_CMD="$candidate"
+            break
+        fi
+    done
+
+    if [ -n "$OPENRC_SERVICE_CMD" ] && [ -n "$OPENRC_UPDATE_CMD" ]; then
+        return 0
+    fi
+
+    return 1
+}
+
+is_openrc_available() {
+    if [ "$SKIP_SYSTEMD" = "1" ]; then
+        return 1
+    fi
+
+    if ! resolve_openrc_commands; then
+        return 1
+    fi
+    return 0
+}
+
+render_install_service_file() {
+    source_path=$1
+    target_path=$2
+
+    temp_service=$(mktemp)
+    if [ -z "$temp_service" ]; then
+        echo "Error: failed to create temporary service file."
+        return 1
+    fi
+
+    escaped_install_dir=$(printf '%s' "$INSTALL_DIR" | sed 's/[\\/&]/\\\\&/g')
+    if ! sed "s#/opt/xboard#${escaped_install_dir}#g" "$source_path" > "$temp_service"; then
+        echo "Error: failed to render service file ${source_path}."
+        rm -f "$temp_service"
+        return 1
+    fi
+
+    if ! run_privileged cp "$temp_service" "$target_path"; then
+        echo "Error: failed to install rendered service file ${target_path}."
+        rm -f "$temp_service"
+        return 1
+    fi
+
+    rm -f "$temp_service"
+    return 0
+}
+
+install_openrc_service() {
+    service_name=$1
+    binary_path=$2
+    command_args=$3
+
+    init_script_path="/etc/init.d/${service_name}"
+    temp_script=$(mktemp)
+    if [ -z "$temp_script" ]; then
+        echo "Error: failed to create temporary OpenRC service file."
+        return 1
+    fi
+
+    cat > "$temp_script" <<EOF
+#!/sbin/openrc-run
+name="${service_name}"
+description="xboard ${service_name} service"
+directory="${INSTALL_DIR}"
+command="${binary_path}"
+command_args="${command_args}"
+pidfile="/run/${service_name}.pid"
+command_background=true
+
+depend() {
+    need net
+}
+EOF
+
+    if ! run_privileged cp "$temp_script" "$init_script_path"; then
+        echo "Error: failed to install OpenRC service script ${init_script_path}."
+        rm -f "$temp_script"
+        return 1
+    fi
+
+    if ! run_privileged chmod +x "$init_script_path"; then
+        echo "Error: failed to set executable permission on ${init_script_path}."
+        rm -f "$temp_script"
+        return 1
+    fi
+
+    rm -f "$temp_script"
+
+    if ! run_privileged "$OPENRC_UPDATE_CMD" add "$service_name" default; then
+        echo "Error: failed to register OpenRC service ${service_name}."
+        return 1
+    fi
+
+    echo "${service_name} OpenRC service installed."
+    return 0
+}
+
 install_release_asset() {
     asset_name=$1
     target_path=$2
@@ -746,13 +875,27 @@ EOF
 run_uninstall_mode() {
     echo "=== Uninstalling Panel ==="
 
+    has_service_manager=0
+
     if is_systemd_available; then
+        has_service_manager=1
         run_privileged systemctl disable --now xboard >/dev/null 2>&1 || true
     else
         echo "Systemd is not available on this host. Skipping systemctl operations for xboard."
     fi
 
+    if is_openrc_available; then
+        has_service_manager=1
+        run_privileged "$OPENRC_SERVICE_CMD" xboard stop >/dev/null 2>&1 || true
+        run_privileged "$OPENRC_UPDATE_CMD" del xboard default >/dev/null 2>&1 || run_privileged "$OPENRC_UPDATE_CMD" del xboard >/dev/null 2>&1 || true
+    fi
+
+    if [ "$has_service_manager" = "0" ]; then
+        echo "No supported service manager detected. Removed files only."
+    fi
+
     run_privileged rm -f /etc/systemd/system/xboard.service || true
+    run_privileged rm -f /etc/init.d/xboard || true
 
     if is_systemd_available; then
         if ! run_privileged systemctl daemon-reload; then
@@ -839,12 +982,10 @@ fi
 
 if [ "$SKIP_SYSTEMD" = "1" ]; then
     echo "Skipping xboard.service installation (XBOARD_INSTALL_SKIP_SYSTEMD=1)."
-elif ! is_systemd_available; then
-    echo "Systemd is not available on this host. Skipping xboard.service installation."
-else
+elif is_systemd_available; then
     SERVICE_FILE=$(resolve_service_file "xboard.service")
     if [ -n "$SERVICE_FILE" ]; then
-        if ! run_privileged cp "$SERVICE_FILE" /etc/systemd/system/xboard.service; then
+        if ! render_install_service_file "$SERVICE_FILE" /etc/systemd/system/xboard.service; then
             echo "Error: failed to install xboard.service."
             exit 1
         fi
@@ -860,4 +1001,11 @@ else
     else
         echo "Warning: deploy/xboard.service not found."
     fi
+elif is_openrc_available; then
+    if ! install_openrc_service "xboard" "${INSTALL_DIR}/xboard" "serve --config ${INSTALL_DIR}/config.yml"; then
+        exit 1
+    fi
+else
+    echo "No supported service manager detected (systemd/openrc). Please manage panel process manually."
 fi
+
