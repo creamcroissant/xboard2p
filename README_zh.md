@@ -100,9 +100,9 @@ docker run --rm -it \
 
 镜像中只包含编译后的二进制；`/data` 用于持久化 SQLite 文件。
 
-### Systemd (Linux)
+### Linux 服务管理（systemd/OpenRC）
 
-使用提供的脚本安装为 systemd 服务：
+使用脚本进行安装/卸载：
 
 ```bash
 # 安装 panel（需要 root）
@@ -122,17 +122,28 @@ curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy
 curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh -o /tmp/agent.sh && \
   sudo INSTALL_DIR=/opt/xboard sh /tmp/agent.sh --bootstrap --ref v1.2.3 -- -k 'your-agent-communication-key' -g '10.0.0.2:9090'
 
-# 启动服务
-sudo systemctl start xboard
-
-# 查看状态
-sudo systemctl status xboard
-
 # 卸载 panel 脚本管理产物
 sudo ./deploy/panel.sh --uninstall
 
 # 卸载 agent 脚本管理产物
 sudo ./deploy/agent.sh --uninstall
+```
+
+服务管理行为：
+- 安装时优先使用 systemd；若 systemd 不可用且 OpenRC 可用，则自动回退到 OpenRC（`/etc/init.d/*` + `rc-update add`）。
+- `XBOARD_INSTALL_SKIP_SYSTEMD=1` 保持旧语义：跳过自动服务注册。
+- 当使用自定义 `INSTALL_DIR` 时，落地的 systemd unit 会将 `WorkingDirectory` 与 `ExecStart` 渲染为该目录（不再固定 `/opt/xboard`）。
+- `--uninstall` 会对 systemd 与 OpenRC 都执行 best-effort 清理（`systemctl` / `rc-service` + `rc-update`），且保持幂等。
+
+服务控制示例：
+```bash
+# systemd 主机
+sudo systemctl start xboard
+sudo systemctl status xboard
+
+# OpenRC 主机
+sudo rc-service xboard start
+sudo rc-service xboard status
 ```
 
 默认安装目录为 `/opt/xboard`。

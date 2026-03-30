@@ -98,9 +98,9 @@ docker run --rm -it \
   xboard serve
 ```
 
-### Systemd (Linux)
+### Linux Service Management (systemd/OpenRC)
 
-Use the provided scripts to install as a systemd service:
+Use the provided scripts for install/uninstall:
 
 ```bash
 # Install panel (requires root)
@@ -120,17 +120,28 @@ curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy
 curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh -o /tmp/agent.sh && \
   sudo INSTALL_DIR=/opt/xboard sh /tmp/agent.sh --bootstrap --ref v1.2.3 -- -k 'your-agent-communication-key' -g '10.0.0.2:9090'
 
-# Start service
-sudo systemctl start xboard
-
-# Check status
-sudo systemctl status xboard
-
 # Uninstall panel-managed artifacts
 sudo ./deploy/panel.sh --uninstall
 
 # Uninstall agent-managed artifacts
 sudo ./deploy/agent.sh --uninstall
+```
+
+Service manager behavior:
+- Installer prefers systemd; if systemd is unavailable and OpenRC is available, it falls back to OpenRC (`/etc/init.d/*` + `rc-update add`).
+- `XBOARD_INSTALL_SKIP_SYSTEMD=1` keeps legacy behavior: skip automatic service registration.
+- With custom `INSTALL_DIR`, generated systemd units render `WorkingDirectory` and `ExecStart` to that path (not hardcoded `/opt/xboard`).
+- `--uninstall` performs best-effort cleanup for both systemd and OpenRC (`systemctl` / `rc-service` + `rc-update`) and remains idempotent.
+
+Service control examples:
+```bash
+# systemd host
+sudo systemctl start xboard
+sudo systemctl status xboard
+
+# OpenRC host
+sudo rc-service xboard start
+sudo rc-service xboard status
 ```
 
 Default installation directory is `/opt/xboard`.
