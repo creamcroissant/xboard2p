@@ -705,8 +705,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          grep -Eq '[[:space:]]frontend-dist\.tar\.gz$' dist/release/SHA256SUMS.txt
-          grep -Eq '[[:space:]]install-ui\.tar\.gz$' dist/release/SHA256SUMS.txt
+          grep -Eq '[[:space:]](dist/release/)?frontend-dist\.tar\.gz$' dist/release/SHA256SUMS.txt
+          grep -Eq '[[:space:]](dist/release/)?install-ui\.tar\.gz$' dist/release/SHA256SUMS.txt
           grep -Eq '[[:space:]]deploy/agent\.sh$' dist/release/SHA256SUMS.txt
           grep -Eq '[[:space:]]deploy/agent\.service$' dist/release/SHA256SUMS.txt
 
