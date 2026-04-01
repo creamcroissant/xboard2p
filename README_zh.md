@@ -77,7 +77,7 @@ go run ./cmd/xboard serve
 ### 管理前端
 
 - Admin 前端已迁移至 Vite/React，构建产物已嵌入二进制文件中。
-- 浏览器访问 `/{secure_path}`（默认 `/admin`）即可进入登录页，支持"邮箱 / 用户名"登录。
+- 浏览器访问 `/{secure_path}/login`（默认 `/admin/login`）即可进入登录页，支持"邮箱 / 用户名"登录。
 - 可通过 `config.yml` 中的 `ui.admin.enabled: false` 关闭内置前端。
 
 ### 用户前端
@@ -106,27 +106,29 @@ docker run --rm -it \
 
 ```bash
 # 安装 panel（需要 root）
-sudo ./deploy/panel.sh
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/panel.sh)
 
 # 安装 agent（需要 root）
-sudo ./deploy/agent.sh -k 'your-agent-communication-key' -g '10.0.0.2:9090'
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh) \
+  -k 'your-agent-communication-key' -g '10.0.0.2:9090'
 
 # 安装 agent + sing-box core
-sudo ./deploy/agent.sh -k 'your-agent-communication-key' -g '10.0.0.2:9090' -c sing-box
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh) \
+  -k 'your-agent-communication-key' -g '10.0.0.2:9090' -c sing-box
 
 # 单命令 bootstrap 入口（bootstrap 逻辑已并入 agent.sh）
-curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh -o /tmp/agent.sh && \
-  sudo INSTALL_DIR=/opt/xboard sh /tmp/agent.sh --bootstrap --ref latest -- -k 'your-agent-communication-key' -g '10.0.0.2:9090'
+sudo INSTALL_DIR=/opt/xboard bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh) \
+  --bootstrap --ref latest -- -k 'your-agent-communication-key' -g '10.0.0.2:9090'
 
 # 指定 tag 的 bootstrap（脚本/service/二进制版本强绑定）
-curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh -o /tmp/agent.sh && \
-  sudo INSTALL_DIR=/opt/xboard sh /tmp/agent.sh --bootstrap --ref v1.2.3 -- -k 'your-agent-communication-key' -g '10.0.0.2:9090'
+sudo INSTALL_DIR=/opt/xboard bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh) \
+  --bootstrap --ref v1.2.3 -- -k 'your-agent-communication-key' -g '10.0.0.2:9090'
 
 # 卸载 panel 脚本管理产物
-sudo ./deploy/panel.sh --uninstall
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/panel.sh) --uninstall
 
 # 卸载 agent 脚本管理产物
-sudo ./deploy/agent.sh --uninstall
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh) --uninstall
 ```
 
 服务管理行为：

@@ -1,73 +1,58 @@
-# React + TypeScript + Vite
+# XBoard User Frontend (Vite + React)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+User/Admin SPA for XBoard. Built assets are embedded into the backend binary and can also be shipped via release tarballs.
 
-Currently, two official plugins are available:
+## Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- React 19 + TypeScript + Vite
+- Tailwind CSS + Radix UI primitives
+- React Router, TanStack Query, i18next
+- Playwright (E2E)
 
-## React Compiler
+## Local development
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+cd web/user-vite
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+- Dev server: `http://127.0.0.1:4173`
+- API proxy: `/api` -> `VITE_API_TARGET` (default `http://localhost:8080`)
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Build
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run build
 ```
+
+- Output directory: `web/user-vite/dist`
+- In backend build, assets are copied into `./web/user-vite/dist` and embedded into the Go binary.
+
+## Routes
+
+- User auth: `/login`, `/register`, `/forgot-password`
+- User app: `/dashboard`, `/servers`, `/plans`, `/traffic`, `/knowledge`, `/settings`
+- Admin auth: `/{secure_path}/login` (default `/admin/login`)
+- Admin app: `/{secure_path}/agents`, `/{secure_path}/users`, `/{secure_path}/plans`, `/{secure_path}/notices`, `/{secure_path}/knowledge`, `/{secure_path}/forwarding`, `/{secure_path}/access-logs`, `/{secure_path}/config-center`, `/{secure_path}/system`
+
+`secure_path` and `router_base` are read from runtime settings (`window.settings`).
+
+## Test
+
+```bash
+npm run lint
+npm run test
+```
+
+Run a single spec:
+
+```bash
+npm run test -- admin-config-center.spec.ts
+```
+
+## Deployment notes
+
+- `deploy/panel.sh` installs frontend release asset `frontend-dist.tar.gz` to `${INSTALL_DIR}/web/user-vite/dist`.
+- Install UI asset `install-ui.tar.gz` is installed to `${INSTALL_DIR}/web/install`.
+- Both assets are checksum-verified against release `SHA256SUMS.txt` before installation.

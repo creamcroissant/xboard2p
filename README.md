@@ -77,7 +77,7 @@ The `xboard` binary provides several subcommands:
 ### Admin Frontend
 
 - Admin Frontend uses Vite/React, built assets are embedded in the binary.
-- Access `/{secure_path}` (default `/admin`) in browser to open login page.
+- Access `/{secure_path}/login` (default `/admin/login`) in browser to open login page.
 - Can be disabled via config `ui.admin.enabled: false` for custom CDN deployment.
 
 ### User Frontend
@@ -104,27 +104,29 @@ Use the provided scripts for install/uninstall:
 
 ```bash
 # Install panel (requires root)
-sudo ./deploy/panel.sh
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/panel.sh)
 
 # Install agent (requires root)
-sudo ./deploy/agent.sh -k 'your-agent-communication-key' -g '10.0.0.2:9090'
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh) \
+  -k 'your-agent-communication-key' -g '10.0.0.2:9090'
 
 # Install agent + sing-box core
-sudo ./deploy/agent.sh -k 'your-agent-communication-key' -g '10.0.0.2:9090' -c sing-box
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh) \
+  -k 'your-agent-communication-key' -g '10.0.0.2:9090' -c sing-box
 
 # One-liner bootstrap entry (bootstrap logic is merged into agent.sh)
-curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh -o /tmp/agent.sh && \
-  sudo INSTALL_DIR=/opt/xboard sh /tmp/agent.sh --bootstrap --ref latest -- -k 'your-agent-communication-key' -g '10.0.0.2:9090'
+sudo INSTALL_DIR=/opt/xboard bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh) \
+  --bootstrap --ref latest -- -k 'your-agent-communication-key' -g '10.0.0.2:9090'
 
 # Bootstrap with explicit tag (script/service/binary version bound to same tag)
-curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh -o /tmp/agent.sh && \
-  sudo INSTALL_DIR=/opt/xboard sh /tmp/agent.sh --bootstrap --ref v1.2.3 -- -k 'your-agent-communication-key' -g '10.0.0.2:9090'
+sudo INSTALL_DIR=/opt/xboard bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh) \
+  --bootstrap --ref v1.2.3 -- -k 'your-agent-communication-key' -g '10.0.0.2:9090'
 
 # Uninstall panel-managed artifacts
-sudo ./deploy/panel.sh --uninstall
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/panel.sh) --uninstall
 
 # Uninstall agent-managed artifacts
-sudo ./deploy/agent.sh --uninstall
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh) --uninstall
 ```
 
 Service manager behavior:
