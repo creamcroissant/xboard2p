@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Plus, RefreshCw, Server } from "lucide-react";
 import { QUERY_KEYS } from "@/lib/constants";
 import { getAgentHosts, refreshAgentHosts, updateAgentHost } from "@/api/admin";
-import { fetchSettings, revealKey } from "@/api/admin/settings";
+import { fetchSettings, revealKey, resolveAgentGrpcAddress } from "@/api/admin/settings";
 import { AgentStatusCard } from "@/components/admin";
 import { EmptyState, Loading } from "@/components/ui";
 import { Button } from "@/components/ui/button";
@@ -61,7 +61,7 @@ export default function AgentList() {
   const deployMutation = useMutation({
     mutationFn: async () => {
       const [nodeSettings, keyInfo] = await Promise.all([fetchSettings("node"), revealKey()]);
-      const grpcAddress = (nodeSettings.agent_grpc_address || "").trim();
+      const grpcAddress = resolveAgentGrpcAddress(nodeSettings);
       const communicationKey = (keyInfo.key || "").trim();
       return {
         grpcAddress,

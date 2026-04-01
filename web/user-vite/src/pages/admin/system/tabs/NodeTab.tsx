@@ -7,6 +7,7 @@ import {
   getKey,
   resetKey,
   revealKey,
+  resolveAgentGrpcAddress,
   saveSettings,
 } from "@/api/admin/settings";
 import { QUERY_KEYS } from "@/lib/constants";
@@ -42,6 +43,7 @@ const TEMPLATE_INTERVAL_KEY = {
 interface NodeForm {
   communicationKey: string;
   masked: boolean;
+  agentGrpcAddress: string;
   pullInterval: string;
   pushInterval: string;
   deviceLimitMode: string;
@@ -50,6 +52,7 @@ interface NodeForm {
 const defaultForm: NodeForm = {
   communicationKey: "",
   masked: true,
+  agentGrpcAddress: "",
   pullInterval: "60",
   pushInterval: "60",
   deviceLimitMode: "0",
@@ -79,6 +82,7 @@ export default function NodeTab() {
     if (!data) return;
     setForm((prev) => ({
       ...prev,
+      agentGrpcAddress: resolveAgentGrpcAddress(data),
       pullInterval: data[TEMPLATE_INTERVAL_KEY.pull] ?? "60",
       pushInterval: data[TEMPLATE_INTERVAL_KEY.push] ?? "60",
       deviceLimitMode: data.device_limit_mode ?? "0",
@@ -97,6 +101,7 @@ export default function NodeTab() {
   const saveMutation = useMutation({
     mutationFn: (payload: NodeForm) =>
       saveSettings(CATEGORY, {
+        agent_grpc_address: payload.agentGrpcAddress.trim(),
         [TEMPLATE_INTERVAL_KEY.pull]: payload.pullInterval.trim(),
         [TEMPLATE_INTERVAL_KEY.push]: payload.pushInterval.trim(),
         device_limit_mode: payload.deviceLimitMode.trim(),
@@ -204,6 +209,16 @@ export default function NodeTab() {
               </div>
             </div>
             <p className="text-xs text-muted-foreground">{t("admin.system.settings.tooltips.communicationKey")}</p>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">{t("admin.system.settings.fields.agentGrpcAddress")}</label>
+            <Input
+              value={form.agentGrpcAddress}
+              onChange={(e) => setForm((prev) => ({ ...prev, agentGrpcAddress: e.target.value }))}
+              placeholder={t("admin.system.settings.placeholders.agentGrpcAddress")}
+            />
+            <p className="text-xs text-muted-foreground">{t("admin.system.settings.tooltips.agentGrpcAddress")}</p>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">

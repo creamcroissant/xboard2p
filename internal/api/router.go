@@ -284,7 +284,6 @@ func NewRouter(logger *slog.Logger, services Services, metricsCfg config.Metrics
 		}
 	}
 
-	registerInstallRoutes(r, logger, services.Install, options)
 	registerAPIRoutes(r, services)
 
 	// Short link redirect route (public, no auth required)
@@ -321,6 +320,8 @@ func NewRouter(logger *slog.Logger, services Services, metricsCfg config.Metrics
 		registerSPARoutes(r, userHandler, adminHandler)
 	}
 
+	registerInstallRoutes(r, logger, services.Install, options, userHandler)
+
 	r.NotFound(func(w http.ResponseWriter, req *http.Request) {
 		logger.Warn("unmapped route hit", "method", req.Method, "path", req.URL.Path)
 		http.NotFound(w, req)
@@ -329,12 +330,15 @@ func NewRouter(logger *slog.Logger, services Services, metricsCfg config.Metrics
 	return r
 }
 
-func registerInstallRoutes(root chi.Router, logger *slog.Logger, install service.InstallService, options routerOptions) {
+func registerInstallRoutes(root chi.Router, logger *slog.Logger, install service.InstallService, options routerOptions, userHandler *userSPAHandler) {
 	installHandler := handler.NewInstallHandler(install)
 	root.Route("/api/install", func(api chi.Router) {
 		api.Get("/status", installHandler.Status)
 		api.Post("/", installHandler.Create)
 	})
+	if userHandler != nil {
+		return
+	}
 	if !options.installUI.Enabled {
 		return
 	}
@@ -348,6 +352,7 @@ func registerInstallRoutes(root chi.Router, logger *slog.Logger, install service
 	root.Get("/install", page.serveIndex)
 	root.Handle("/install/*", http.HandlerFunc(page.serveAssets))
 }
+
 
 func registerAPIRoutes(root chi.Router, services Services) {
 	root.Route("/api", func(api chi.Router) {

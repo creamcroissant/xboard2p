@@ -2,6 +2,13 @@ import { adminApi } from "./client";
 
 export type SettingsMap = Record<string, string>;
 
+const AGENT_GRPC_ADDRESS_KEYS = [
+  "agent_grpc_address",
+  "grpc_address",
+  "agent_address",
+  "agentGrpcAddress",
+] as const;
+
 export interface SettingsResponse {
   data: SettingsMap;
 }
@@ -36,6 +43,24 @@ export interface SMTPTestResponse {
 export interface KeyResponse {
   key: string;
   masked: boolean;
+}
+
+export function resolveAgentGrpcAddress(settings: SettingsMap | null | undefined): string {
+  if (!settings) {
+    return "";
+  }
+
+  for (const key of AGENT_GRPC_ADDRESS_KEYS) {
+    const value = settings[key];
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
+    }
+  }
+
+  return "";
 }
 
 /**
