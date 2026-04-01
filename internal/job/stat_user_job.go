@@ -93,12 +93,15 @@ func (j *StatUserJob) Run(ctx context.Context) error {
 		recordAt = dayStart(nowTime)
 	}
 
+	records := make([]repository.StatUserRecord, 0, len(pending))
+	skipped := 0
 	for key, delta := range pending {
 		if delta.Upload == 0 && delta.Download == 0 {
+			skipped++
 			delete(pending, key)
 			continue
 		}
-		record := repository.StatUserRecord{
+		records = append(records, repository.StatUserRecord{
 			UserID:      key.UserID,
 			AgentHostID: key.AgentHostID,
 			ServerRate:  1,
@@ -108,16 +111,32 @@ func (j *StatUserJob) Run(ctx context.Context) error {
 			Download:    delta.Download,
 			CreatedAt:   nowUnix,
 			UpdatedAt:   nowUnix,
-		}
-		if err := j.Repo.Upsert(ctx, record); err != nil {
-			j.Accumulator.Merge(pending)
-			return fmt.Errorf("stat user job: upsert: %w", err)
-		}
+		})
 		delete(pending, key)
 	}
+
+	if len(records) == 0 {
+		if j.Logger != nil {
+			j.Logger.Debug("flushed stat users",
+				"count", pendingCount,
+				"accepted", 0,
+				"skipped", skipped,
+				"record_type", j.recordType,
+			)
+		}
+		return nil
+	}
+
+	if err := j.Repo.UpsertBatch(ctx, records); err != nil {
+		j.Accumulator.Merge(pending)
+		return fmt.Errorf("stat user job: upsert batch: %w", err)
+	}
+
 	if j.Logger != nil {
 		j.Logger.Debug("flushed stat users",
 			"count", pendingCount,
+			"accepted", len(records),
+			"skipped", skipped,
 			"record_type", j.recordType,
 		)
 	}

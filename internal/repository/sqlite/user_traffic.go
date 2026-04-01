@@ -179,6 +179,169 @@ func (r *userTrafficRepo) MarkPeriodExceeded(ctx context.Context, userID int64, 
 	return err
 }
 
+// ApplyTrafficBatchAtomic applies batch traffic updates in one transaction and returns accepted items plus exceeded user IDs.
+func (r *userTrafficRepo) ApplyTrafficBatchAtomic(ctx context.Context, traffic []repository.UserTrafficDelta, nowUnix int64) ([]repository.UserTrafficDelta, []int64, error) {
+	if len(traffic) == 0 {
+		return nil, nil, nil
+	}
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer tx.Rollback()
+
+	accepted := make([]repository.UserTrafficDelta, 0, len(traffic))
+	exceededSet := make(map[int64]struct{})
+
+	for _, sample := range traffic {
+		if sample.UserID <= 0 || (sample.Upload == 0 && sample.Download == 0) {
+			continue
+		}
+
+		period, err := r.getCurrentPeriodTx(ctx, tx, sample.UserID, nowUnix)
+		if err != nil {
+			return nil, nil, err
+		}
+		if period == nil {
+			period, err = r.createPeriodFromUserTx(ctx, tx, sample.UserID, nowUnix)
+			if err != nil {
+				return nil, nil, err
+			}
+			if period == nil {
+				continue
+			}
+		}
+
+		if err := r.incrementPeriodTrafficTx(ctx, tx, sample.UserID, sample.Upload, sample.Download, nowUnix); err != nil {
+			return nil, nil, err
+		}
+		if err := r.incrementLegacyTrafficTx(ctx, tx, sample.UserID, sample.Upload, sample.Download); err != nil {
+			return nil, nil, err
+		}
+
+		if !period.Exceeded && period.QuotaBytes > 0 && period.UploadBytes+period.DownloadBytes+sample.Upload+sample.Download >= period.QuotaBytes {
+			if err := r.markPeriodExceededTx(ctx, tx, sample.UserID, period.PeriodStart, nowUnix); err != nil {
+				return nil, nil, err
+			}
+			if err := r.setUserTrafficExceededTx(ctx, tx, sample.UserID, true); err != nil {
+				return nil, nil, err
+			}
+			exceededSet[sample.UserID] = struct{}{}
+		}
+
+		accepted = append(accepted, sample)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, nil, err
+	}
+
+	exceededUserIDs := make([]int64, 0, len(exceededSet))
+	for userID := range exceededSet {
+		exceededUserIDs = append(exceededUserIDs, userID)
+	}
+	return accepted, exceededUserIDs, nil
+}
+
+func (r *userTrafficRepo) getCurrentPeriodTx(ctx context.Context, tx *sql.Tx, userID int64, nowUnix int64) (*repository.UserTrafficPeriod, error) {
+	row := tx.QueryRowContext(ctx, `
+		SELECT id, user_id, period_start, period_end, upload_bytes, download_bytes, quota_bytes, exceeded, created_at, updated_at
+		FROM user_traffic_periods
+		WHERE user_id = ? AND period_start <= ? AND period_end > ?
+		ORDER BY period_start DESC
+		LIMIT 1
+	`, userID, nowUnix, nowUnix)
+
+	var p repository.UserTrafficPeriod
+	var exceeded int
+	if err := row.Scan(&p.ID, &p.UserID, &p.PeriodStart, &p.PeriodEnd, &p.UploadBytes, &p.DownloadBytes, &p.QuotaBytes, &exceeded, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	p.Exceeded = exceeded == 1
+	return &p, nil
+}
+
+func (r *userTrafficRepo) createPeriodFromUserTx(ctx context.Context, tx *sql.Tx, userID int64, nowUnix int64) (*repository.UserTrafficPeriod, error) {
+	row := tx.QueryRowContext(ctx, `
+		SELECT transfer_enable, created_at
+		FROM users
+		WHERE id = ?
+	`, userID)
+	var quota int64
+	var createdAt int64
+	if err := row.Scan(&quota, &createdAt); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	now := time.Unix(nowUnix, 0).UTC()
+	start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	end := start.AddDate(0, 1, 0)
+	createdNow := time.Now().Unix()
+	res, err := tx.ExecContext(ctx, `
+		INSERT OR IGNORE INTO user_traffic_periods (user_id, period_start, period_end, upload_bytes, download_bytes, quota_bytes, exceeded, created_at, updated_at)
+		VALUES (?, ?, ?, 0, 0, ?, 0, ?, ?)
+	`, userID, start.Unix(), end.Unix(), quota, createdNow, createdNow)
+	if err != nil {
+		return nil, err
+	}
+	if affected, _ := res.RowsAffected(); affected == 0 {
+		return r.getCurrentPeriodTx(ctx, tx, userID, nowUnix)
+	}
+
+	return &repository.UserTrafficPeriod{
+		UserID:        userID,
+		PeriodStart:   start.Unix(),
+		PeriodEnd:     end.Unix(),
+		UploadBytes:   0,
+		DownloadBytes: 0,
+		QuotaBytes:    quota,
+		Exceeded:      false,
+		CreatedAt:     createdNow,
+		UpdatedAt:     createdNow,
+	}, nil
+}
+
+func (r *userTrafficRepo) incrementPeriodTrafficTx(ctx context.Context, tx *sql.Tx, userID int64, uploadDelta, downloadDelta, nowUnix int64) error {
+	_, err := tx.ExecContext(ctx, `
+		UPDATE user_traffic_periods
+		SET upload_bytes = upload_bytes + ?,
+		    download_bytes = download_bytes + ?,
+		    updated_at = ?
+		WHERE user_id = ? AND period_start <= ? AND period_end > ?
+	`, uploadDelta, downloadDelta, nowUnix, userID, nowUnix, nowUnix)
+	return err
+}
+
+func (r *userTrafficRepo) markPeriodExceededTx(ctx context.Context, tx *sql.Tx, userID int64, periodStart int64, nowUnix int64) error {
+	_, err := tx.ExecContext(ctx, `
+		UPDATE user_traffic_periods
+		SET exceeded = 1, updated_at = ?
+		WHERE user_id = ? AND period_start = ?
+	`, nowUnix, userID, periodStart)
+	return err
+}
+
+func (r *userTrafficRepo) setUserTrafficExceededTx(ctx context.Context, tx *sql.Tx, userID int64, exceeded bool) error {
+	val := 0
+	if exceeded {
+		val = 1
+	}
+	_, err := tx.ExecContext(ctx, `UPDATE users SET traffic_exceeded = ? WHERE id = ?`, val, userID)
+	return err
+}
+
+func (r *userTrafficRepo) incrementLegacyTrafficTx(ctx context.Context, tx *sql.Tx, userID int64, uploadDelta, downloadDelta int64) error {
+	_, err := tx.ExecContext(ctx, `UPDATE users SET u = u + ?, d = d + ? WHERE id = ?`, uploadDelta, downloadDelta, userID)
+	return err
+}
+
 // GetExpiredPeriodUserIDs returns user IDs whose current period has ended.
 func (r *userTrafficRepo) GetExpiredPeriodUserIDs(ctx context.Context, nowUnix int64) ([]int64, error) {
 	rows, err := r.db.QueryContext(ctx, `

@@ -20,10 +20,6 @@ type XrayCollector struct {
 	conn    *grpc.ClientConn
 	client  statscommand.StatsServiceClient
 	mu      sync.Mutex
-
-	// 缓存上次采集值，用于计算增量
-	prevUpload   map[string]int64
-	prevDownload map[string]int64
 }
 
 // NewXrayCollector 创建 Xray 流量采集器。
@@ -32,9 +28,7 @@ func NewXrayCollector(address string) (*XrayCollector, error) {
 		address = "127.0.0.1:10085"
 	}
 	return &XrayCollector{
-		address:      address,
-		prevUpload:   make(map[string]int64),
-		prevDownload: make(map[string]int64),
+		address: address,
 	}, nil
 }
 
@@ -126,23 +120,15 @@ func (c *XrayCollector) Collect(ctx context.Context) ([]api.TrafficPayload, erro
 
 		switch direction {
 		case "uplink":
-			// 计算增量
-			prev := c.prevUpload[email]
-			delta := value - prev
-			if delta < 0 {
-				delta = value // 计数器已重置
+			if value < 0 {
+				value = 0
 			}
-			userTraffic[email].Upload = delta
-			c.prevUpload[email] = value
-
+			userTraffic[email].Upload = value
 		case "downlink":
-			prev := c.prevDownload[email]
-			delta := value - prev
-			if delta < 0 {
-				delta = value // 计数器已重置
+			if value < 0 {
+				value = 0
 			}
-			userTraffic[email].Download = delta
-			c.prevDownload[email] = value
+			userTraffic[email].Download = value
 		}
 	}
 

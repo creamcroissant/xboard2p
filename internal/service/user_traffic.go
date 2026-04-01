@@ -17,11 +17,7 @@ type TrafficStatCollectorWithHost interface {
 }
 
 // UserTrafficDelta represents a single user's traffic delta for batch processing.
-type UserTrafficDelta struct {
-	UserID   int64
-	Upload   int64
-	Download int64
-}
+type UserTrafficDelta = repository.UserTrafficDelta
 
 // TrafficProcessResult contains the result of batch traffic processing.
 type TrafficProcessResult struct {
@@ -174,29 +170,26 @@ func (s *userTrafficService) sendExceededNotification(ctx context.Context, userI
 
 // ProcessTrafficBatch processes multiple user traffic deltas in batch.
 func (s *userTrafficService) ProcessTrafficBatch(ctx context.Context, agentHostID int64, traffic []UserTrafficDelta) (*TrafficProcessResult, error) {
-	result := &TrafficProcessResult{}
-	exceededMap := make(map[int64]bool)
+	nowUnix := time.Now().Unix()
+	accepted, exceededUserIDs, err := s.trafficRepo.ApplyTrafficBatchAtomic(ctx, traffic, nowUnix)
+	if err != nil {
+		return nil, err
+	}
 
-	for _, t := range traffic {
-		if t.UserID <= 0 || (t.Upload == 0 && t.Download == 0) {
-			continue
-		}
-
-		err := s.ProcessTraffic(ctx, agentHostID, t.UserID, t.Upload, t.Download)
-		if err != nil {
-			// Log error but continue processing other users
-			continue
-		}
-		result.AcceptedCount++
-
-		// Check if user exceeded quota
-		if stats, _ := s.GetTrafficStats(ctx, t.UserID); stats != nil && stats.Exceeded {
-			exceededMap[t.UserID] = true
+	result := &TrafficProcessResult{
+		AcceptedCount: int32(len(accepted)),
+	}
+	if len(exceededUserIDs) > 0 {
+		result.ExceededUserIDs = append(result.ExceededUserIDs, exceededUserIDs...)
+		for _, userID := range exceededUserIDs {
+			s.sendExceededNotification(ctx, userID)
 		}
 	}
 
-	for userID := range exceededMap {
-		result.ExceededUserIDs = append(result.ExceededUserIDs, userID)
+	if s.statCollector != nil {
+		for _, item := range accepted {
+			s.statCollector.CollectWithHost(agentHostID, item.UserID, item.Upload, item.Download)
+		}
 	}
 
 	return result, nil

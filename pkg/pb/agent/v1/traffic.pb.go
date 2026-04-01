@@ -26,6 +26,7 @@ type TrafficReport struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Timestamp     int64                  `protobuf:"varint,1,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	UserTraffic   []*UserTraffic         `protobuf:"bytes,2,rep,name=user_traffic,json=userTraffic,proto3" json:"user_traffic,omitempty"`
+	ReportId      string                 `protobuf:"bytes,3,opt,name=report_id,json=reportId,proto3" json:"report_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -72,6 +73,13 @@ func (x *TrafficReport) GetUserTraffic() []*UserTraffic {
 		return x.UserTraffic
 	}
 	return nil
+}
+
+func (x *TrafficReport) GetReportId() string {
+	if x != nil {
+		return x.ReportId
+	}
+	return ""
 }
 
 // UserTraffic contains traffic for a single user
@@ -298,10 +306,11 @@ var File_agent_v1_traffic_proto protoreflect.FileDescriptor
 
 const file_agent_v1_traffic_proto_rawDesc = "" +
 	"\n" +
-	"\x16agent/v1/traffic.proto\x12\bagent.v1\"g\n" +
+	"\x16agent/v1/traffic.proto\x12\bagent.v1\"\x84\x01\n" +
 	"\rTrafficReport\x12\x1c\n" +
 	"\ttimestamp\x18\x01 \x01(\x03R\ttimestamp\x128\n" +
-	"\fuser_traffic\x18\x02 \x03(\v2\x15.agent.v1.UserTrafficR\vuserTraffic\"p\n" +
+	"\fuser_traffic\x18\x02 \x03(\v2\x15.agent.v1.UserTrafficR\vuserTraffic\x12\x1b\n" +
+	"\treport_id\x18\x03 \x01(\tR\breportId\"p\n" +
 	"\vUserTraffic\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\x03R\x06userId\x12!\n" +
 	"\fupload_bytes\x18\x02 \x01(\x03R\vuploadBytes\x12%\n" +

@@ -3,10 +3,14 @@ package service
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"log/slog"
+	"path/filepath"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/creamcroissant/xboard/internal/agent/access"
 	"github.com/creamcroissant/xboard/internal/agent/api"
@@ -54,6 +58,8 @@ type Agent struct {
 
 	configETag     string
 	usersETag      string
+	userEmailMu    sync.RWMutex
+	userIDByEmail  map[string]int64
 	cachedCaps     *capability.DetectedCapabilities // Cached capabilities
 	capsDetectedAt int64                            // Last capability detection time
 
@@ -129,7 +135,6 @@ func New(cfg *config.Config) (*Agent, error) {
 	coreMgr.Register(core.NewSingBoxCore(initSysSingBox, capDet, cfg.Protocol.ServiceName, cfg.Protocol.ConfigDir))
 	coreMgr.Register(core.NewXrayCore(initSysXray, capDet, cfg.Protocol.ServiceName, cfg.Traffic.Address, cfg.Protocol.ConfigDir))
 
-
 	var switcher *proxy.Switcher
 	if cfg.Proxy.Enabled {
 		switcherOpts := proxy.SwitcherOptions{
@@ -182,6 +187,7 @@ func New(cfg *config.Config) (*Agent, error) {
 		subParse: subscribe.NewParser(cfg.Protocol.SubscribeDir),
 		capDet:   capDet,
 
+		userIDByEmail:  make(map[string]int64),
 		updateTickerCh: make(chan struct{}, 1),
 	}
 	agent.currentSyncInterval.Store(int32(cfg.Interval.Sync))
@@ -412,6 +418,7 @@ func (a *Agent) syncGRPC(ctx context.Context) {
 
 	if !usersResp.NotModified {
 		a.usersETag = usersResp.Etag
+		a.refreshUserEmailMapping(usersResp.Users)
 		slog.Info("Users updated via gRPC", "count", len(usersResp.Users))
 
 		// Convert users to protocol.UserConfig and inject into config
@@ -753,20 +760,84 @@ func (a *Agent) reportUserTraffic(ctx context.Context) {
 	}
 
 	// Convert to protobuf format
-	userTraffic := make([]*agentv1.UserTraffic, len(samples))
-	for i, s := range samples {
-		userTraffic[i] = &agentv1.UserTraffic{
-			UserId:        s.UserID,
+	userTraffic := make([]*agentv1.UserTraffic, 0, len(samples))
+	unmapped := 0
+	for _, s := range samples {
+		userID := s.UserID
+		if userID <= 0 {
+			if mappedID, ok := a.resolveUserIDByUID(s.UID); ok {
+				userID = mappedID
+			}
+		}
+		if userID <= 0 {
+			unmapped++
+			continue
+		}
+		if s.Upload == 0 && s.Download == 0 {
+			continue
+		}
+
+		userTraffic = append(userTraffic, &agentv1.UserTraffic{
+			UserId:        userID,
 			UploadBytes:   s.Upload,
 			DownloadBytes: s.Download,
-		}
+		})
 	}
 
-	if _, err := a.grpc.ReportTraffic(ctx, userTraffic); err != nil {
-		slog.Error("Failed to push traffic via gRPC", "error", err)
-	} else {
-		slog.Debug("Pushed traffic samples via gRPC", "count", len(samples))
+	if len(userTraffic) == 0 {
+		if unmapped > 0 {
+			slog.Warn("Skip traffic samples due to unresolved user mapping", "unmapped", unmapped, "samples", len(samples))
+		}
+		return
 	}
+
+	reportID := strings.ToLower(strings.ReplaceAll(uuid.NewString(), "-", ""))
+	if _, err := a.grpc.ReportTraffic(ctx, userTraffic, reportID); err != nil {
+		slog.Error("Failed to push traffic via gRPC", "error", err, "report_id", reportID)
+	} else {
+		slog.Debug("Pushed traffic samples via gRPC", "count", len(userTraffic), "source_samples", len(samples), "unmapped", unmapped, "report_id", reportID)
+	}
+}
+
+func normalizeUserEmail(email string) string {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return ""
+	}
+	return strings.ToLower(email)
+}
+
+func (a *Agent) refreshUserEmailMapping(users []*agentv1.UserInfo) {
+	mapped := make(map[string]int64, len(users))
+	for _, u := range users {
+		if u == nil || u.UserId <= 0 {
+			continue
+		}
+		email := normalizeUserEmail(u.Email)
+		if email == "" {
+			continue
+		}
+		mapped[email] = u.UserId
+	}
+
+	a.userEmailMu.Lock()
+	a.userIDByEmail = mapped
+	a.userEmailMu.Unlock()
+}
+
+func (a *Agent) resolveUserIDByUID(uid string) (int64, bool) {
+	email := normalizeUserEmail(uid)
+	if email == "" {
+		return 0, false
+	}
+
+	a.userEmailMu.RLock()
+	userID, ok := a.userIDByEmail[email]
+	a.userEmailMu.RUnlock()
+	if !ok || userID <= 0 {
+		return 0, false
+	}
+	return userID, true
 }
 
 func buildCoreInstanceReport(instances []*core.CoreInstance) []*agentv1.CoreInstance {

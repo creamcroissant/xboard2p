@@ -589,6 +589,24 @@
         "apply": "发布到 Agent",
         "history": "历史"
       },
+      "generator": {
+        "actions": {
+          "generateUUID": "生成 UUID",
+          "generateRealityKey": "生成 Reality Key",
+          "generateShortId": "生成 Short ID"
+        },
+        "confirm": {
+          "uuid": "检测到已存在 UUID，是否覆盖？",
+          "realityKey": "检测到已存在 Reality Key，是否覆盖？",
+          "shortId": "检测到已存在 Short ID，是否覆盖？"
+        },
+        "messages": {
+          "uuidGenerated": "UUID 已生成",
+          "realityKeyGenerated": "Reality Key 已生成",
+          "shortIdGenerated": "Short ID 已生成",
+          "webCryptoUnsupported": "当前浏览器不支持 Reality Key 生成"
+        }
+      },
       "tabs": {
         "specs": "Spec 管理",
         "apply": "发布诊断",

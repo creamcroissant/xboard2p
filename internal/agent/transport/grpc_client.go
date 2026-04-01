@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"log/slog"
 	"os"
 	"sync"
 	"time"
@@ -246,10 +247,29 @@ func (c *GRPCClient) call(ctx context.Context, cfg CallConfig, fn func(context.C
 		retryCfg.Enabled = false
 	}
 
+	attempt := 0
 	err := DoWithRetry(callCtx, retryCfg, func(attemptCtx context.Context) error {
+		attempt++
 		attemptCtx = c.withAuth(attemptCtx)
-		return fn(attemptCtx)
+		err := fn(attemptCtx)
+		if err == nil {
+			return nil
+		}
+		if !retryCfg.Enabled {
+			return err
+		}
+		if IsRetryable(err) && attempt <= retryCfg.MaxRetries {
+			slog.Debug("grpc call retry",
+				"attempt", attempt,
+				"max_retries", retryCfg.MaxRetries,
+				"error", err,
+			)
+		}
+		return err
 	})
+	if attempt > 1 {
+		slog.Debug("grpc call finished with retries", "retry_count", attempt-1)
+	}
 	if err != nil {
 		if c.connManager != nil {
 			c.connManager.RecordError(err)
@@ -298,11 +318,16 @@ func (c *GRPCClient) GetUsers(ctx context.Context, nodeID int32, etag string, si
 }
 
 // ReportTraffic reports user-level traffic data
-func (c *GRPCClient) ReportTraffic(ctx context.Context, traffic []*agentv1.UserTraffic) (*agentv1.TrafficResponse, error) {
-	return callUnary(ctx, c, CallConfig{}, func(ctx context.Context) (*agentv1.TrafficResponse, error) {
+func (c *GRPCClient) ReportTraffic(ctx context.Context, traffic []*agentv1.UserTraffic, reportID string) (*agentv1.TrafficResponse, error) {
+	cfg := CallConfig{
+		Timeout: c.config.Timeout.Default,
+		Retry:   c.config.Retry,
+	}
+	return callUnary(ctx, c, cfg, func(ctx context.Context) (*agentv1.TrafficResponse, error) {
 		return c.client.ReportTraffic(ctx, &agentv1.TrafficReport{
 			Timestamp:   time.Now().Unix(),
 			UserTraffic: traffic,
+			ReportId:    reportID,
 		})
 	})
 }

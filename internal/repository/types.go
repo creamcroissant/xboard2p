@@ -356,6 +356,13 @@ type UserTrafficPeriod struct {
 	UpdatedAt     int64
 }
 
+// UserTrafficDelta represents a single traffic delta sample for batch processing.
+type UserTrafficDelta struct {
+	UserID   int64
+	Upload   int64
+	Download int64
+}
+
 // UserTrafficStats provides a summary of user's traffic usage.
 type UserTrafficStats struct {
 	PeriodStart   int64

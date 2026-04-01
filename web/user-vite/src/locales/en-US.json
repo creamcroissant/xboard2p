@@ -269,6 +269,8 @@
       "version": "Version",
       "installed": "Installed",
       "uninstalled": "Not Installed",
+      "install": "Install Core",
+      "installError": "Failed to install core",
       "empty": "No core data",
       "emptyDescription": "No core information reported from this agent.",
       "instancesTitle": "Core Instances",
@@ -292,6 +294,25 @@
       "fieldsRequired": "Core type and instance ID are required",
       "switchFieldsRequired": "Source instance and target core are required",
       "loadError": "Failed to load core data",
+      "operationsTitle": "Operation Progress",
+      "operationsSummaryTitle": "Recent Operations",
+      "operationsEmpty": "No operations",
+      "operationsEmptyDescription": "Submitted create / switch / install tasks will appear here.",
+      "operationsPolling": "Active operations detected. The panel is refreshing automatically.",
+      "operationsIdle": "No active operations right now.",
+      "operationsType": "Operation Type",
+      "operationsTypePlaceholder": "Select operation type",
+      "operationsTarget": "Target",
+      "operationsFinishedAt": "Finished At",
+      "operationSubmitted": "Operation submitted",
+      "operationCompleted": "Operation completed",
+      "operationFailed": "Operation failed",
+      "operationType": {
+        "create": "Create Instance",
+        "switch": "Switch Core",
+        "install": "Install Core",
+        "ensure": "Ensure Core"
+      },
       "logsTitle": "Switch Logs",
       "logsStart": "Start Date",
       "logsEnd": "End Date",
@@ -324,9 +345,11 @@
       },
       "status": {
         "pending": "Pending",
+        "claimed": "Claimed",
         "in_progress": "In Progress",
         "completed": "Completed",
-        "failed": "Failed"
+        "failed": "Failed",
+        "rolled_back": "Rolled Back"
       }
     },
     "plans": {
@@ -540,6 +563,24 @@
         "createSpec": "Create Spec",
         "apply": "Apply to Agent",
         "history": "History"
+      },
+      "generator": {
+        "actions": {
+          "generateUUID": "Generate UUID",
+          "generateRealityKey": "Generate Reality Key",
+          "generateShortId": "Generate Short ID"
+        },
+        "confirm": {
+          "uuid": "Existing UUID detected. Overwrite?",
+          "realityKey": "Existing Reality keys detected. Overwrite?",
+          "shortId": "Existing Short ID detected. Overwrite?"
+        },
+        "messages": {
+          "uuidGenerated": "UUID generated",
+          "realityKeyGenerated": "Reality keys generated",
+          "shortIdGenerated": "Short ID generated",
+          "webCryptoUnsupported": "Reality key generation is not supported in this browser"
+        }
       },
       "tabs": {
         "specs": "Specs",

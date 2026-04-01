@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/creamcroissant/xboard/internal/grpc/interceptor"
@@ -28,6 +29,7 @@ type AgentHandler struct {
 	telemetryService   service.ServerTelemetryService
 	serverNodeService  service.ServerNodeService
 	userTrafficService service.UserTrafficService
+	trafficDedupRepo   repository.TrafficReportDedupRepository
 	forwardingService  service.ForwardingService
 	accessLogService   service.AccessLogService
 	settingsService    service.AdminSystemSettingsService
@@ -36,6 +38,7 @@ type AgentHandler struct {
 	coreOperations     service.CoreOperationService
 	coreSnapshots      service.CoreSnapshotService
 	logger             *slog.Logger
+	timeNow            func() time.Time
 }
 
 // NewAgentHandler 创建 Agent gRPC 处理器。
@@ -45,6 +48,7 @@ func NewAgentHandler(
 	telemetryService service.ServerTelemetryService,
 	serverNodeService service.ServerNodeService,
 	userTrafficService service.UserTrafficService,
+	trafficDedupRepo repository.TrafficReportDedupRepository,
 	forwardingService service.ForwardingService,
 	accessLogService service.AccessLogService,
 	settingsService service.AdminSystemSettingsService,
@@ -58,6 +62,7 @@ func NewAgentHandler(
 		telemetryService,
 		serverNodeService,
 		userTrafficService,
+		trafficDedupRepo,
 		forwardingService,
 		accessLogService,
 		settingsService,
@@ -76,6 +81,7 @@ func NewAgentHandlerWithCoreServices(
 	telemetryService service.ServerTelemetryService,
 	serverNodeService service.ServerNodeService,
 	userTrafficService service.UserTrafficService,
+	trafficDedupRepo repository.TrafficReportDedupRepository,
 	forwardingService service.ForwardingService,
 	accessLogService service.AccessLogService,
 	settingsService service.AdminSystemSettingsService,
@@ -91,6 +97,7 @@ func NewAgentHandlerWithCoreServices(
 		telemetryService:   telemetryService,
 		serverNodeService:  serverNodeService,
 		userTrafficService: userTrafficService,
+		trafficDedupRepo:   trafficDedupRepo,
 		forwardingService:  forwardingService,
 		accessLogService:   accessLogService,
 		settingsService:    settingsService,
@@ -99,6 +106,7 @@ func NewAgentHandlerWithCoreServices(
 		coreOperations:     coreOperations,
 		coreSnapshots:      coreSnapshots,
 		logger:             logger,
+		timeNow:            time.Now,
 	}
 }
 
@@ -240,25 +248,60 @@ func (h *AgentHandler) ReportTraffic(ctx context.Context, req *agentv1.TrafficRe
 	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "no agent host in context")
 	}
+	reportID := strings.TrimSpace(req.GetReportId())
+	if reportID != "" && h.trafficDedupRepo != nil {
+		handledAt := h.timeNow().Unix()
+		inserted, err := h.trafficDedupRepo.MarkHandled(ctx, agentHost.ID, reportID, handledAt)
+		if err != nil {
+			h.logger.Error("failed to mark traffic report dedup", "agent_host_id", agentHost.ID, "report_id", reportID, "error", err)
+			return nil, status.Error(codes.Internal, "failed to process traffic batch")
+		}
+		if !inserted {
+			h.logger.Info("traffic report deduplicated",
+				"agent_host_id", agentHost.ID,
+				"report_id", reportID,
+				"dedup_hit", true,
+				"accepted", 0,
+				"skipped", len(req.UserTraffic),
+			)
+			return &agentv1.TrafficResponse{Success: true, AcceptedCount: 0, Message: "traffic accepted (deduplicated)"}, nil
+		}
+	}
 	traffic := make([]service.UserTrafficDelta, 0, len(req.UserTraffic))
+	skipped := 0
 	for _, u := range req.UserTraffic {
 		if u.UserId <= 0 {
+			skipped++
 			continue
 		}
 		upload := int64(u.UploadBytes)
 		download := int64(u.DownloadBytes)
 		if upload == 0 && download == 0 {
+			skipped++
 			continue
 		}
 		traffic = append(traffic, service.UserTrafficDelta{UserID: u.UserId, Upload: upload, Download: download})
 	}
+	acceptedCount := int32(len(traffic))
 	if h.userTrafficService != nil && len(traffic) > 0 {
-		if _, err := h.userTrafficService.ProcessTrafficBatch(ctx, agentHost.ID, traffic); err != nil {
+		result, err := h.userTrafficService.ProcessTrafficBatch(ctx, agentHost.ID, traffic)
+		if err != nil {
 			h.logger.Error("failed to process traffic batch", "agent_host_id", agentHost.ID, "error", err)
 			return nil, status.Error(codes.Internal, "failed to process traffic batch")
 		}
+		if result != nil {
+			acceptedCount = result.AcceptedCount
+		}
 	}
-	return &agentv1.TrafficResponse{Success: true, AcceptedCount: int32(len(traffic)), Message: "traffic accepted"}, nil
+	h.logger.Debug("traffic report processed",
+		"agent_host_id", agentHost.ID,
+		"report_id", reportID,
+		"dedup_hit", false,
+		"received", len(req.UserTraffic),
+		"accepted", acceptedCount,
+		"skipped", skipped,
+	)
+	return &agentv1.TrafficResponse{Success: true, AcceptedCount: acceptedCount, Message: "traffic accepted"}, nil
 }
 
 // ReportForwardingStatus 处理转发规则应用结果上报。

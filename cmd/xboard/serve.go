@@ -368,6 +368,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 			serverTelemetryService,
 			serverNodeService,
 			userTrafficService,
+			store.TrafficReportDedups(),
 			forwardingService,
 			accessLogService,
 			adminSystemSettingsService,

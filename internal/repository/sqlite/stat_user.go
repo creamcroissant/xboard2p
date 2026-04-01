@@ -35,6 +35,49 @@ func (r *statUserRepo) Upsert(ctx context.Context, record repository.StatUserRec
 	return err
 }
 
+func (r *statUserRepo) UpsertBatch(ctx context.Context, records []repository.StatUserRecord) error {
+	if len(records) == 0 {
+		return nil
+	}
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	const stmt = `INSERT INTO stat_users(user_id, agent_host_id, server_rate, record_at, record_type, u, d, created_at, updated_at)
+	                  VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+	                  ON CONFLICT(user_id, agent_host_id, record_type, record_at) DO UPDATE SET
+	                      u = stat_users.u + excluded.u,
+	                      d = stat_users.d + excluded.d,
+	                      server_rate = excluded.server_rate,
+	                      updated_at = excluded.updated_at`
+	prepared, err := tx.PrepareContext(ctx, stmt)
+	if err != nil {
+		return err
+	}
+	defer prepared.Close()
+
+	for _, record := range records {
+		if _, err := prepared.ExecContext(ctx,
+			record.UserID,
+			record.AgentHostID,
+			record.ServerRate,
+			record.RecordAt,
+			record.RecordType,
+			record.Upload,
+			record.Download,
+			record.CreatedAt,
+			record.UpdatedAt,
+		); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
 func (r *statUserRepo) ListByRecord(ctx context.Context, recordType int, recordAt int64, agentHostID *int64, limit int) ([]repository.StatUserRecord, error) {
 	if limit <= 0 {
 		limit = 20

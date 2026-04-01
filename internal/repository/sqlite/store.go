@@ -43,6 +43,7 @@ type Store struct {
 	inboundSpecRevisions   repository.InboundSpecRevisionRepository
 	desiredArtifacts       repository.DesiredArtifactRepository
 	applyRuns              repository.ApplyRunRepository
+	trafficReportDedups    repository.TrafficReportDedupRepository
 	agentConfigInventories repository.AgentConfigInventoryRepository
 	inboundIndexes         repository.InboundIndexRepository
 	driftStates            repository.DriftStateRepository
@@ -84,6 +85,7 @@ func NewStore(db *sql.DB) *Store {
 		inboundSpecRevisions:   newInboundSpecRevisionRepo(db),
 		desiredArtifacts:       newDesiredArtifactRepo(db),
 		applyRuns:              newApplyRunRepo(db),
+		trafficReportDedups:    newTrafficReportDedupRepo(db),
 		agentConfigInventories: newAgentConfigInventoryRepo(db),
 		inboundIndexes:         newInboundIndexRepo(db),
 		driftStates:            newDriftStateRepo(db),
@@ -216,6 +218,10 @@ func (s *Store) DesiredArtifacts() repository.DesiredArtifactRepository {
 
 func (s *Store) ApplyRuns() repository.ApplyRunRepository {
 	return s.applyRuns
+}
+
+func (s *Store) TrafficReportDedups() repository.TrafficReportDedupRepository {
+	return s.trafficReportDedups
 }
 
 func (s *Store) AgentConfigInventories() repository.AgentConfigInventoryRepository {

@@ -8,6 +8,7 @@ option go_package = "github.com/creamcroissant/xboard/pkg/pb/agent/v1;agentv1";
 message TrafficReport {
   int64 timestamp = 1;
   repeated UserTraffic user_traffic = 2;
+  string report_id = 3;
 }
 
 // UserTraffic contains traffic for a single user

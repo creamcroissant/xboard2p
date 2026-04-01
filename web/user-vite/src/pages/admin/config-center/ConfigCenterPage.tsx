@@ -151,6 +151,107 @@ function formatCoreType(coreType: ConfigCenterCoreType): CoreTypeOption {
   return "sing-box";
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function generateCompactUUID(): string {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID().replaceAll("-", "").toLowerCase();
+  }
+
+  if (typeof globalThis.crypto?.getRandomValues === "function") {
+    const bytes = new Uint8Array(16);
+    globalThis.crypto.getRandomValues(bytes);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    return Array.from(bytes, (item) => item.toString(16).padStart(2, "0")).join("");
+  }
+
+  return `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`.slice(0, 32);
+}
+
+function generateHexString(length: number): string {
+  const size = Math.max(1, Math.ceil(length / 2));
+
+  if (typeof globalThis.crypto?.getRandomValues === "function") {
+    const bytes = new Uint8Array(size);
+    globalThis.crypto.getRandomValues(bytes);
+    return Array.from(bytes, (item) => item.toString(16).padStart(2, "0"))
+      .join("")
+      .slice(0, length);
+  }
+
+  return Array.from({ length }, () => Math.floor(Math.random() * 16).toString(16)).join("");
+}
+
+async function generateRealityKeyPair(): Promise<{ privateKey: string; publicKey: string }> {
+  if (!globalThis.crypto?.subtle) {
+    throw new Error("WebCrypto unavailable");
+  }
+
+  const keyPair = (await globalThis.crypto.subtle.generateKey(
+    { name: "X25519" } as unknown as AlgorithmIdentifier,
+    true,
+    ["deriveBits"]
+  )) as CryptoKeyPair;
+
+  const [privateJwk, publicJwk] = await Promise.all([
+    globalThis.crypto.subtle.exportKey("jwk", keyPair.privateKey),
+    globalThis.crypto.subtle.exportKey("jwk", keyPair.publicKey),
+  ]);
+
+  if (typeof privateJwk.d !== "string" || typeof publicJwk.x !== "string") {
+    throw new Error("Failed to export X25519 jwk");
+  }
+
+  return {
+    privateKey: privateJwk.d,
+    publicKey: publicJwk.x,
+  };
+}
+
+function ensureObjectField(target: Record<string, unknown>, key: string): Record<string, unknown> {
+  const current = target[key];
+  if (isRecord(current)) {
+    return current;
+  }
+  const next: Record<string, unknown> = {};
+  target[key] = next;
+  return next;
+}
+
+function pickCoreSpecificScope(
+  coreSpecific: Record<string, unknown>,
+  coreType: ConfigCenterCoreType
+): Record<string, unknown> {
+  if (coreType === "xray") {
+    if (isRecord(coreSpecific.xray)) {
+      return coreSpecific.xray;
+    }
+    return coreSpecific;
+  }
+
+  const singBoxScoped = coreSpecific["sing-box"];
+  if (isRecord(singBoxScoped)) {
+    return singBoxScoped;
+  }
+  if (isRecord(coreSpecific.singbox)) {
+    return coreSpecific.singbox;
+  }
+  return coreSpecific;
+}
+
+function hasMeaningfulValue(value: unknown): boolean {
+  if (typeof value === "string") {
+    return value.trim().length > 0;
+  }
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+  return value !== null && value !== undefined;
+}
+
 
 function formatDriftVariant(driftType: string): "danger" | "warning" | "secondary" {
   switch (driftType) {
@@ -552,6 +653,143 @@ export default function ConfigCenterPage() {
     setIsHistoryDialogOpen(true);
   };
 
+  const tryParseSpecJSON = (field: "semantic_spec" | "core_specific") => {
+    try {
+      const parsed = safeParseJSON(specForm[field], {});
+      if (isRecord(parsed)) {
+        return parsed;
+      }
+      return {};
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("error.bad_request");
+      toast.error(t("admin.configCenter.messages.invalidJson"), { description: message });
+      return null;
+    }
+  };
+
+  const updateSpecJSONField = (field: "semantic_spec" | "core_specific", nextValue: Record<string, unknown>) => {
+    setSpecForm((prev) => ({
+      ...prev,
+      [field]: prettyJSON(nextValue),
+    }));
+  };
+
+  const confirmOverwrite = (messageKey: string) => {
+    if (typeof window === "undefined") {
+      return true;
+    }
+    return window.confirm(t(messageKey));
+  };
+
+  const handleGenerateUUID = () => {
+    const semantic = tryParseSpecJSON("semantic_spec");
+    if (!semantic) {
+      return;
+    }
+
+    const rawUsers = Array.isArray(semantic.users) ? semantic.users : [];
+    const users = rawUsers.filter((item): item is Record<string, unknown> => isRecord(item));
+
+    const hasExistingUUID = users.some((user) => hasMeaningfulValue(user.uuid));
+    if (hasExistingUUID && !confirmOverwrite("admin.configCenter.generator.confirm.uuid")) {
+      return;
+    }
+
+    if (users.length === 0) {
+      semantic.users = [{ uuid: generateCompactUUID() }];
+    } else {
+      semantic.users = users.map((user) => ({
+        ...user,
+        uuid: generateCompactUUID(),
+      }));
+    }
+
+    updateSpecJSONField("semantic_spec", semantic);
+    toast.success(t("admin.configCenter.generator.messages.uuidGenerated"));
+  };
+
+  const handleGenerateShortID = () => {
+    const coreSpecific = tryParseSpecJSON("core_specific");
+    if (!coreSpecific) {
+      return;
+    }
+
+    const scope = pickCoreSpecificScope(coreSpecific, specForm.core_type);
+
+    if (specForm.core_type === "xray") {
+      const streamSettings = ensureObjectField(scope, "streamSettings");
+      const realitySettings = ensureObjectField(streamSettings, "realitySettings");
+      const existing = realitySettings.shortIds;
+      const hasExistingShortID =
+        (Array.isArray(existing) && existing.length > 0) ||
+        (typeof existing === "string" && existing.trim().length > 0);
+
+      if (hasExistingShortID && !confirmOverwrite("admin.configCenter.generator.confirm.shortId")) {
+        return;
+      }
+
+      realitySettings.shortIds = [generateHexString(8)];
+    } else {
+      const tls = ensureObjectField(scope, "tls");
+      const reality = ensureObjectField(tls, "reality");
+      if (hasMeaningfulValue(reality.short_id) && !confirmOverwrite("admin.configCenter.generator.confirm.shortId")) {
+        return;
+      }
+      reality.short_id = generateHexString(8);
+    }
+
+    updateSpecJSONField("core_specific", coreSpecific);
+    toast.success(t("admin.configCenter.generator.messages.shortIdGenerated"));
+  };
+
+  const handleGenerateRealityKeyPair = async () => {
+    const coreSpecific = tryParseSpecJSON("core_specific");
+    if (!coreSpecific) {
+      return;
+    }
+
+    const scope = pickCoreSpecificScope(coreSpecific, specForm.core_type);
+
+    if (specForm.core_type === "xray") {
+      const streamSettings = ensureObjectField(scope, "streamSettings");
+      const realitySettings = ensureObjectField(streamSettings, "realitySettings");
+      const hasExistingKey =
+        hasMeaningfulValue(realitySettings.privateKey) || hasMeaningfulValue(realitySettings.publicKey);
+      if (hasExistingKey && !confirmOverwrite("admin.configCenter.generator.confirm.realityKey")) {
+        return;
+      }
+    } else {
+      const tls = ensureObjectField(scope, "tls");
+      const reality = ensureObjectField(tls, "reality");
+      const hasExistingKey =
+        hasMeaningfulValue(reality.private_key) || hasMeaningfulValue(reality.public_key);
+      if (hasExistingKey && !confirmOverwrite("admin.configCenter.generator.confirm.realityKey")) {
+        return;
+      }
+    }
+
+    try {
+      const generated = await generateRealityKeyPair();
+
+      if (specForm.core_type === "xray") {
+        const streamSettings = ensureObjectField(scope, "streamSettings");
+        const realitySettings = ensureObjectField(streamSettings, "realitySettings");
+        realitySettings.privateKey = generated.privateKey;
+        realitySettings.publicKey = generated.publicKey;
+      } else {
+        const tls = ensureObjectField(scope, "tls");
+        const reality = ensureObjectField(tls, "reality");
+        reality.private_key = generated.privateKey;
+        reality.public_key = generated.publicKey;
+      }
+
+      updateSpecJSONField("core_specific", coreSpecific);
+      toast.success(t("admin.configCenter.generator.messages.realityKeyGenerated"));
+    } catch {
+      toast.error(t("admin.configCenter.generator.messages.webCryptoUnsupported"));
+    }
+  };
+
   const handleSaveSpec = () => {
     try {
       if (!specForm.agent_host_id || !specForm.tag.trim()) {
@@ -579,6 +817,7 @@ export default function ConfigCenterPage() {
       toast.error(t("admin.configCenter.messages.invalidJson"), { description: message });
     }
   };
+
 
   const handleImport = () => {
     if (!selectedHostId) {
@@ -1480,8 +1719,20 @@ export default function ConfigCenterPage() {
             </label>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">{t("admin.configCenter.fields.semanticSpec")}</label>
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-sm font-medium">{t("admin.configCenter.fields.semanticSpec")}</label>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={handleGenerateUUID}
+                  data-testid="config-center-generate-uuid"
+                >
+                  {t("admin.configCenter.generator.actions.generateUUID")}
+                </Button>
+              </div>
               <Textarea
+                data-testid="config-center-semantic-json"
                 className="min-h-[140px] font-mono text-xs"
                 value={specForm.semantic_spec}
                 onChange={(event) =>
@@ -1491,8 +1742,31 @@ export default function ConfigCenterPage() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">{t("admin.configCenter.fields.coreSpecific")}</label>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="text-sm font-medium">{t("admin.configCenter.fields.coreSpecific")}</label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleGenerateRealityKeyPair}
+                    data-testid="config-center-generate-reality-key"
+                  >
+                    {t("admin.configCenter.generator.actions.generateRealityKey")}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleGenerateShortID}
+                    data-testid="config-center-generate-short-id"
+                  >
+                    {t("admin.configCenter.generator.actions.generateShortId")}
+                  </Button>
+                </div>
+              </div>
               <Textarea
+                data-testid="config-center-core-specific-json"
                 className="min-h-[120px] font-mono text-xs"
                 value={specForm.core_specific}
                 onChange={(event) =>

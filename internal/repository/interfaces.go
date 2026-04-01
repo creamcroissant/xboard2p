@@ -39,6 +39,7 @@ type Store interface {
 	InboundSpecRevisions() InboundSpecRevisionRepository
 	DesiredArtifacts() DesiredArtifactRepository
 	ApplyRuns() ApplyRunRepository
+	TrafficReportDedups() TrafficReportDedupRepository
 	AgentConfigInventories() AgentConfigInventoryRepository
 	InboundIndexes() InboundIndexRepository
 	DriftStates() DriftStateRepository
@@ -148,6 +149,7 @@ type ServerRouteRepository interface {
 // StatUserRepository 管理用户流量聚合统计。
 type StatUserRepository interface {
 	Upsert(ctx context.Context, record StatUserRecord) error
+	UpsertBatch(ctx context.Context, records []StatUserRecord) error
 	ListByRecord(ctx context.Context, recordType int, recordAt int64, agentHostID *int64, limit int) ([]StatUserRecord, error)
 	ListByUserSince(ctx context.Context, userID int64, since int64, limit int) ([]StatUserRecord, error)
 	SumByRange(ctx context.Context, filter StatUserSumFilter) (StatUserSumResult, error)
@@ -313,6 +315,7 @@ type UserTrafficRepository interface {
 	IncrementPeriodTraffic(ctx context.Context, userID int64, uploadDelta, downloadDelta int64) error
 	MarkPeriodExceeded(ctx context.Context, userID int64, periodStart int64) error
 	GetExpiredPeriodUserIDs(ctx context.Context, nowUnix int64) ([]int64, error)
+	ApplyTrafficBatchAtomic(ctx context.Context, traffic []UserTrafficDelta, nowUnix int64) ([]UserTrafficDelta, []int64, error)
 
 	// 查询相关操作
 	GetExceededUserIDs(ctx context.Context) ([]int64, error)
@@ -496,6 +499,12 @@ type ApplyRunRepository interface {
 	FindByRunID(ctx context.Context, runID string) (*ApplyRun, error)
 	List(ctx context.Context, filter ApplyRunFilter) ([]*ApplyRun, error)
 	Count(ctx context.Context, filter ApplyRunFilter) (int64, error)
+}
+
+// TrafficReportDedupRepository manages idempotency keys for traffic reports.
+type TrafficReportDedupRepository interface {
+	// MarkHandled records report_id for an agent host. Returns false if already exists.
+	MarkHandled(ctx context.Context, agentHostID int64, reportID string, handledAt int64) (bool, error)
 }
 
 // AgentConfigInventoryRepository manages applied file inventory.
