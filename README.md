@@ -1,4 +1,4 @@
-# XBoard (Go Edition)
+# XBoard
 
 <div align="center">
 
@@ -8,15 +8,15 @@
 
 </div>
 
-XBoard is now fully migrated to Go: a single binary provides API, node communication, background tasks, and notification pipeline. It defaults to SQLite and in-memory caching, making it easy for local or lightweight node deployment. This repository no longer contains Laravel/PHP code.
+XBoard is a Go-based panel + agent system for subscription and traffic management. It ships as a single binary with embedded admin/user frontends, SQLite storage, background jobs, and deployment tooling for panel/agent nodes.
 
 ## ✨ Highlights
 
-- **Go + Chi**: No external PHP runtime required, HTTP layer and routing are compatible with the original version.
-- **SQLite + Embedded Migration**: Out-of-the-box embedded database, automatically executes Goose-style migrations on startup.
-- **Built-in Scheduler**: Order processing, traffic aggregation, node telemetry, and notifications are all handled by Go jobs.
-- **Real Data Strategy**: All interfaces access the repository/service; unimplemented parts return 501.
-- **Non-Commercial Positioning**: Focused on core panel capabilities like Config / Plan / User / Server / Stat; commercial modules like Orders/Coupons/Payments have been removed.
+- **Go + Chi**: Single-runtime backend focused on panel APIs, agent communication, and background jobs.
+- **SQLite + Embedded Migration**: Out-of-the-box embedded database with automatic Goose-style migrations on startup.
+- **Built-in Scheduler**: Traffic aggregation, telemetry sampling, and notification jobs run in-process.
+- **Embedded Frontends**: Admin/User SPA assets are bundled in the backend binary by default.
+- **Scripted Deployment**: Panel/agent install, bootstrap, and uninstall flows are provided by `deploy/*.sh` scripts.
 
 ## 📁 Directory
 
@@ -226,7 +226,7 @@ Base URL: `/api`
 - Guest: `/api/v2/guest/i18n/{lang}`
 
 ### v1 endpoints (`/api/v1`)
-- Client: `/api/v1/client` (includes subscription/app-compatible endpoints)
+- Client: `/api/v1/client`
 - Guest: `/api/v1/guest` (plan/telegram/comm)
 - Passport: `/api/v1/passport/auth`, `/api/v1/passport/comm`
 - User: `/api/v1/user` and submodules (`invite`, `notice`, `server`, `telegram`, `comm`, `knowledge`, `plan`, `stat`, `shortlink`)
@@ -267,11 +267,7 @@ See `config.example.yml` for structure and `coding.md` for details.
 - ✅ Server: Heartbeat, telemetry, traffic reporting, core switching (Sing-box/Xray).
 - ✅ Background Jobs: Traffic Aggregation, Node Sampling, Notification Queue, Traffic Reset.
 - ✅ Security: Rate Limiting, Captcha, IP-based Restrictions, Input Validation.
-- 🚫 Deferred: Payment, Gift Card, Plugin, Theme, Ticket (Handlers return 501).
-
-## ⚠️ Disclaimer
-
-This project is for personal research and self-hosting only. Use for commercial or illegal purposes is strictly prohibited. Users assume all risks.
+- ⚠️ Some endpoints are still under iterative migration; behavior is defined by current implementation.
 
 ## 📄 License
 

@@ -1,4 +1,4 @@
-# XBoard (Go 版本)
+# XBoard
 
 <div align="center">
 
@@ -8,15 +8,15 @@
 
 </div>
 
-XBoard 已完全由 Go 重写：单一可执行文件即可提供 API、节点通信、后台任务与通知流水线，默认依赖 SQLite 与内存缓存，适合个人自托管或轻量服务器。仓库中已不再包含 Laravel/PHP 代码。
+XBoard 是一个基于 Go 的面板与 Agent 系统，用于订阅与流量管理。项目以单一二进制交付，内置管理端/用户端前端、SQLite 存储、后台任务与面板/探针部署脚本。
 
 ## ✨ 亮点
 
-- **Go + Chi**：无需 PHP 运行时，接口保持与旧版兼容。
-- **内置 SQLite + 迁移**：启动即自动执行 Goose 风格迁移，无需手动脚本。
-- **后台作业内建**：订单处理、流量统计、节点遥测、通知队列全部内置。
-- **真实数据策略**：所有接口访问真实仓储；未实现部分明确返回 501。
-- **非商业定位**：聚焦 Config / Plan / User / Server / Stat 等“生存级”功能，订单/优惠券/支付等商业模块已移除。
+- **Go + Chi**：单一运行时覆盖面板 API、Agent 通信与后台任务。
+- **内置 SQLite + 迁移**：开箱即用嵌入式数据库，启动自动执行 Goose 风格迁移。
+- **后台作业内建**：流量聚合、遥测采样、通知队列在进程内调度执行。
+- **前端内置交付**：管理端/用户端 SPA 构建产物默认随后端二进制发布。
+- **脚本化部署**：`deploy/*.sh` 提供 panel/agent 的安装、bootstrap 与卸载流程。
 
 ## 📁 目录概览
 
@@ -228,7 +228,7 @@ bootstrap 现为 strict-only：
 - 访客端：`/api/v2/guest/i18n/{lang}`
 
 ### v1 接口（`/api/v1`）
-- 客户端兼容：`/api/v1/client`（含订阅与 app 兼容接口）
+- 客户端：`/api/v1/client`
 - 访客端：`/api/v1/guest`（plan/telegram/comm）
 - 认证与通信：`/api/v1/passport/auth`、`/api/v1/passport/comm`
 - 用户端：`/api/v1/user` 及其子模块（`invite`、`notice`、`server`、`telegram`、`comm`、`knowledge`、`plan`、`stat`、`shortlink`）
@@ -264,15 +264,11 @@ bootstrap 现为 strict-only：
 
 - ✅ Admin：Config / Plan / User / Server / Stat / Notice / Knowledge。
 - ✅ Admin 前端：Vite/React，已嵌入二进制。
-- ✅ User：订阅、流量日志、节点列表、公告、知识库（订单入口已移除）。
+- ✅ User：订阅、流量日志、节点列表、公告、知识库。
 - ✅ 用户前端：仪表盘、节点、套餐、流量、知识库、设置（Vite/React/HeroUI）。
 - ✅ Server：心跳、遥测、流量上报。
 - ✅ Background Jobs：流量汇总、节点采样、通知队列。
-- 🚫 Deferred：支付、礼品卡、插件、主题、Ticket 等商业模块（默认返回 501）。
-
-## ⚠️ 免责声明
-
-本项目仅供个人研究与自托管使用，严禁用于任何商业化或违法行为；所有风险由使用者自行承担。
+- ⚠️ 部分接口仍在持续迭代，行为以当前实现为准。
 
 ## 📄 许可证
 
