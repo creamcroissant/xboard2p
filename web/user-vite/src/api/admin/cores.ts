@@ -2,14 +2,17 @@ import { adminApi } from "./client";
 import type {
   AgentCoreInfo,
   AgentCoreInstance,
+  AgentCoreOperation,
+  AgentCoreOperationsResponse,
   AgentCoreSwitchLog,
   AgentCoreSwitchLogsParams,
   AgentCoreSwitchLogsResponse,
   ConvertCoreConfigRequest,
   ConvertCoreConfigResult,
   CreateAgentCoreInstanceRequest,
+  InstallAgentCoreRequest,
+  ListAgentCoreOperationsParams,
   SwitchAgentCoreRequest,
-  SwitchAgentCoreResult,
 } from "@/types/admin";
 
 type CoreInfoPayload = {
@@ -35,6 +38,24 @@ type CoreInstancePayload = {
   UpdatedAt: number;
 };
 
+type CoreOperationPayload = {
+  id: string;
+  agent_host_id: number;
+  operation_type: "create" | "switch" | "install" | "ensure";
+  core_type: string;
+  status: "pending" | "claimed" | "in_progress" | "completed" | "failed" | "rolled_back";
+  request_payload?: Record<string, unknown>;
+  result_payload?: Record<string, unknown>;
+  error_message?: string;
+  operator_id?: number | null;
+  claimed_by?: string;
+  claimed_at?: number | null;
+  started_at?: number | null;
+  finished_at?: number | null;
+  created_at: number;
+  updated_at: number;
+};
+
 type SwitchLogPayload = {
   ID: number;
   AgentHostID: number;
@@ -48,28 +69,6 @@ type SwitchLogPayload = {
   CreatedAt: number;
   CompletedAt: number | null;
 };
-
-type SwitchResultPayload = {
-  success: boolean;
-  new_instance_id?: string;
-  message?: string;
-  error?: string;
-  switch_log_id?: number;
-  completed_at?: number;
-  from_instance_id?: string;
-  to_core_type?: string;
-};
-
-const mapSwitchResult = (result: SwitchResultPayload): SwitchAgentCoreResult => ({
-  success: result.success,
-  new_instance_id: result.new_instance_id,
-  message: result.message,
-  error: result.error,
-  switch_log_id: result.switch_log_id,
-  completed_at: result.completed_at,
-  from_instance_id: result.from_instance_id,
-  to_core_type: result.to_core_type,
-});
 
 const mapCoreInfo = (core: CoreInfoPayload): AgentCoreInfo => ({
   type: core.type,
@@ -94,6 +93,24 @@ const mapCoreInstance = (instance: CoreInstancePayload): AgentCoreInstance => ({
   updated_at: instance.UpdatedAt,
 });
 
+const mapCoreOperation = (operation: CoreOperationPayload): AgentCoreOperation => ({
+  id: operation.id,
+  agent_host_id: operation.agent_host_id,
+  operation_type: operation.operation_type,
+  core_type: operation.core_type,
+  status: operation.status,
+  request_payload: operation.request_payload,
+  result_payload: operation.result_payload,
+  error_message: operation.error_message,
+  operator_id: operation.operator_id ?? undefined,
+  claimed_by: operation.claimed_by,
+  claimed_at: operation.claimed_at ?? undefined,
+  started_at: operation.started_at ?? undefined,
+  finished_at: operation.finished_at ?? undefined,
+  created_at: operation.created_at,
+  updated_at: operation.updated_at,
+});
+
 const mapSwitchLog = (log: SwitchLogPayload): AgentCoreSwitchLog => ({
   id: log.ID,
   agent_host_id: log.AgentHostID,
@@ -109,48 +126,73 @@ const mapSwitchLog = (log: SwitchLogPayload): AgentCoreSwitchLog => ({
 });
 
 export async function listAgentCores(agentHostId: number): Promise<AgentCoreInfo[]> {
-  const response = await adminApi.get<{ data: CoreInfoPayload[] }>(
-    `/agent-hosts/${agentHostId}/cores`
-  );
+  const response = await adminApi.get<{ data: CoreInfoPayload[] }>(`/agent-hosts/${agentHostId}/cores`);
   return response.data.data.map(mapCoreInfo);
 }
 
-export async function listAgentCoreInstances(
-  agentHostId: number
-): Promise<AgentCoreInstance[]> {
-  const response = await adminApi.get<{ data: CoreInstancePayload[] }>(
-    `/agent-hosts/${agentHostId}/core-instances`
-  );
+export async function listAgentCoreInstances(agentHostId: number): Promise<AgentCoreInstance[]> {
+  const response = await adminApi.get<{ data: CoreInstancePayload[] }>(`/agent-hosts/${agentHostId}/core-instances`);
   return response.data.data.map(mapCoreInstance);
+}
+
+export async function listAgentCoreOperations(
+  params: ListAgentCoreOperationsParams
+): Promise<AgentCoreOperationsResponse> {
+  const response = await adminApi.get<{ data: CoreOperationPayload[]; total: number }>(
+    `/agent-hosts/${params.agent_host_id}/core-operations`,
+    {
+      params: {
+        operation_type: params.operation_type,
+        core_type: params.core_type,
+        status: params.status,
+        start_at: params.start_at,
+        end_at: params.end_at,
+        limit: params.limit,
+        offset: params.offset,
+      },
+    }
+  );
+  return {
+    operations: response.data.data.map(mapCoreOperation),
+    total: response.data.total,
+  };
 }
 
 export async function createAgentCoreInstance(
   agentHostId: number,
   payload: CreateAgentCoreInstanceRequest
-): Promise<AgentCoreInstance> {
-  const response = await adminApi.post<{ data: CoreInstancePayload }>(
+): Promise<AgentCoreOperation> {
+  const response = await adminApi.post<{ data: CoreOperationPayload }>(
     `/agent-hosts/${agentHostId}/core-instances`,
     payload
   );
-  return mapCoreInstance(response.data.data);
+  return mapCoreOperation(response.data.data);
 }
 
-export async function deleteAgentCoreInstance(
-  agentHostId: number,
-  instanceId: string
-): Promise<void> {
+export async function deleteAgentCoreInstance(agentHostId: number, instanceId: string): Promise<void> {
   await adminApi.delete(`/agent-hosts/${agentHostId}/core-instances/${instanceId}`);
 }
 
 export async function switchAgentCore(
   agentHostId: number,
   payload: SwitchAgentCoreRequest
-): Promise<SwitchAgentCoreResult> {
-  const response = await adminApi.post<{ data: SwitchResultPayload }>(
+): Promise<AgentCoreOperation> {
+  const response = await adminApi.post<{ data: CoreOperationPayload }>(
     `/agent-hosts/${agentHostId}/core-switch`,
     payload
   );
-  return mapSwitchResult(response.data.data);
+  return mapCoreOperation(response.data.data);
+}
+
+export async function installAgentCore(
+  agentHostId: number,
+  payload: InstallAgentCoreRequest
+): Promise<AgentCoreOperation> {
+  const response = await adminApi.post<{ data: CoreOperationPayload }>(
+    `/agent-hosts/${agentHostId}/core-install`,
+    payload
+  );
+  return mapCoreOperation(response.data.data);
 }
 
 export async function convertAgentCoreConfig(
@@ -167,7 +209,7 @@ export async function convertAgentCoreConfig(
 export async function listAgentCoreSwitchLogs(
   params: AgentCoreSwitchLogsParams
 ): Promise<AgentCoreSwitchLogsResponse> {
-  const response = await adminApi.get<{ data: { logs: SwitchLogPayload[]; total: number } }>(
+  const response = await adminApi.get<{ data: SwitchLogPayload[]; total: number }>(
     `/agent-hosts/${params.agent_host_id}/core-switch-logs`,
     {
       params: {
@@ -180,7 +222,7 @@ export async function listAgentCoreSwitchLogs(
     }
   );
   return {
-    logs: response.data.data.logs.map(mapSwitchLog),
-    total: response.data.data.total,
+    logs: response.data.data.map(mapSwitchLog),
+    total: response.data.total,
   };
 }

@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
+  Download,
   History,
   Plus,
   RefreshCw,
@@ -10,12 +11,14 @@ import {
   Trash2,
 } from "lucide-react";
 import {
-  listAgentCores,
-  listAgentCoreInstances,
   createAgentCoreInstance,
   deleteAgentCoreInstance,
-  switchAgentCore,
+  installAgentCore,
+  listAgentCoreInstances,
+  listAgentCoreOperations,
   listAgentCoreSwitchLogs,
+  listAgentCores,
+  switchAgentCore,
 } from "@/api/admin";
 import { QUERY_KEYS } from "@/lib/constants";
 import { formatDateTime } from "@/lib/format";
@@ -50,8 +53,10 @@ import {
 } from "@/components/ui";
 import type {
   AgentCoreInstance,
+  AgentCoreOperation,
   AgentCoreSwitchLog,
   CreateAgentCoreInstanceRequest,
+  InstallAgentCoreRequest,
   SwitchAgentCoreRequest,
 } from "@/types";
 
@@ -85,6 +90,9 @@ const DEFAULT_SWITCH_FORM: CoreSwitchForm = {
 };
 
 const LOGS_PAGE_SIZE = 10;
+const OPERATIONS_PAGE_SIZE = 10;
+const FILTER_ALL = "__all__";
+const ACTIVE_OPERATION_STATUSES = new Set(["pending", "claimed", "in_progress"]);
 
 function normalizeTemplateId(value: string): number | undefined {
   if (!value) return undefined;
@@ -100,17 +108,36 @@ function formatPorts(ports: number[]): string {
 function getStatusVariant(status: string): "success" | "warning" | "danger" | "secondary" {
   switch (status) {
     case "running":
+    case "completed":
       return "success";
     case "pending":
+    case "claimed":
     case "in_progress":
       return "warning";
     case "failed":
+    case "rolled_back":
       return "danger";
     case "stopped":
       return "secondary";
     default:
       return "secondary";
   }
+}
+
+function isOperationActive(status: string): boolean {
+  return ACTIVE_OPERATION_STATUSES.has(status);
+}
+
+function buildOperationTarget(operation: AgentCoreOperation): string {
+  const payload = operation.request_payload ?? {};
+  if (operation.operation_type === "create") {
+    return String(payload.instance_id || operation.core_type || "-");
+  }
+  if (operation.operation_type === "switch") {
+    const from = String(payload.from_instance_id || "-");
+    return `${from} → ${operation.core_type}`;
+  }
+  return operation.core_type || "-";
 }
 
 export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePanelProps) {
@@ -120,15 +147,27 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
   const [isSwitchOpen, setIsSwitchOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isLogsOpen, setIsLogsOpen] = useState(false);
+  const [isOperationsOpen, setIsOperationsOpen] = useState(false);
   const [createForm, setCreateForm] = useState<CoreInstanceForm>(DEFAULT_FORM);
   const [switchForm, setSwitchForm] = useState<CoreSwitchForm>(DEFAULT_SWITCH_FORM);
   const [deleteTarget, setDeleteTarget] = useState<AgentCoreInstance | null>(null);
-  const [logsStatus, setLogsStatus] = useState<string>("");
+  const [logsStatus, setLogsStatus] = useState<string>(FILTER_ALL);
+
   const [logsPage, setLogsPage] = useState(1);
   const [logsDateRange, setLogsDateRange] = useState<{ start: string; end: string }>({
     start: "",
     end: "",
   });
+  const [operationsStatus, setOperationsStatus] = useState<string>(FILTER_ALL);
+  const [operationsType, setOperationsType] = useState<string>(FILTER_ALL);
+  const [operationsPage, setOperationsPage] = useState(1);
+  const [operationsDateRange, setOperationsDateRange] = useState<{ start: string; end: string }>({
+    start: "",
+    end: "",
+  });
+  const [trackedOperationIds, setTrackedOperationIds] = useState<string[]>([]);
+  const [installingCoreType, setInstallingCoreType] = useState<string | null>(null);
+  const previousOperationStatusesRef = useRef<Record<string, string>>({});
 
   const handleCreateDialogChange = (open: boolean) => {
     setIsCreateOpen(open);
@@ -143,6 +182,43 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
       setSwitchForm(DEFAULT_SWITCH_FORM);
     }
   };
+
+  const handleLogsDialogChange = (open: boolean) => {
+    setIsLogsOpen(open);
+    if (!open) {
+      setLogsPage(1);
+      setLogsStatus("");
+      setLogsDateRange({ start: "", end: "" });
+    }
+  };
+
+  const handleOperationsDialogChange = (open: boolean) => {
+    setIsOperationsOpen(open);
+    if (!open) {
+      setOperationsPage(1);
+      setOperationsStatus("");
+      setOperationsType("");
+      setOperationsDateRange({ start: "", end: "" });
+    }
+  };
+
+  const handleLogsDateChange = (next: { start?: string; end?: string }) => {
+    setLogsDateRange((prev) => ({ ...prev, ...next }));
+    setLogsPage(1);
+  };
+
+  const handleOperationsDateChange = (next: { start?: string; end?: string }) => {
+    setOperationsDateRange((prev) => ({ ...prev, ...next }));
+    setOperationsPage(1);
+  };
+
+  const operationStartAt = operationsDateRange.start
+    ? Math.floor(new Date(`${operationsDateRange.start}T00:00:00`).getTime() / 1000)
+    : undefined;
+  const operationEndAt = operationsDateRange.end
+    ? Math.floor(new Date(`${operationsDateRange.end}T23:59:59`).getTime() / 1000)
+    : undefined;
+
   const coresQuery = useQuery({
     queryKey: [...QUERY_KEYS.ADMIN_AGENT_CORES, agentHostId],
     queryFn: () => listAgentCores(agentHostId),
@@ -151,6 +227,35 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
   const instancesQuery = useQuery({
     queryKey: [...QUERY_KEYS.ADMIN_AGENT_CORE_INSTANCES, agentHostId],
     queryFn: () => listAgentCoreInstances(agentHostId),
+  });
+
+  const operationsQuery = useQuery({
+    queryKey: [
+      ...QUERY_KEYS.ADMIN_AGENT_CORE_OPERATIONS,
+      agentHostId,
+      operationsStatus,
+      operationsType,
+      operationsPage,
+      operationsDateRange.start,
+      operationsDateRange.end,
+    ],
+    queryFn: () =>
+      listAgentCoreOperations({
+        agent_host_id: agentHostId,
+        status: operationsStatus === FILTER_ALL ? undefined : operationsStatus,
+        operation_type: operationsType === FILTER_ALL ? undefined : operationsType,
+        start_at: operationStartAt,
+        end_at: operationEndAt,
+        limit: OPERATIONS_PAGE_SIZE,
+        offset: (operationsPage - 1) * OPERATIONS_PAGE_SIZE,
+      }),
+    refetchInterval: (query) => {
+      const operations = query.state.data?.operations ?? [];
+      const hasActive = operations.some((operation) => isOperationActive(operation.status));
+      if (hasActive) return 3000;
+      if (isOperationsOpen) return 12000;
+      return false;
+    },
   });
 
   const logsQuery = useQuery({
@@ -171,7 +276,7 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
         : undefined;
       return listAgentCoreSwitchLogs({
         agent_host_id: agentHostId,
-        status: logsStatus || undefined,
+        status: logsStatus === FILTER_ALL ? undefined : logsStatus,
         start_at: startAt,
         end_at: endAt,
         limit: LOGS_PAGE_SIZE,
@@ -181,14 +286,52 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
     enabled: isLogsOpen,
   });
 
-  const createMutation = useMutation({
-    mutationFn: (payload: CreateAgentCoreInstanceRequest) =>
-      createAgentCoreInstance(agentHostId, payload),
-    onSuccess: () => {
+  useEffect(() => {
+    const operations = operationsQuery.data?.operations ?? [];
+    const previousStatuses = previousOperationStatusesRef.current;
+    const nextStatuses: Record<string, string> = {};
+
+    operations.forEach((operation) => {
+      nextStatuses[operation.id] = operation.status;
+      const wasTracked = trackedOperationIds.includes(operation.id);
+      const previousStatus = previousStatuses[operation.id];
+      if (!wasTracked || previousStatus === operation.status) {
+        return;
+      }
+      const enteredTerminal =
+        !isOperationActive(operation.status)
+        && (!previousStatus || isOperationActive(previousStatus));
+      if (!enteredTerminal) {
+        return;
+      }
+      if (operation.status === "completed") {
+        toast.success(t("admin.cores.operationCompleted"));
+      } else {
+        toast.error(t("admin.cores.operationFailed"), {
+          description: operation.error_message || operation.status,
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.ADMIN_AGENT_CORES });
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.ADMIN_AGENT_CORE_INSTANCES });
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.ADMIN_AGENT_CORE_SWITCH_LOGS });
+      setTrackedOperationIds((current) => current.filter((id) => id !== operation.id));
+    });
+
+    previousOperationStatusesRef.current = nextStatuses;
+  }, [operationsQuery.data, queryClient, t, trackedOperationIds]);
+
+
+  const onOperationSubmitted = (operation: AgentCoreOperation, messageKey: string) => {
+    setTrackedOperationIds((current) => Array.from(new Set([...current, operation.id])));
+    queryClient.invalidateQueries({ queryKey: QUERY_KEYS.ADMIN_AGENT_CORE_OPERATIONS });
+    toast.success(t(messageKey));
+  };
+
+  const createMutation = useMutation({
+    mutationFn: (payload: CreateAgentCoreInstanceRequest) => createAgentCoreInstance(agentHostId, payload),
+    onSuccess: (operation) => {
       handleCreateDialogChange(false);
-      toast.success(t("admin.cores.createSuccess"));
+      onOperationSubmitted(operation, "admin.cores.operationSubmitted");
     },
     onError: (err: Error) => {
       toast.error(t("admin.cores.createError"), { description: err.message });
@@ -211,19 +354,24 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
 
   const switchMutation = useMutation({
     mutationFn: (payload: SwitchAgentCoreRequest) => switchAgentCore(agentHostId, payload),
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.ADMIN_AGENT_CORE_INSTANCES });
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.ADMIN_AGENT_CORE_SWITCH_LOGS });
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.ADMIN_AGENT_CORES });
+    onSuccess: (operation) => {
       handleSwitchDialogChange(false);
-      if (result.success) {
-        toast.success(t("admin.cores.switchSuccess"));
-      } else {
-        toast.error(t("admin.cores.switchError"), { description: result.error || result.message });
-      }
+      onOperationSubmitted(operation, "admin.cores.operationSubmitted");
     },
     onError: (err: Error) => {
       toast.error(t("admin.cores.switchError"), { description: err.message });
+    },
+  });
+
+  const installMutation = useMutation({
+    mutationFn: (payload: InstallAgentCoreRequest) => installAgentCore(agentHostId, payload),
+    onSuccess: (operation) => {
+      setInstallingCoreType(null);
+      onOperationSubmitted(operation, "admin.cores.operationSubmitted");
+    },
+    onError: (err: Error) => {
+      setInstallingCoreType(null);
+      toast.error(t("admin.cores.installError"), { description: err.message });
     },
   });
 
@@ -269,6 +417,15 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
     });
   };
 
+  const handleInstall = (coreType: string) => {
+    setInstallingCoreType(coreType);
+    installMutation.mutate({
+      core_type: coreType,
+      action: "install",
+      activate: true,
+    });
+  };
+
   const handleDeleteRequest = (instance: AgentCoreInstance) => {
     setDeleteTarget(instance);
     setIsDeleteOpen(true);
@@ -279,41 +436,18 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
     deleteMutation.mutate(deleteTarget.instance_id);
   };
 
-  const handleLogsDialogChange = (open: boolean) => {
-    setIsLogsOpen(open);
-    if (!open) {
-      setLogsPage(1);
-      setLogsStatus("");
-      setLogsDateRange({ start: "", end: "" });
-    }
-  };
-
-  const handleLogsDateChange = (next: { start?: string; end?: string }) => {
-    setLogsDateRange((prev) => ({ ...prev, ...next }));
-    setLogsPage(1);
-  };
-
   const cores = coresQuery.data ?? [];
   const instances = instancesQuery.data ?? [];
+  const operations = operationsQuery.data?.operations ?? [];
+  const operationsTotal = operationsQuery.data?.total ?? 0;
+  const operationsTotalPages = Math.ceil(operationsTotal / OPERATIONS_PAGE_SIZE);
   const logs = logsQuery.data?.logs ?? [];
   const logsTotal = logsQuery.data?.total ?? 0;
   const logsTotalPages = Math.ceil(logsTotal / LOGS_PAGE_SIZE);
 
-  const installedCores = useMemo(
-    () => cores.filter((core) => core.installed),
-    [cores]
-  );
-
-  const coreOptions = useMemo(
-    () => installedCores.map((core) => ({ value: core.type, label: core.type })),
-    [installedCores]
-  );
-
-  const allCoreOptions = useMemo(
-    () => cores.map((core) => ({ value: core.type, label: core.type })),
-    [cores]
-  );
-
+  const installedCores = useMemo(() => cores.filter((core) => core.installed), [cores]);
+  const coreOptions = useMemo(() => installedCores.map((core) => ({ value: core.type, label: core.type })), [installedCores]);
+  const allCoreOptions = useMemo(() => cores.map((core) => ({ value: core.type, label: core.type })), [cores]);
   const instanceOptions = useMemo(
     () =>
       instances.map((instance) => ({
@@ -322,9 +456,13 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
       })),
     [instances]
   );
+  const recentOperations = useMemo(() => operations.slice(0, 5), [operations]);
+  const hasActiveOperations = useMemo(
+    () => operations.some((operation) => isOperationActive(operation.status)),
+    [operations]
+  );
 
   const availableCreateOptions = coreOptions.length > 0 ? coreOptions : allCoreOptions;
-
   const isLoading = coresQuery.isLoading || instancesQuery.isLoading;
   const hasError = coresQuery.error || instancesQuery.error;
 
@@ -355,14 +493,19 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
         <CardHeader>
           <CardTitle>{t("admin.cores.title")}</CardTitle>
           <CardDescription>
-            {agentName
-              ? t("admin.cores.subtitleWithAgent", { name: agentName })
-              : t("admin.cores.subtitle")}
+            {agentName ? t("admin.cores.subtitleWithAgent", { name: agentName }) : t("admin.cores.subtitle")}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" onClick={() => coresQuery.refetch()}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                coresQuery.refetch();
+                instancesQuery.refetch();
+                operationsQuery.refetch();
+              }}
+            >
               <RefreshCw className="mr-2 h-4 w-4" />
               {t("common.refresh")}
             </Button>
@@ -374,11 +517,57 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
               <Repeat className="mr-2 h-4 w-4" />
               {t("admin.cores.switch")}
             </Button>
+            <Button variant="outline" onClick={() => setIsOperationsOpen(true)}>
+              <History className="mr-2 h-4 w-4" />
+              {t("admin.cores.operationsTitle")}
+            </Button>
             <Button variant="ghost" onClick={() => setIsLogsOpen(true)}>
               <History className="mr-2 h-4 w-4" />
               {t("admin.cores.logsTitle")}
             </Button>
           </div>
+
+          <Card className="border border-border shadow-none">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">{t("admin.cores.operationsSummaryTitle")}</CardTitle>
+              <CardDescription>
+                {hasActiveOperations ? t("admin.cores.operationsPolling") : t("admin.cores.operationsIdle")}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {recentOperations.length === 0 ? (
+                <EmptyState
+                  icon={<History className="h-full w-full" />}
+                  title={t("admin.cores.operationsEmpty")}
+                  description={t("admin.cores.operationsEmptyDescription")}
+                  size="sm"
+                />
+              ) : (
+                <div className="space-y-2">
+                  {recentOperations.map((operation) => (
+                    <div
+                      key={operation.id}
+                      className="flex flex-col gap-2 rounded-md border border-border p-3 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant={getStatusVariant(operation.status)}>{operation.status}</Badge>
+                          <span className="text-sm font-medium">
+                            {t(`admin.cores.operationType.${operation.operation_type}`)}
+                          </span>
+                        </div>
+                        <div className="text-xs text-muted-foreground">{buildOperationTarget(operation)}</div>
+                        <div className="text-xs text-muted-foreground">{formatDateTime(operation.created_at)}</div>
+                      </div>
+                      <div className="max-w-[360px] text-xs text-muted-foreground">
+                        {operation.error_message || JSON.stringify(operation.result_payload ?? {}) || "-"}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           {cores.length === 0 ? (
             <EmptyState
@@ -391,7 +580,7 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {cores.map((core) => (
                 <Card key={core.type} className="border border-border shadow-none">
-                  <CardContent className="space-y-2 p-4">
+                  <CardContent className="space-y-3 p-4">
                     <div className="flex items-center justify-between">
                       <span className="font-semibold">{core.type}</span>
                       <Badge variant={core.installed ? "success" : "secondary"}>
@@ -409,6 +598,19 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
                           </Badge>
                         ))}
                       </div>
+                    )}
+                    {!core.installed && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleInstall(core.type)}
+                        disabled={installMutation.isPending && installingCoreType === core.type}
+                      >
+                        <Download className="mr-2 h-4 w-4" />
+                        {installMutation.isPending && installingCoreType === core.type
+                          ? t("common.loading")
+                          : t("admin.cores.install")}
+                      </Button>
                     )}
                   </CardContent>
                 </Card>
@@ -524,9 +726,7 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
               <label className="text-sm font-medium">{t("admin.cores.fields.instanceId")}</label>
               <Input
                 value={createForm.instance_id}
-                onChange={(event) =>
-                  setCreateForm((prev) => ({ ...prev, instance_id: event.target.value }))
-                }
+                onChange={(event) => setCreateForm((prev) => ({ ...prev, instance_id: event.target.value }))}
                 placeholder={t("admin.cores.placeholders.instanceId")}
               />
             </div>
@@ -534,14 +734,10 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
               <label className="text-sm font-medium">{t("admin.cores.fields.template")}</label>
               <Input
                 value={createForm.config_template_id}
-                onChange={(event) =>
-                  setCreateForm((prev) => ({ ...prev, config_template_id: event.target.value }))
-                }
+                onChange={(event) => setCreateForm((prev) => ({ ...prev, config_template_id: event.target.value }))}
                 placeholder={t("admin.cores.placeholders.templateId")}
               />
-              <p className="text-xs text-muted-foreground">
-                {t("admin.cores.templateHint")}
-              </p>
+              <p className="text-xs text-muted-foreground">{t("admin.cores.templateHint")}</p>
             </div>
           </div>
           <DialogFooter>
@@ -601,14 +797,10 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
               <label className="text-sm font-medium">{t("admin.cores.fields.template")}</label>
               <Input
                 value={switchForm.config_template_id}
-                onChange={(event) =>
-                  setSwitchForm((prev) => ({ ...prev, config_template_id: event.target.value }))
-                }
+                onChange={(event) => setSwitchForm((prev) => ({ ...prev, config_template_id: event.target.value }))}
                 placeholder={t("admin.cores.placeholders.templateId")}
               />
-              <p className="text-xs text-muted-foreground">
-                {t("admin.cores.templateHint")}
-              </p>
+              <p className="text-xs text-muted-foreground">{t("admin.cores.templateHint")}</p>
             </div>
           </div>
           <DialogFooter>
@@ -617,6 +809,121 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
             </Button>
             <Button onClick={handleSwitch} disabled={switchMutation.isPending}>
               {switchMutation.isPending ? t("common.loading") : t("admin.cores.switch")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isOperationsOpen} onOpenChange={handleOperationsDialogChange}>
+        <DialogContent className="sm:max-w-5xl">
+          <DialogHeader>
+            <DialogTitle>{t("admin.cores.operationsTitle")}</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-4 py-2">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">{t("admin.cores.logsStart")}</label>
+                <Input
+                  type="date"
+                  value={operationsDateRange.start}
+                  onChange={(event) => handleOperationsDateChange({ start: event.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">{t("admin.cores.logsEnd")}</label>
+                <Input
+                  type="date"
+                  value={operationsDateRange.end}
+                  onChange={(event) => handleOperationsDateChange({ end: event.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">{t("admin.cores.logsStatus")}</label>
+                <Select value={operationsStatus} onValueChange={(value) => {
+                  setOperationsStatus(value);
+                  setOperationsPage(1);
+                }}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={t("admin.cores.logsStatusPlaceholder")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={FILTER_ALL}>{t("common.all")}</SelectItem>
+                    <SelectItem value="pending">{t("admin.cores.status.pending")}</SelectItem>
+                    <SelectItem value="claimed">{t("admin.cores.status.claimed")}</SelectItem>
+                    <SelectItem value="in_progress">{t("admin.cores.status.in_progress")}</SelectItem>
+                    <SelectItem value="completed">{t("admin.cores.status.completed")}</SelectItem>
+                    <SelectItem value="failed">{t("admin.cores.status.failed")}</SelectItem>
+                    <SelectItem value="rolled_back">{t("admin.cores.status.rolled_back")}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">{t("admin.cores.operationsType")}</label>
+                <Select value={operationsType} onValueChange={(value) => {
+                  setOperationsType(value);
+                  setOperationsPage(1);
+                }}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={t("admin.cores.operationsTypePlaceholder")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={FILTER_ALL}>{t("common.all")}</SelectItem>
+                    <SelectItem value="create">{t("admin.cores.operationType.create")}</SelectItem>
+                    <SelectItem value="switch">{t("admin.cores.operationType.switch")}</SelectItem>
+                    <SelectItem value="install">{t("admin.cores.operationType.install")}</SelectItem>
+                    <SelectItem value="ensure">{t("admin.cores.operationType.ensure")}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {operationsQuery.isLoading ? (
+              <Loading />
+            ) : operations.length === 0 ? (
+              <EmptyState
+                icon={<History className="h-full w-full" />}
+                title={t("admin.cores.operationsEmpty")}
+                description={t("admin.cores.operationsEmptyDescription")}
+                size="sm"
+              />
+            ) : (
+              <Table aria-label={t("admin.cores.operationsTitle")}>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t("admin.cores.logsTime")}</TableHead>
+                    <TableHead>{t("admin.cores.operationsType")}</TableHead>
+                    <TableHead>{t("admin.cores.operationsTarget")}</TableHead>
+                    <TableHead>{t("admin.cores.logsStatus")}</TableHead>
+                    <TableHead>{t("admin.cores.logsDetail")}</TableHead>
+                    <TableHead>{t("admin.cores.operationsFinishedAt")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {operations.map((operation) => (
+                    <TableRow key={operation.id}>
+                      <TableCell>{formatDateTime(operation.created_at)}</TableCell>
+                      <TableCell>{t(`admin.cores.operationType.${operation.operation_type}`)}</TableCell>
+                      <TableCell>{buildOperationTarget(operation)}</TableCell>
+                      <TableCell>
+                        <Badge variant={getStatusVariant(operation.status)}>{operation.status}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="max-w-[320px] truncate text-xs text-muted-foreground">
+                          {operation.error_message || JSON.stringify(operation.result_payload ?? {}) || "-"}
+                        </div>
+                      </TableCell>
+                      <TableCell>{formatDateTime(operation.finished_at ?? 0)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+
+            <Pagination page={operationsPage} totalPages={operationsTotalPages} onPageChange={setOperationsPage} />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => handleOperationsDialogChange(false)}>
+              {t("common.close")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -647,16 +954,21 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">{t("admin.cores.logsStatus")}</label>
-                <Select value={logsStatus} onValueChange={setLogsStatus}>
+                <Select value={logsStatus} onValueChange={(value) => {
+                  setLogsStatus(value);
+                  setLogsPage(1);
+                }}>
                   <SelectTrigger>
                     <SelectValue placeholder={t("admin.cores.logsStatusPlaceholder")} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">{t("common.all")}</SelectItem>
+                    <SelectItem value={FILTER_ALL}>{t("common.all")}</SelectItem>
                     <SelectItem value="pending">{t("admin.cores.status.pending")}</SelectItem>
+                    <SelectItem value="claimed">{t("admin.cores.status.claimed")}</SelectItem>
                     <SelectItem value="in_progress">{t("admin.cores.status.in_progress")}</SelectItem>
                     <SelectItem value="completed">{t("admin.cores.status.completed")}</SelectItem>
                     <SelectItem value="failed">{t("admin.cores.status.failed")}</SelectItem>
+                    <SelectItem value="rolled_back">{t("admin.cores.status.rolled_back")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -710,9 +1022,7 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
                       </TableCell>
                       <TableCell>{log.operator_id ?? "-"}</TableCell>
                       <TableCell>
-                        <div className="max-w-xl truncate text-xs text-muted-foreground">
-                          {log.detail || "-"}
-                        </div>
+                        <div className="max-w-xl truncate text-xs text-muted-foreground">{log.detail || "-"}</div>
                       </TableCell>
                     </TableRow>
                   ))}
