@@ -42,8 +42,45 @@ function buildDeployCommand(communicationKey: string, grpcAddress: string): stri
   const deployScriptURL = resolveDeployScriptURL();
   return [
     `curl -fsSL ${shellEscapeSingleQuoted(deployScriptURL)} -o /tmp/agent.sh`,
-    `sudo INSTALL_DIR=/opt/xboard/agent sh /tmp/agent.sh --bootstrap --ref latest -- -k ${shellEscapeSingleQuoted(communicationKey)} -g ${shellEscapeSingleQuoted(grpcAddress)}`,
+    `sudo INSTALL_DIR=/opt/xboard/agent sh /tmp/agent.sh -k ${shellEscapeSingleQuoted(communicationKey)} -g ${shellEscapeSingleQuoted(grpcAddress)}`,
   ].join(" && ");
+}
+
+function fallbackCopyText(text: string): boolean {
+  if (typeof document === "undefined") {
+    return false;
+  }
+  const textArea = document.createElement("textarea");
+  textArea.value = text;
+  textArea.setAttribute("readonly", "");
+  textArea.style.position = "fixed";
+  textArea.style.top = "0";
+  textArea.style.left = "0";
+  textArea.style.opacity = "0";
+  document.body.appendChild(textArea);
+  textArea.focus();
+  textArea.select();
+  let copied = false;
+  try {
+    copied = document.execCommand("copy");
+  } catch {
+    copied = false;
+  }
+  document.body.removeChild(textArea);
+  return copied;
+}
+
+async function copyText(text: string): Promise<boolean> {
+  if (!text) return false;
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fallback to execCommand for insecure context or permission-denied cases.
+    }
+  }
+  return fallbackCopyText(text);
 }
 
 export default function AgentList() {
@@ -177,16 +214,16 @@ export default function AgentList() {
 
   const handleCopyDeployCommand = async () => {
     if (!deployCommand) return;
-    try {
-      await navigator.clipboard.writeText(deployCommand);
+    const copied = await copyText(deployCommand);
+    if (copied) {
       toast.success(t("common.success"), {
         description: t("admin.agents.deploy.copySuccess"),
       });
-    } catch {
-      toast.error(t("common.error"), {
-        description: t("admin.agents.deploy.copyError"),
-      });
+      return;
     }
+    toast.error(t("common.error"), {
+      description: t("admin.agents.deploy.copyError"),
+    });
   };
 
   const agents: AgentHost[] = data?.data || [];

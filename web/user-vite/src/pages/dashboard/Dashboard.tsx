@@ -14,12 +14,12 @@ import {
   Code,
 } from "lucide-react";
 import { fetchUserInfo } from "@/api/user";
-import { getSystemStatus } from "@/api/admin";
+import { getQueueStats, getSystemStatus } from "@/api/admin";
 import { useAuth } from "@/providers/AuthProvider";
 import { Badge, Card, CardContent, CardHeader, ResponsiveGrid } from "@/components/ui";
 import { Button } from "@/components/ui/button";
 import { Loading, ErrorBanner } from "@/components/ui";
-import { formatBytes, formatDate, daysUntil, isExpired } from "@/lib/format";
+import { formatBytes, formatDate, formatDateTime, daysUntil, isExpired } from "@/lib/format";
 import { QUERY_KEYS } from "@/lib/constants";
 
 const toneStyles = {
@@ -57,6 +57,12 @@ export default function Dashboard() {
   const { data: systemStatus } = useQuery({
     queryKey: QUERY_KEYS.ADMIN_SYSTEM,
     queryFn: getSystemStatus,
+    enabled: isAdmin,
+    refetchInterval: 60000,
+  });
+  const { data: queueStats } = useQuery({
+    queryKey: QUERY_KEYS.ADMIN_SYSTEM_QUEUE,
+    queryFn: getQueueStats,
     enabled: isAdmin,
     refetchInterval: 60000,
   });
@@ -102,6 +108,14 @@ export default function Dashboard() {
 
     return parts.length > 0 ? parts.join(" ") : "< 1m";
   };
+
+  const formatStartedAt = (value?: string): string => {
+    if (!value) return "-";
+    const timestamp = Date.parse(value);
+    if (Number.isNaN(timestamp)) return value;
+    return formatDateTime(Math.floor(timestamp / 1000));
+  };
+
   const handleCopy = async () => {
     if (!user.subscribe_url) return;
     try {
@@ -314,7 +328,7 @@ export default function Dashboard() {
                       {t("admin.system.version")}
                     </p>
                     <Badge variant="secondary">
-                      {systemStatus.version || "v1.0.0"}
+                      {systemStatus.version || "go-dev"}
                     </Badge>
                   </div>
                 </div>
@@ -344,9 +358,108 @@ export default function Dashboard() {
                     </p>
                   </div>
                 </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                    <Server className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">
+                      {t("dashboard.environment")}
+                    </p>
+                    <p className="font-medium text-foreground">
+                      {systemStatus.environment || "-"}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                    <Server className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">
+                      {t("dashboard.hostname")}
+                    </p>
+                    <p className="font-medium text-foreground">
+                      {systemStatus.hostname || "-"}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                    <Clock className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">
+                      {t("dashboard.startedAt")}
+                    </p>
+                    <p className="font-medium text-foreground">
+                      {formatStartedAt(systemStatus.started_at)}
+                    </p>
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>
+
+          <ResponsiveGrid minColWidth={300} gap={16}>
+            <Card>
+              <CardHeader>
+                <h3 className="text-base font-semibold">{t("dashboard.logs")}</h3>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <p className="text-muted-foreground">{t("dashboard.logInfo")}</p>
+                    <p className="text-lg font-semibold text-foreground">{systemStatus.logs?.info ?? 0}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">{t("dashboard.logWarning")}</p>
+                    <p className="text-lg font-semibold text-foreground">{systemStatus.logs?.warning ?? 0}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">{t("dashboard.logError")}</p>
+                    <p className="text-lg font-semibold text-foreground">{systemStatus.logs?.error ?? 0}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">{t("dashboard.logTotal")}</p>
+                    <p className="text-lg font-semibold text-foreground">{systemStatus.logs?.total ?? 0}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <h3 className="text-base font-semibold">{t("dashboard.queueStats")}</h3>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <p className="text-muted-foreground">{t("dashboard.recentJobs")}</p>
+                    <p className="text-lg font-semibold text-foreground">{queueStats?.recentJobs ?? 0}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">{t("dashboard.jobsPerMinute")}</p>
+                    <p className="text-lg font-semibold text-foreground">
+                      {(queueStats?.jobsPerMinute ?? 0).toFixed(1)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">{t("dashboard.failedJobs")}</p>
+                    <p className="text-lg font-semibold text-foreground">{queueStats?.failedJobs ?? 0}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">{t("dashboard.maxThroughputQueue")}</p>
+                    <p className="text-sm font-medium text-foreground">
+                      {queueStats?.queueWithMaxThroughput?.name
+                        ? `${queueStats.queueWithMaxThroughput.name} (${queueStats.queueWithMaxThroughput.throughput})`
+                        : "-"}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </ResponsiveGrid>
         </div>
       )}
     </div>

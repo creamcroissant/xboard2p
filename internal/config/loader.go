@@ -123,6 +123,8 @@ func writeDefaultConfigFile(configPath string) error {
 			},
 		},
 		"grpc": map[string]any{
+			"enabled":         true,
+			"addr":            "0.0.0.0:9090",
 			"reuse_http_port": true,
 		},
 		"scheduler": map[string]any{

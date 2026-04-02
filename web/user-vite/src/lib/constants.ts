@@ -58,6 +58,7 @@ export const QUERY_KEYS = {
   ADMIN_NOTICES: ["admin", "notices"],
   ADMIN_KNOWLEDGE: ["admin", "knowledge"],
   ADMIN_SYSTEM: ["admin", "system"],
+  ADMIN_SYSTEM_QUEUE: ["admin", "system", "queue"],
   ADMIN_FORWARDING: ["admin", "forwarding"],
   ADMIN_FORWARDING_LOGS: ["admin", "forwarding", "logs"],
   ADMIN_ACCESS_LOGS: ["admin", "access-logs"],

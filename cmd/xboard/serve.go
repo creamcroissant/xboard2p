@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -55,6 +56,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 	cfg, err := config.LoadWithOptions(config.LoadOptions{ConfigPath: configPath})
 	if err != nil {
 		return err
+	}
+
+	runtimeVersion := strings.TrimSpace(Version)
+	if runtimeVersion == "" || runtimeVersion == "unknown" {
+		runtimeVersion = "go-dev"
 	}
 
 	resolvedDBPath, err := bootstrap.ResolveSQLitePath(cfg.DB.Path)
@@ -126,7 +132,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 				Enabled:       cfg.UI.Admin.Enabled,
 				Dir:           cfg.UI.Admin.Dir,
 				Title:         cfg.UI.Admin.Title,
-				Version:       cfg.UI.Admin.Version,
+				Version:       runtimeVersion,
 				BaseURL:       cfg.UI.Admin.BaseURL,
 				HiddenModules: cfg.UI.Admin.HiddenModules,
 			},
@@ -201,7 +207,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	installService := service.NewInstallService(store.Users(), infra.Hasher, i18nManager)
 
 	adminSystemService := service.NewAdminSystemService(service.AdminSystemOptions{
-		Version:           cfg.UI.Admin.Version,
+		Version:           runtimeVersion,
 		Environment:       cfg.Log.Environment,
 		StartedAt:         bootTime,
 		NotificationQueue: notificationQueue,
@@ -343,7 +349,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 			Dir:             cfg.UI.Admin.Dir,
 			BaseURL:         cfg.UI.Admin.BaseURL,
 			Title:           cfg.UI.Admin.Title,
-			Version:         cfg.UI.Admin.Version,
+			Version:         runtimeVersion,
 			Logo:            cfg.UI.Admin.Logo,
 			DeployScriptURL: cfg.UI.Admin.DeployScriptURL,
 			HiddenModules:   cfg.UI.Admin.HiddenModules,

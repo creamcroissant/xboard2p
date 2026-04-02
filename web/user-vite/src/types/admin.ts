@@ -18,8 +18,10 @@ export interface AgentHost {
   host: string;
   port: number;
   token?: string;
+  host_token?: string;
   template_id?: number;
   status: AgentStatus;
+  provision_status?: number;
   cpu_used: number;
   mem_total: number;
   mem_used: number;
@@ -120,6 +122,40 @@ export interface AgentCoreInfo {
   capabilities: string[];
 }
 
+export interface AgentCoreOperation {
+  id: string;
+  agent_host_id: number;
+  operation_type: "create" | "switch" | "install" | "ensure";
+  core_type: string;
+  status: "pending" | "claimed" | "in_progress" | "completed" | "failed" | "rolled_back";
+  request_payload?: Record<string, unknown>;
+  result_payload?: Record<string, unknown>;
+  error_message?: string;
+  operator_id?: number;
+  claimed_by?: string;
+  claimed_at?: number;
+  started_at?: number;
+  finished_at?: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ListAgentCoreOperationsParams {
+  agent_host_id: number;
+  operation_type?: string;
+  core_type?: string;
+  status?: string;
+  start_at?: number;
+  end_at?: number;
+  limit?: number;
+  offset?: number;
+}
+
+export interface AgentCoreOperationsResponse {
+  operations: AgentCoreOperation[];
+  total: number;
+}
+
 // Agent core instance interface
 export interface AgentCoreInstance {
   id: number;
@@ -154,15 +190,14 @@ export interface SwitchAgentCoreRequest {
   zero_downtime?: boolean;
 }
 
-export interface SwitchAgentCoreResult {
-  success: boolean;
-  new_instance_id?: string;
-  message?: string;
-  error?: string;
-  switch_log_id?: number;
-  completed_at?: number;
-  from_instance_id?: string;
-  to_core_type?: string;
+export interface InstallAgentCoreRequest {
+  core_type: string;
+  action: string;
+  version?: string;
+  channel?: string;
+  flavor?: string;
+  activate?: boolean;
+  request_id?: string;
 }
 
 export interface ConvertCoreConfigRequest {
@@ -216,14 +251,57 @@ export interface AdminKnowledgeSaveRequest {
 }
 
 // System status interface
+export interface SystemLogSummary {
+  info: number;
+  warning: number;
+  error: number;
+  total: number;
+}
+
 export interface SystemStatus {
   version: string;
   go_version: string;
+  environment?: string;
+  hostname?: string;
+  started_at?: string;
   uptime: number;
   user_count: number;
   server_count: number;
   agent_count: number;
   online_agent_count: number;
+  logs?: SystemLogSummary;
+}
+
+export interface QueueWait {
+  default: number;
+}
+
+export interface QueueMetric {
+  name: string;
+  throughput: number;
+}
+
+export interface QueueRuntime {
+  name: string;
+  runtime: number;
+}
+
+export interface QueuePeriods {
+  recentJobs: number;
+  failedJobs: number;
+}
+
+export interface QueueStats {
+  status: boolean;
+  wait?: QueueWait;
+  recentJobs: number;
+  jobsPerMinute: number;
+  queueWithMaxThroughput?: QueueMetric;
+  queueWithMaxRuntime?: QueueRuntime;
+  failedJobs: number;
+  periods?: QueuePeriods;
+  processes?: number;
+  pausedMasters?: number;
 }
 
 // Pagination params

@@ -99,7 +99,20 @@
     "expired": "已过期",
     "daysLeft": "天",
     "systemStats": "系统概览",
-    "systemInfo": "系统信息"
+    "systemInfo": "系统信息",
+    "environment": "运行环境",
+    "hostname": "主机名",
+    "startedAt": "启动时间",
+    "logs": "日志摘要",
+    "logInfo": "Info",
+    "logWarning": "Warning",
+    "logError": "Error",
+    "logTotal": "总计",
+    "queueStats": "队列状态",
+    "recentJobs": "近期任务数",
+    "jobsPerMinute": "每分钟任务",
+    "failedJobs": "失败任务",
+    "maxThroughputQueue": "最高吞吐队列"
   },
   "servers": {
     "title": "节点列表",

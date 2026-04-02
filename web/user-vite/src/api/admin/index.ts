@@ -66,9 +66,11 @@ export {
 export {
   listAgentCores,
   listAgentCoreInstances,
+  listAgentCoreOperations,
   createAgentCoreInstance,
   deleteAgentCoreInstance,
   switchAgentCore,
+  installAgentCore,
   convertAgentCoreConfig,
   listAgentCoreSwitchLogs,
 } from "./cores";
@@ -79,6 +81,7 @@ export { fetchAccessLogs, getAccessLogStats, cleanupAccessLogs } from "./accessL
 // System API
 export {
   getSystemStatus,
+  getQueueStats,
   getSystemConfig,
   updateSystemConfig,
 } from "./system";
