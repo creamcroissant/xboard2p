@@ -3,7 +3,8 @@ set -e
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
-INSTALL_DIR="${INSTALL_DIR:-/opt/xboard}"
+DEFAULT_INSTALL_DIR="/opt/xboard/panel"
+INSTALL_DIR="${INSTALL_DIR:-$DEFAULT_INSTALL_DIR}"
 FRONTEND_RELEASE_ASSET="${XBOARD_FRONTEND_RELEASE_ASSET:-frontend-dist.tar.gz}"
 INSTALL_UI_RELEASE_ASSET="${XBOARD_INSTALL_UI_RELEASE_ASSET:-install-ui.tar.gz}"
 SKIP_SYSTEMD="${XBOARD_INSTALL_SKIP_SYSTEMD:-0}"
@@ -510,7 +511,7 @@ render_install_service_file() {
         return 1
     fi
 
-    escaped_install_dir=$(printf '%s' "$INSTALL_DIR" | sed 's/[\\/&]/\\\\&/g')
+    escaped_install_dir=$(printf '%s' "$INSTALL_DIR" | sed 's/[&#\\]/\\&/g')
     if ! sed "s#/opt/xboard#${escaped_install_dir}#g" "$source_path" > "$temp_service"; then
         echo "Error: failed to render service file ${source_path}."
         rm -f "$temp_service"
@@ -862,6 +863,44 @@ resolve_service_file() {
     return 0
 }
 
+write_default_service_template() {
+    service_name=$1
+    temp_service=$(mktemp)
+    if [ -z "$temp_service" ]; then
+        echo "Error: failed to create temporary service template."
+        return 1
+    fi
+
+    case "$service_name" in
+        xboard.service)
+            cat > "$temp_service" <<'EOF'
+[Unit]
+Description=XBoard Panel Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/xboard/panel
+EnvironmentFile=-/etc/default/xboard
+ExecStart=/opt/xboard/panel/xboard serve --config /opt/xboard/panel/config.yml
+Restart=always
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
+EOF
+            ;;
+        *)
+            rm -f "$temp_service"
+            return 1
+            ;;
+    esac
+
+    echo "$temp_service"
+    return 0
+}
+
 print_usage() {
     cat <<'EOF'
 Usage: sh panel.sh [options]
@@ -984,10 +1023,24 @@ if [ "$SKIP_SYSTEMD" = "1" ]; then
     echo "Skipping xboard.service installation (XBOARD_INSTALL_SKIP_SYSTEMD=1)."
 elif is_systemd_available; then
     SERVICE_FILE=$(resolve_service_file "xboard.service")
-    if [ -n "$SERVICE_FILE" ]; then
-        if ! render_install_service_file "$SERVICE_FILE" /etc/systemd/system/xboard.service; then
+    TEMPLATE_SOURCE="$SERVICE_FILE"
+    TEMP_TEMPLATE=""
+    if [ -z "$TEMPLATE_SOURCE" ]; then
+        if TEMP_TEMPLATE=$(write_default_service_template "xboard.service"); then
+            TEMPLATE_SOURCE="$TEMP_TEMPLATE"
+            echo "xboard.service template not found; using embedded default template."
+        fi
+    fi
+    if [ -n "$TEMPLATE_SOURCE" ]; then
+        if ! render_install_service_file "$TEMPLATE_SOURCE" /etc/systemd/system/xboard.service; then
+            if [ -n "$TEMP_TEMPLATE" ]; then
+                rm -f "$TEMP_TEMPLATE"
+            fi
             echo "Error: failed to install xboard.service."
             exit 1
+        fi
+        if [ -n "$TEMP_TEMPLATE" ]; then
+            rm -f "$TEMP_TEMPLATE"
         fi
         if ! run_privileged systemctl daemon-reload; then
             echo "Error: failed to run systemctl daemon-reload."
@@ -999,7 +1052,7 @@ elif is_systemd_available; then
         fi
         echo "xboard.service installed."
     else
-        echo "Warning: deploy/xboard.service not found."
+        echo "Warning: deploy/xboard.service not found and embedded template generation failed."
     fi
 elif is_openrc_available; then
     if ! install_openrc_service "xboard" "${INSTALL_DIR}/xboard" "serve --config ${INSTALL_DIR}/config.yml"; then

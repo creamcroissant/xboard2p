@@ -114,11 +114,11 @@ sudo bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p
   -k 'your-agent-communication-key' -g '10.0.0.2:9090' -c sing-box
 
 # 单命令 bootstrap 入口（bootstrap 逻辑已并入 agent.sh）
-sudo INSTALL_DIR=/opt/xboard bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh) \
+sudo INSTALL_DIR=/opt/xboard/agent bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh) \
   --bootstrap --ref latest -- -k 'your-agent-communication-key' -g '10.0.0.2:9090'
 
 # 指定 tag 的 bootstrap（脚本/service/二进制版本强绑定）
-sudo INSTALL_DIR=/opt/xboard bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh) \
+sudo INSTALL_DIR=/opt/xboard/agent bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh) \
   --bootstrap --ref v1.2.3 -- -k 'your-agent-communication-key' -g '10.0.0.2:9090'
 
 # 卸载 panel 脚本管理产物
@@ -126,6 +126,38 @@ sudo bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p
 
 # 卸载 agent 脚本管理产物
 sudo bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh) --uninstall
+
+# 若系统不支持 Bash 进程替换（<(...))，可使用以下方式：
+
+# panel 安装（curl 管道）
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/panel.sh | sudo bash -s --
+
+# panel 安装（wget 管道）
+wget -qO- https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/panel.sh | sudo bash -s --
+
+# panel 卸载（wget 下载后执行）
+wget -qO /tmp/panel.sh https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/panel.sh
+sudo bash /tmp/panel.sh --uninstall
+
+# agent 安装（curl 管道）
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh | sudo bash -s -- \
+  -k 'your-agent-communication-key' -g '10.0.0.2:9090'
+
+# agent 安装（wget 管道）
+wget -qO- https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh | sudo bash -s -- \
+  -k 'your-agent-communication-key' -g '10.0.0.2:9090'
+
+# agent bootstrap（wget 下载后执行）
+wget -qO /tmp/agent.sh https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh
+sudo INSTALL_DIR=/opt/xboard/agent bash /tmp/agent.sh --bootstrap --ref latest -- \
+  -k 'your-agent-communication-key' -g '10.0.0.2:9090'
+
+# agent 卸载（curl 管道）
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh | sudo bash -s -- --uninstall
+
+# agent 卸载（wget 下载后执行）
+wget -qO /tmp/agent.sh https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh
+sudo bash /tmp/agent.sh --uninstall
 ```
 
 服务管理行为：
@@ -145,7 +177,7 @@ sudo rc-service xboard start
 sudo rc-service xboard status
 ```
 
-默认安装目录为 `/opt/xboard`。
+默认安装目录为：panel 使用 `/opt/xboard/panel`，agent 使用 `/opt/xboard/agent`。
 
 下载依赖准备（`curl` + CA 证书）由 `deploy/panel.sh` 与 `deploy/agent.sh` 在二进制下载前直接处理。
 
@@ -178,8 +210,8 @@ agent 安装相关环境变量：
 - `--core-flavor` / `XBOARD_AGENT_CORE_FLAVOR`
 
 配置文件生成规则：
-- `agent_config.yml` 不存在：按参数写入。
-- `agent_config.yml` 已存在：默认不覆盖；显式开启 overwrite 才覆盖。
+- `config.yml` 不存在：按参数写入。
+- `config.yml` 已存在：默认不覆盖；显式开启 overwrite 才覆盖。
 - `communication_key` 或 `grpc_address` 缺失：直接失败并输出示例。
 - 新安装生成的配置固定为 `panel.host_token` 为空、`panel.communication_key` 非空。
 - `host_token` 不再作为公开安装输入；它只会在 Agent 首启注册后自动回写。
@@ -193,7 +225,7 @@ agent 安装相关环境变量：
 
 非交互示例：
 ```bash
-sudo INSTALL_DIR=/opt/xboard \
+sudo INSTALL_DIR=/opt/xboard/agent \
   XBOARD_AGENT_COMMUNICATION_KEY='your-agent-communication-key' \
   XBOARD_AGENT_GRPC_ADDRESS='10.0.0.2:9090' \
   sh ./deploy/agent.sh

@@ -237,7 +237,7 @@ jobs:
             XBOARD_RELEASE_TAG="local" \
             sh ./agent.sh -k "workflow-token-sh" -g "127.0.0.1:19090"
             test -x "${WORKDIR_SH}/out/agent"
-            test -f "${WORKDIR_SH}/out/agent_config.yml"
+            test -f "${WORKDIR_SH}/out/config.yml"
           )
 
           (
@@ -248,7 +248,7 @@ jobs:
             XBOARD_RELEASE_TAG="local" \
             bash ./agent.sh -k "workflow-token-bash" -g "127.0.0.1:19090"
             test -x "${WORKDIR_BASH}/out/agent"
-            test -f "${WORKDIR_BASH}/out/agent_config.yml"
+            test -f "${WORKDIR_BASH}/out/config.yml"
           )
 
           (
@@ -303,7 +303,7 @@ jobs:
             sh ./agent.sh --uninstall
             XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_SH}/out" sh ./agent.sh --uninstall
             test ! -e "${WORKDIR_SH}/out/agent"
-            test ! -e "${WORKDIR_SH}/out/agent_config.yml"
+            test ! -e "${WORKDIR_SH}/out/config.yml"
           )
 
           (
@@ -312,7 +312,7 @@ jobs:
             bash ./agent.sh --uninstall
             XBOARD_INSTALL_SKIP_SYSTEMD=1 INSTALL_DIR="${WORKDIR_BASH}/out" bash ./agent.sh --uninstall
             test ! -e "${WORKDIR_BASH}/out/agent"
-            test ! -e "${WORKDIR_BASH}/out/agent_config.yml"
+            test ! -e "${WORKDIR_BASH}/out/config.yml"
           )
 
           (
@@ -329,7 +329,7 @@ jobs:
             sh ./agent.sh --uninstall
             test -f "${WORKDIR_SH}/custom-install/unknown.keep"
             test ! -e "${WORKDIR_SH}/custom-install/agent"
-            test ! -e "${WORKDIR_SH}/custom-install/agent_config.yml"
+            test ! -e "${WORKDIR_SH}/custom-install/config.yml"
           )
 
           (
@@ -346,7 +346,7 @@ jobs:
             bash ./agent.sh --uninstall
             test -f "${WORKDIR_BASH}/custom-install/unknown.keep"
             test ! -e "${WORKDIR_BASH}/custom-install/agent"
-            test ! -e "${WORKDIR_BASH}/custom-install/agent_config.yml"
+            test ! -e "${WORKDIR_BASH}/custom-install/config.yml"
           )
 
           (
@@ -357,7 +357,7 @@ jobs:
             XBOARD_RELEASE_TAG="local" \
             sh ./agent.sh -k "with-core-token" -g "127.0.0.1:19090" -c sing-box
             test -x "${WORKDIR_SH}/with-core-out/agent"
-            test -f "${WORKDIR_SH}/with-core-out/agent_config.yml"
+            test -f "${WORKDIR_SH}/with-core-out/config.yml"
           )
 
           (
@@ -447,7 +447,7 @@ jobs:
               --repo local/local \
               --service-url "file://${WORKDIR_SH}/agent.service"
             test -x "${WORKDIR_SH}/bootstrap-out/agent"
-            test -f "${WORKDIR_SH}/bootstrap-out/agent_config.yml"
+            test -f "${WORKDIR_SH}/bootstrap-out/config.yml"
           )
 
           (
@@ -462,7 +462,7 @@ jobs:
               --repo local/local \
               --service-url "file://${WORKDIR_BASH}/agent.service"
             test -x "${WORKDIR_BASH}/bootstrap-out/agent"
-            test -f "${WORKDIR_BASH}/bootstrap-out/agent_config.yml"
+            test -f "${WORKDIR_BASH}/bootstrap-out/config.yml"
           )
 
           (
@@ -561,7 +561,7 @@ jobs:
             XBOARD_RELEASE_REPO="local/local" \
             XBOARD_RELEASE_TAG="local" \
             sh ./agent.sh -k "release-check-token" -g "127.0.0.1:19090"
-            test -f "${WORKDIR}/out/agent_config.yml"
+            test -f "${WORKDIR}/out/config.yml"
           )
 
 
@@ -644,52 +644,52 @@ jobs:
           }
           EOF
 
-          if ! grep -Eq '^[[:space:]]*grpc:' "${WORKDIR}/out/agent_config.yml"; then
-            echo "agent_config.yml missing grpc section" >&2
+          if ! grep -Eq '^[[:space:]]*grpc:' "${WORKDIR}/out/config.yml"; then
+            echo "config.yml missing grpc section" >&2
             exit 1
           fi
-          if ! grep -Eq '^[[:space:]]*enabled:[[:space:]]*true[[:space:]]*$' "${WORKDIR}/out/agent_config.yml"; then
-            echo "agent_config.yml missing grpc.enabled=true" >&2
+          if ! grep -Eq '^[[:space:]]*enabled:[[:space:]]*true[[:space:]]*$' "${WORKDIR}/out/config.yml"; then
+            echo "config.yml missing grpc.enabled=true" >&2
             exit 1
           fi
-          if ! grep -Eq '^[[:space:]]*enabled:[[:space:]]*false[[:space:]]*$' "${WORKDIR}/out/agent_config.yml"; then
-            echo "agent_config.yml should default grpc.tls.enabled=false" >&2
+          if ! grep -Eq '^[[:space:]]*enabled:[[:space:]]*false[[:space:]]*$' "${WORKDIR}/out/config.yml"; then
+            echo "config.yml should default grpc.tls.enabled=false" >&2
             exit 1
           fi
-          if ! grep -Eq '^[[:space:]]*address:[[:space:]]*"127\.0\.0\.1:19090"[[:space:]]*$' "${WORKDIR}/out/agent_config.yml"; then
-            echo "agent_config.yml grpc.address should be initialized from install parameters" >&2
+          if ! grep -Eq '^[[:space:]]*address:[[:space:]]*"127\.0\.0\.1:19090"[[:space:]]*$' "${WORKDIR}/out/config.yml"; then
+            echo "config.yml grpc.address should be initialized from install parameters" >&2
             exit 1
           fi
-          if ! grep -Eq '^[[:space:]]*panel:' "${WORKDIR}/out/agent_config.yml"; then
-            echo "agent_config.yml missing panel section" >&2
+          if ! grep -Eq '^[[:space:]]*panel:' "${WORKDIR}/out/config.yml"; then
+            echo "config.yml missing panel section" >&2
             exit 1
           fi
-          if ! grep -Eq '^[[:space:]]*host_token:[[:space:]]*""[[:space:]]*$' "${WORKDIR}/out/agent_config.yml"; then
-            echo "agent_config.yml panel.host_token should be empty before first boot registration" >&2
+          if ! grep -Eq '^[[:space:]]*host_token:[[:space:]]*""[[:space:]]*$' "${WORKDIR}/out/config.yml"; then
+            echo "config.yml panel.host_token should be empty before first boot registration" >&2
             exit 1
           fi
-          if ! grep -Eq '^[[:space:]]*communication_key:[[:space:]]*"release-check-token"[[:space:]]*$' "${WORKDIR}/out/agent_config.yml"; then
-            echo "agent_config.yml panel.communication_key should be initialized from install parameters" >&2
+          if ! grep -Eq '^[[:space:]]*communication_key:[[:space:]]*"release-check-token"[[:space:]]*$' "${WORKDIR}/out/config.yml"; then
+            echo "config.yml panel.communication_key should be initialized from install parameters" >&2
             exit 1
           fi
-          if ! grep -Eq '^[[:space:]]*traffic:' "${WORKDIR}/out/agent_config.yml"; then
-            echo "agent_config.yml missing traffic section" >&2
+          if ! grep -Eq '^[[:space:]]*traffic:' "${WORKDIR}/out/config.yml"; then
+            echo "config.yml missing traffic section" >&2
             exit 1
           fi
-          if ! grep -Eq '^[[:space:]]*type:[[:space:]]*"netio"[[:space:]]*$' "${WORKDIR}/out/agent_config.yml"; then
-            echo "agent_config.yml should default traffic.type=netio" >&2
+          if ! grep -Eq '^[[:space:]]*type:[[:space:]]*"netio"[[:space:]]*$' "${WORKDIR}/out/config.yml"; then
+            echo "config.yml should default traffic.type=netio" >&2
             exit 1
           fi
-          if grep -Eq '^[[:space:]]*token:[[:space:]]*' "${WORKDIR}/out/agent_config.yml"; then
-            echo "agent_config.yml should not contain legacy panel.token" >&2
+          if grep -Eq '^[[:space:]]*token:[[:space:]]*' "${WORKDIR}/out/config.yml"; then
+            echo "config.yml should not contain legacy panel.token" >&2
             exit 1
           fi
-          if grep -Eq '^[[:space:]]*node_id:[[:space:]]*' "${WORKDIR}/out/agent_config.yml"; then
-            echo "agent_config.yml should not contain legacy panel.node_id" >&2
+          if grep -Eq '^[[:space:]]*node_id:[[:space:]]*' "${WORKDIR}/out/config.yml"; then
+            echo "config.yml should not contain legacy panel.node_id" >&2
             exit 1
           fi
 
-          go run "${VALIDATE_GO}" "${WORKDIR}/out/agent_config.yml"
+          go run "${VALIDATE_GO}" "${WORKDIR}/out/config.yml"
           rm -f "${VALIDATE_GO}"
 
       - name: Merge checksums

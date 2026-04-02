@@ -112,11 +112,11 @@ sudo bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p
   -k 'your-agent-communication-key' -g '10.0.0.2:9090' -c sing-box
 
 # One-liner bootstrap entry (bootstrap logic is merged into agent.sh)
-sudo INSTALL_DIR=/opt/xboard bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh) \
+sudo INSTALL_DIR=/opt/xboard/agent bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh) \
   --bootstrap --ref latest -- -k 'your-agent-communication-key' -g '10.0.0.2:9090'
 
 # Bootstrap with explicit tag (script/service/binary version bound to same tag)
-sudo INSTALL_DIR=/opt/xboard bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh) \
+sudo INSTALL_DIR=/opt/xboard/agent bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh) \
   --bootstrap --ref v1.2.3 -- -k 'your-agent-communication-key' -g '10.0.0.2:9090'
 
 # Uninstall panel-managed artifacts
@@ -124,6 +124,38 @@ sudo bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p
 
 # Uninstall agent-managed artifacts
 sudo bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh) --uninstall
+
+# If your system does NOT support Bash process substitution (<(...)), use one of these alternatives:
+
+# Panel install (curl pipe)
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/panel.sh | sudo bash -s --
+
+# Panel install (wget pipe)
+wget -qO- https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/panel.sh | sudo bash -s --
+
+# Panel uninstall (wget download + run)
+wget -qO /tmp/panel.sh https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/panel.sh
+sudo bash /tmp/panel.sh --uninstall
+
+# Agent install (curl pipe)
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh | sudo bash -s -- \
+  -k 'your-agent-communication-key' -g '10.0.0.2:9090'
+
+# Agent install (wget pipe)
+wget -qO- https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh | sudo bash -s -- \
+  -k 'your-agent-communication-key' -g '10.0.0.2:9090'
+
+# Agent bootstrap with explicit INSTALL_DIR (wget download + run)
+wget -qO /tmp/agent.sh https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh
+sudo INSTALL_DIR=/opt/xboard/agent bash /tmp/agent.sh --bootstrap --ref latest -- \
+  -k 'your-agent-communication-key' -g '10.0.0.2:9090'
+
+# Agent uninstall (curl pipe)
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh | sudo bash -s -- --uninstall
+
+# Agent uninstall (wget download + run)
+wget -qO /tmp/agent.sh https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh
+sudo bash /tmp/agent.sh --uninstall
 ```
 
 Service manager behavior:
@@ -143,7 +175,7 @@ sudo rc-service xboard start
 sudo rc-service xboard status
 ```
 
-Default installation directory is `/opt/xboard`.
+Default installation directories are `/opt/xboard/panel` (panel) and `/opt/xboard/agent` (agent).
 
 Download dependency preparation (`curl` + CA certificates) is handled directly in `deploy/panel.sh` and `deploy/agent.sh` before binary download.
 
@@ -176,8 +208,8 @@ Core-only maintenance parameters:
 - `--core-flavor` / `XBOARD_AGENT_CORE_FLAVOR`
 
 Config generation behavior:
-- If `agent_config.yml` does not exist: installer writes it from parameters.
-- If `agent_config.yml` exists: installer keeps it unless overwrite is explicitly enabled.
+- If `config.yml` does not exist: installer writes it from parameters.
+- If `config.yml` exists: installer keeps it unless overwrite is explicitly enabled.
 - Missing `communication_key` or `grpc_address` causes hard failure with usage example.
 - Fresh install config always starts with empty `panel.host_token` and non-empty `panel.communication_key`.
 - `host_token` is not a public install input anymore; it is written back by the Agent after first-boot registration.
@@ -191,7 +223,7 @@ Uninstall behavior:
 
 Example (non-interactive):
 ```bash
-sudo INSTALL_DIR=/opt/xboard \
+sudo INSTALL_DIR=/opt/xboard/agent \
   XBOARD_AGENT_COMMUNICATION_KEY='your-agent-communication-key' \
   XBOARD_AGENT_GRPC_ADDRESS='10.0.0.2:9090' \
   sh ./deploy/agent.sh

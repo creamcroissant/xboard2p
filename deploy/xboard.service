@@ -5,9 +5,9 @@ After=network.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/opt/xboard
+WorkingDirectory=/opt/xboard/panel
 EnvironmentFile=-/etc/default/xboard
-ExecStart=/opt/xboard/xboard serve --config /opt/xboard/config.yml
+ExecStart=/opt/xboard/panel/xboard serve --config /opt/xboard/panel/config.yml
 Restart=always
 RestartSec=5s
 

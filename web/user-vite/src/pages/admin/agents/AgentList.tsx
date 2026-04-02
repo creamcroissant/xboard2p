@@ -42,7 +42,7 @@ function buildDeployCommand(communicationKey: string, grpcAddress: string): stri
   const deployScriptURL = resolveDeployScriptURL();
   return [
     `curl -fsSL ${shellEscapeSingleQuoted(deployScriptURL)} -o /tmp/agent.sh`,
-    `sudo INSTALL_DIR=/opt/xboard sh /tmp/agent.sh --bootstrap --ref latest -- -k ${shellEscapeSingleQuoted(communicationKey)} -g ${shellEscapeSingleQuoted(grpcAddress)}`,
+    `sudo INSTALL_DIR=/opt/xboard/agent sh /tmp/agent.sh --bootstrap --ref latest -- -k ${shellEscapeSingleQuoted(communicationKey)} -g ${shellEscapeSingleQuoted(grpcAddress)}`,
   ].join(" && ");
 }
 

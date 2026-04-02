@@ -3,7 +3,7 @@ set -e
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
-INSTALL_DIR="${INSTALL_DIR:-/opt/xboard}"
+INSTALL_DIR="${INSTALL_DIR:-/opt/xboard/agent}"
 SKIP_SYSTEMD="${XBOARD_INSTALL_SKIP_SYSTEMD:-0}"
 
 USER_XBOARD_RELEASE_REPO="${XBOARD_RELEASE_REPO:-}"
@@ -527,7 +527,7 @@ render_install_service_file() {
         return 1
     fi
 
-    escaped_install_dir=$(printf '%s' "$INSTALL_DIR" | sed 's/[\\/&]/\\\\&/g')
+    escaped_install_dir=$(printf '%s' "$INSTALL_DIR" | sed 's/[&#\\]/\\&/g')
     if ! sed "s#/opt/xboard#${escaped_install_dir}#g" "$source_path" > "$temp_service"; then
         echo "Error: failed to render service file ${source_path}."
         rm -f "$temp_service"
@@ -1591,7 +1591,7 @@ Install options:
   -g, --grpc-address <address>   Panel gRPC address, e.g. 10.0.0.2:9090 (required)
   -t, --grpc-tls-enabled <bool>  true/false, default false
       --traffic-type <type>      traffic.type, default netio
-  -f, --force-config-overwrite   overwrite existing agent_config.yml
+  -f, --force-config-overwrite   overwrite existing config.yml
   -c, --with-core <core_type>    install core during agent install (sing-box|xray)
 
 Core maintenance options:
@@ -1911,6 +1911,7 @@ if [ "$UNINSTALL_MODE" = "1" ]; then
     fi
 
     run_privileged rm -f "$INSTALL_DIR/agent" || true
+    run_privileged rm -f "$INSTALL_DIR/config.yml" || true
     run_privileged rm -f "$INSTALL_DIR/agent_config.yml" || true
 
     echo "Agent uninstall completed."
@@ -1977,13 +1978,22 @@ if [ -n "$WITH_CORE_TYPE" ]; then
     fi
 fi
 
-CONFIG_PATH="$INSTALL_DIR/agent_config.yml"
+CONFIG_PATH="$INSTALL_DIR/config.yml"
+LEGACY_CONFIG_PATH="$INSTALL_DIR/agent_config.yml"
+if [ ! -f "$CONFIG_PATH" ] && [ -f "$LEGACY_CONFIG_PATH" ]; then
+    if run_privileged mv "$LEGACY_CONFIG_PATH" "$CONFIG_PATH"; then
+        echo "Detected legacy agent_config.yml and migrated it to config.yml (${CONFIG_PATH})."
+    else
+        echo "Error: failed to migrate legacy agent_config.yml to config.yml."
+        exit 1
+    fi
+fi
 if [ -f "$CONFIG_PATH" ] && [ "$FORCE_CONFIG_OVERWRITE" != "1" ]; then
-    echo "agent_config.yml already exists. Keep existing file (use --force-config-overwrite to overwrite)."
+    echo "config.yml already exists. Keep existing file (use --force-config-overwrite to overwrite)."
 else
     if [ -z "$GRPC_ADDRESS" ]; then
         echo "Error: missing required config parameters."
-        echo "grpc address is required to initialize agent_config.yml."
+        echo "grpc address is required to initialize config.yml."
         echo "Example:"
         echo "  sh ./deploy/agent.sh -k '<communication-key>' -g '127.0.0.1:9090'"
         exit 1
@@ -1991,7 +2001,7 @@ else
 
     if [ -z "$COMMUNICATION_KEY" ]; then
         echo "Error: missing required authentication parameters."
-        echo "communication_key is required to initialize agent_config.yml."
+        echo "communication_key is required to initialize config.yml."
         echo "host_token can only be written back by the Agent after first-boot registration."
         exit 1
     fi
@@ -2016,7 +2026,7 @@ core:
 traffic:
   type: "${TRAFFIC_TYPE}"
 EOF
-    echo "Initialized agent_config.yml at ${CONFIG_PATH}."
+    echo "Initialized config.yml at ${CONFIG_PATH}."
 fi
 
 if [ "$SKIP_SYSTEMD" = "1" ]; then
@@ -2041,7 +2051,7 @@ elif is_systemd_available; then
         echo "Warning: agent.service not found (checked override/env/local paths)."
     fi
 elif is_openrc_available; then
-    if ! install_openrc_service "xboard-agent" "${INSTALL_DIR}/agent" "--config ${INSTALL_DIR}/agent_config.yml"; then
+    if ! install_openrc_service "xboard-agent" "${INSTALL_DIR}/agent" "--config ${INSTALL_DIR}/config.yml"; then
         exit 1
     fi
 else
