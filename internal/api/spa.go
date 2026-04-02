@@ -29,14 +29,15 @@ type routerOptions struct {
 
 // AdminUIOptions 控制管理端前端资源的加载与品牌定制。
 type AdminUIOptions struct {
-	Enabled       bool
-	Dir           string
-	Index         string
-	BaseURL       string
-	Title         string
-	Version       string
-	Logo          string
-	HiddenModules []string
+	Enabled         bool
+	Dir             string
+	Index           string
+	BaseURL         string
+	Title           string
+	Version         string
+	Logo            string
+	DeployScriptURL string
+	HiddenModules   []string
 }
 
 // WithAdminUI 会把管理端静态资源配置应用到 Router 中。
@@ -76,10 +77,11 @@ func WithInstallUI(opts InstallUIOptions) RouterOption {
 }
 
 type adminBranding struct {
-	baseURL string
-	title   string
-	version string
-	logo    string
+	baseURL         string
+	title           string
+	version         string
+	logo            string
+	deployScriptURL string
 }
 
 type userBranding struct {
@@ -130,29 +132,28 @@ func registerSPARoutes(root chi.Router, userHandler *userSPAHandler, adminHandle
 }
 
 func (h *unifiedSPAHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// 统一使用 Admin SPA，不再区分 User SPA
-	// Admin SPA 会根据用户的 is_admin 角色动态显示功能
 	if h.admin != nil {
 		securePath, err := h.admin.paths.SecurePath(r.Context())
 		if err == nil {
 			securePath = normalizeSecurePath(securePath)
-			// 检查请求路径是否以 /{securePath} 开头
 			prefix := "/" + securePath
 			if r.URL.Path == prefix || strings.HasPrefix(r.URL.Path, prefix+"/") {
 				h.admin.serveAdminRequest(w, r, securePath)
 				return
 			}
 		}
-		// 对于根路径或其他路径，也使用 Admin SPA
-		// 这样可以统一使用一个前端界面
-		h.serveAdminAtRoot(w, r)
-		return
 	}
-	// 如果 Admin SPA 不可用，回退到 User SPA
+
 	if h.user != nil {
 		h.user.ServeHTTP(w, r)
 		return
 	}
+
+	if h.admin != nil {
+		h.serveAdminAtRoot(w, r)
+		return
+	}
+
 	http.NotFound(w, r)
 }
 
@@ -240,10 +241,11 @@ func newAdminSPAHandler(logger *slog.Logger, paths service.AdminPathService, opt
 		index = "index.html"
 	}
 	branding := adminBranding{
-		baseURL: strings.TrimRight(opts.BaseURL, "/"),
-		title:   fallback(opts.Title, "XBoard"),
-		version: fallback(opts.Version, "go-dev"),
-		logo:    fallback(opts.Logo, "https://xboard.io/images/logo.png"),
+		baseURL:         strings.TrimRight(opts.BaseURL, "/"),
+		title:           fallback(opts.Title, "XBoard"),
+		version:         fallback(opts.Version, "go-dev"),
+		logo:            fallback(opts.Logo, "https://xboard.io/images/logo.png"),
+		deployScriptURL: strings.TrimSpace(opts.DeployScriptURL),
 	}
 	return &adminSPAHandler{
 		logger:        logger,
@@ -476,12 +478,13 @@ func (h *adminSPAHandler) serveIndex(w http.ResponseWriter, r *http.Request) {
 	securePath = normalizeSecurePath(securePath)
 
 	payload := map[string]any{
-		"base_url":         h.resolveBaseURL(r),
-		"title":            h.branding.title,
-		"version":          h.branding.version,
-		"logo":             h.branding.logo,
-		"secure_path":      "/" + securePath,
-		"disabled_modules": h.hiddenModules,
+		"base_url":          h.resolveBaseURL(r),
+		"title":             h.branding.title,
+		"version":           h.branding.version,
+		"logo":              h.branding.logo,
+		"deploy_script_url": h.branding.deployScriptURL,
+		"secure_path":       "/" + securePath,
+		"disabled_modules":  h.hiddenModules,
 	}
 	settingsJSON, _ := json.Marshal(payload)
 	settingsScript := fmt.Sprintf("<script>window.settings = %s;</script>", settingsJSON)
@@ -528,12 +531,13 @@ func (h *userSPAHandler) serveIndex(w http.ResponseWriter, r *http.Request) {
 
 func (h *adminSPAHandler) serveSettings(w http.ResponseWriter, r *http.Request, securePath string) {
 	payload := map[string]any{
-		"base_url":         h.resolveBaseURL(r),
-		"title":            h.branding.title,
-		"version":          h.branding.version,
-		"logo":             h.branding.logo,
-		"secure_path":      "/" + securePath,
-		"disabled_modules": h.hiddenModules,
+		"base_url":          h.resolveBaseURL(r),
+		"title":             h.branding.title,
+		"version":           h.branding.version,
+		"logo":              h.branding.logo,
+		"deploy_script_url": h.branding.deployScriptURL,
+		"secure_path":       "/" + securePath,
+		"disabled_modules":  h.hiddenModules,
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -588,13 +592,14 @@ func (h *adminSPAHandler) serveIndexAtRoot(w http.ResponseWriter, r *http.Reques
 
 	// 构建 settings 脚本，使用实际的 secure_path
 	payload := map[string]any{
-		"base_url":         h.resolveBaseURL(r),
-		"title":            h.branding.title,
-		"version":          h.branding.version,
-		"logo":             h.branding.logo,
-		"secure_path":      "/" + securePath,
-		"router_base":      "/", // 强制根路径作为路由基础
-		"disabled_modules": h.hiddenModules,
+		"base_url":          h.resolveBaseURL(r),
+		"title":             h.branding.title,
+		"version":           h.branding.version,
+		"logo":              h.branding.logo,
+		"deploy_script_url": h.branding.deployScriptURL,
+		"secure_path":       "/" + securePath,
+		"router_base":       "/", // 强制根路径作为路由基础
+		"disabled_modules":  h.hiddenModules,
 	}
 	settingsJSON, _ := json.Marshal(payload)
 	settingsScript := fmt.Sprintf("<script>window.settings = %s;</script>", settingsJSON)
@@ -618,13 +623,14 @@ func (h *adminSPAHandler) serveSettingsAtRoot(w http.ResponseWriter, r *http.Req
 	securePath = normalizeSecurePath(securePath)
 
 	payload := map[string]any{
-		"base_url":         h.resolveBaseURL(r),
-		"title":            h.branding.title,
-		"version":          h.branding.version,
-		"logo":             h.branding.logo,
-		"secure_path":      "/" + securePath,
-		"router_base":      "/", // 强制根路径作为路由基础
-		"disabled_modules": h.hiddenModules,
+		"base_url":          h.resolveBaseURL(r),
+		"title":             h.branding.title,
+		"version":           h.branding.version,
+		"logo":              h.branding.logo,
+		"deploy_script_url": h.branding.deployScriptURL,
+		"secure_path":       "/" + securePath,
+		"router_base":       "/", // 强制根路径作为路由基础
+		"disabled_modules":  h.hiddenModules,
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {

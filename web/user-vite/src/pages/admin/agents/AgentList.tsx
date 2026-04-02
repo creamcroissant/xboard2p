@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Plus, RefreshCw, Server } from "lucide-react";
 import { QUERY_KEYS } from "@/lib/constants";
 import { getAgentHosts, refreshAgentHosts, updateAgentHost } from "@/api/admin";
-import { fetchSettings, revealKey, resolveAgentGrpcAddress } from "@/api/admin/settings";
+import { fetchSettings, revealKey } from "@/api/admin/settings";
 import { AgentStatusCard } from "@/components/admin";
 import { EmptyState, Loading } from "@/components/ui";
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,7 @@ import { Card, CardContent, CardHeader, ResponsiveGrid, Input } from "@/componen
 import type { AgentHost, UpdateAgentHostRequest } from "@/types";
 import AgentCorePanel from "./AgentCorePanel";
 
-const DEPLOY_SCRIPT_URL =
+const DEFAULT_DEPLOY_SCRIPT_URL =
   "https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh";
 
 function sanitizeShellArgument(value: string): string {
@@ -33,9 +33,15 @@ function shellEscapeSingleQuoted(value: string): string {
   return `'${sanitized.replace(/'/g, `'"'"'`)}'`;
 }
 
+function resolveDeployScriptURL(): string {
+  const runtimeURL = (window.settings?.deploy_script_url ?? "").trim();
+  return runtimeURL || DEFAULT_DEPLOY_SCRIPT_URL;
+}
+
 function buildDeployCommand(communicationKey: string, grpcAddress: string): string {
+  const deployScriptURL = resolveDeployScriptURL();
   return [
-    `curl -fsSL ${DEPLOY_SCRIPT_URL} -o /tmp/agent.sh`,
+    `curl -fsSL ${shellEscapeSingleQuoted(deployScriptURL)} -o /tmp/agent.sh`,
     `sudo INSTALL_DIR=/opt/xboard sh /tmp/agent.sh --bootstrap --ref latest -- -k ${shellEscapeSingleQuoted(communicationKey)} -g ${shellEscapeSingleQuoted(grpcAddress)}`,
   ].join(" && ");
 }
@@ -61,7 +67,7 @@ export default function AgentList() {
   const deployMutation = useMutation({
     mutationFn: async () => {
       const [nodeSettings, keyInfo] = await Promise.all([fetchSettings("node"), revealKey()]);
-      const grpcAddress = resolveAgentGrpcAddress(nodeSettings);
+      const grpcAddress = (nodeSettings.agent_grpc_address ?? "").trim();
       const communicationKey = (keyInfo.key || "").trim();
       return {
         grpcAddress,

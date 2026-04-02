@@ -7,7 +7,6 @@ import {
   getKey,
   resetKey,
   revealKey,
-  resolveAgentGrpcAddress,
   saveSettings,
 } from "@/api/admin/settings";
 import { QUERY_KEYS } from "@/lib/constants";
@@ -82,7 +81,7 @@ export default function NodeTab() {
     if (!data) return;
     setForm((prev) => ({
       ...prev,
-      agentGrpcAddress: resolveAgentGrpcAddress(data),
+      agentGrpcAddress: (data.agent_grpc_address ?? "").trim(),
       pullInterval: data[TEMPLATE_INTERVAL_KEY.pull] ?? "60",
       pushInterval: data[TEMPLATE_INTERVAL_KEY.push] ?? "60",
       deviceLimitMode: data.device_limit_mode ?? "0",

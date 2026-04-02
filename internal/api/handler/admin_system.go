@@ -4,6 +4,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -114,7 +115,6 @@ func adminSystemActionPath(fullPath string) string {
 	return tail
 }
 
-
 // handleGetSettings 读取指定分类的系统设置。
 func (h *AdminSystemHandler) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	if h.settings == nil {
@@ -180,6 +180,26 @@ func (h *AdminSystemHandler) handleSaveSettings(w http.ResponseWriter, r *http.R
 		return
 	}
 	if err := h.settings.SaveSettings(r.Context(), category, payload.Settings); err != nil {
+		if errors.Is(err, service.ErrSystemSettingsInvalid) {
+			details := map[string]any{}
+			var validationErr *service.SystemSettingsValidationError
+			if errors.As(err, &validationErr) {
+				details["violations"] = validationErr.Violations
+			}
+			message := "error.bad_request"
+			if h.i18n != nil {
+				message = h.i18n.Translate(requestctx.GetLanguage(r.Context()), "error.bad_request")
+			}
+			resp := map[string]any{
+				"error":  message,
+				"action": "admin.system.settings.save",
+			}
+			if len(details) > 0 {
+				resp["details"] = details
+			}
+			respondJSON(w, http.StatusBadRequest, resp)
+			return
+		}
 		RespondErrorI18nAction(r.Context(), w, http.StatusInternalServerError, "admin.system.settings.save", "error.internal_server_error", h.i18n)
 		return
 	}

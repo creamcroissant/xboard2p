@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"log/slog"
 	"time"
 )
@@ -22,9 +23,10 @@ type Config struct {
 
 // GRPCConfig 定义 Agent 通信所需的 gRPC 服务配置。
 type GRPCConfig struct {
-	Enabled bool          `mapstructure:"enabled"`
-	Addr    string        `mapstructure:"addr"`
-	TLS     GRPCTLSConfig `mapstructure:"tls"`
+	Enabled       bool          `mapstructure:"enabled"`
+	Addr          string        `mapstructure:"addr"`
+	ReuseHTTPPort bool          `mapstructure:"reuse_http_port"`
+	TLS           GRPCTLSConfig `mapstructure:"tls"`
 }
 
 // GRPCTLSConfig 定义 gRPC 服务的 TLS 配置。
@@ -86,12 +88,14 @@ type UIConfig struct {
 }
 
 type AdminUIConfig struct {
-	Enabled       bool     `mapstructure:"enabled"`
-	Dir           string   `mapstructure:"dir"`
-	BaseURL       string   `mapstructure:"base_url"`
-	Title         string   `mapstructure:"title"`
-	Version       string   `mapstructure:"version"`
-	HiddenModules []string `mapstructure:"hidden_modules"`
+	Enabled         bool     `mapstructure:"enabled"`
+	Dir             string   `mapstructure:"dir"`
+	BaseURL         string   `mapstructure:"base_url"`
+	Title           string   `mapstructure:"title"`
+	Version         string   `mapstructure:"version"`
+	Logo            string   `mapstructure:"logo"`
+	DeployScriptURL string   `mapstructure:"deploy_script_url"`
+	HiddenModules   []string `mapstructure:"hidden_modules"`
 }
 
 type UserUIConfig struct {
@@ -158,4 +162,14 @@ func (c LogConfig) SlogLevel() slog.Level {
 	default:
 		return slog.LevelInfo
 	}
+}
+
+func (c *Config) Validate() error {
+	if c == nil {
+		return fmt.Errorf("config is nil")
+	}
+	if c.GRPC.Enabled && c.GRPC.ReuseHTTPPort && c.GRPC.TLS.Enabled {
+		return fmt.Errorf("grpc.tls.enabled is not supported when grpc.reuse_http_port=true")
+	}
+	return nil
 }

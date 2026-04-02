@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/smtp"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -60,6 +61,59 @@ const communicationKeyLength = 32
 const communicationKeyMaskRune = '*'
 const communicationKeyVisibleSuffix = 4
 
+const nodeSettingsCategory = "node"
+const nodeAgentGRPCAddressCanonicalKey = "agent_grpc_address"
+
+var nodeAgentGRPCAddressLegacyKeys = []string{
+	"grpc_address",
+	"agent_address",
+	"agentGrpcAddress",
+}
+
+var nodeAgentGRPCAddressKeyPriority = []string{
+	nodeAgentGRPCAddressCanonicalKey,
+	"grpc_address",
+	"agent_address",
+	"agentGrpcAddress",
+}
+
+// SystemSettingsFieldViolation describes deterministic field-level setting validation issue.
+type SystemSettingsFieldViolation struct {
+	Field   string `json:"field"`
+	Message string `json:"message"`
+}
+
+// SystemSettingsValidationError contains one or more system settings violations.
+type SystemSettingsValidationError struct {
+	Violations []SystemSettingsFieldViolation `json:"violations"`
+}
+
+func (e *SystemSettingsValidationError) Error() string {
+	if e == nil || len(e.Violations) == 0 {
+		return ErrSystemSettingsInvalid.Error()
+	}
+	parts := make([]string, 0, len(e.Violations))
+	for _, item := range e.Violations {
+		parts = append(parts, fmt.Sprintf("%s: %s", item.Field, item.Message))
+	}
+	return fmt.Sprintf("%s (%s)", ErrSystemSettingsInvalid.Error(), strings.Join(parts, "; "))
+}
+
+func (e *SystemSettingsValidationError) Is(target error) bool {
+	return target == ErrSystemSettingsInvalid
+}
+
+func (e *SystemSettingsValidationError) add(field, message string) {
+	if e == nil {
+		return
+	}
+	e.Violations = append(e.Violations, SystemSettingsFieldViolation{Field: field, Message: message})
+}
+
+func (e *SystemSettingsValidationError) hasViolations() bool {
+	return e != nil && len(e.Violations) > 0
+}
+
 // NewAdminSystemSettingsService 构建系统设置服务。
 func NewAdminSystemSettingsService(opts AdminSystemSettingsOptions) AdminSystemSettingsService {
 	nowFn := opts.Now
@@ -91,7 +145,7 @@ func (s *adminSystemSettingsService) GetByCategory(ctx context.Context, category
 	for _, entry := range entries {
 		result[entry.Key] = entry.Value
 	}
-	return result, nil
+	return normalizeCategorySettingsForResponse(trimmedCategory, result), nil
 }
 
 // SaveSettings 保存分类设置，并做值规范化与缓存失效。
@@ -106,8 +160,12 @@ func (s *adminSystemSettingsService) SaveSettings(ctx context.Context, category 
 	if len(settings) == 0 {
 		return nil
 	}
+	normalizedSettings := prepareCategorySettingsForSave(trimmedCategory, settings)
+	if err := validateCategorySettings(trimmedCategory, normalizedSettings); err != nil {
+		return err
+	}
 	now := s.now().Unix()
-	for key, value := range settings {
+	for key, value := range normalizedSettings {
 		trimmedKey := strings.TrimSpace(key)
 		if trimmedKey == "" {
 			return fmt.Errorf("setting key is required / 设置项 key 不能为空")
@@ -269,7 +327,96 @@ func generateCommunicationKey() (string, error) {
 	return string(buf), nil
 }
 
-// normalizeSettingValue 去除空白并规范化 URL 类配置。
+func normalizeCategorySettingsForResponse(category string, settings map[string]string) map[string]string {
+	if strings.TrimSpace(category) != nodeSettingsCategory {
+		return settings
+	}
+	result := make(map[string]string, len(settings)+1)
+	for key, value := range settings {
+		result[key] = value
+	}
+	address := firstNonEmptySettingValue(settings, nodeAgentGRPCAddressKeyPriority)
+	if address != "" {
+		result[nodeAgentGRPCAddressCanonicalKey] = address
+	}
+	return result
+}
+
+func prepareCategorySettingsForSave(category string, settings map[string]string) map[string]string {
+	if strings.TrimSpace(category) != nodeSettingsCategory {
+		return settings
+	}
+	result := make(map[string]string, len(settings)+1)
+	for key, value := range settings {
+		result[key] = value
+	}
+	address := firstNonEmptySettingValue(settings, nodeAgentGRPCAddressKeyPriority)
+	canonicalValue, hasCanonical := settings[nodeAgentGRPCAddressCanonicalKey]
+	if address == "" {
+		if hasCanonical {
+			result[nodeAgentGRPCAddressCanonicalKey] = canonicalValue
+		}
+		for _, legacyKey := range nodeAgentGRPCAddressLegacyKeys {
+			delete(result, legacyKey)
+		}
+		return result
+	}
+	result[nodeAgentGRPCAddressCanonicalKey] = address
+	for _, legacyKey := range nodeAgentGRPCAddressLegacyKeys {
+		delete(result, legacyKey)
+	}
+	return result
+}
+
+func firstNonEmptySettingValue(settings map[string]string, keys []string) string {
+	for _, key := range keys {
+		value, ok := settings[key]
+		if !ok {
+			continue
+		}
+		trimmed := strings.TrimSpace(value)
+		if trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func validateCategorySettings(category string, settings map[string]string) error {
+	if strings.TrimSpace(category) != nodeSettingsCategory {
+		return nil
+	}
+	return validateNodeSettings(settings)
+}
+
+func validateNodeSettings(settings map[string]string) error {
+	validationErr := &SystemSettingsValidationError{}
+	address, ok := settings[nodeAgentGRPCAddressCanonicalKey]
+	if !ok {
+		return nil
+	}
+	trimmed := strings.TrimSpace(address)
+	if trimmed == "" {
+		return nil
+	}
+	host, port, err := net.SplitHostPort(trimmed)
+	if err != nil {
+		validationErr.add("agent_grpc_address", "must be host:port / 必须是 host:port 格式")
+	} else {
+		if strings.TrimSpace(host) == "" {
+			validationErr.add("agent_grpc_address", "host is required / host 不能为空")
+		}
+		parsedPort, parseErr := strconv.Atoi(port)
+		if parseErr != nil || parsedPort <= 0 || parsedPort > 65535 {
+			validationErr.add("agent_grpc_address", "port must be between 1 and 65535 / 端口必须在 1-65535 之间")
+		}
+	}
+	if validationErr.hasViolations() {
+		return validationErr
+	}
+	return nil
+}
+
 func normalizeSettingValue(key, value string) string {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {

@@ -51,6 +51,7 @@ ui:
     base_url: ""                  # Base URL path (optional)
     title: "XBoard Admin"
     version: "1.0.0"
+    logo: "https://xboard.io/images/logo.png"
   user:
     enabled: true
     dir: "web/user-vite/dist"     # Path to User UI static files
@@ -67,7 +68,7 @@ ui:
 grpc:
   enabled: true                 # Required. Agent only supports gRPC transport.
   addr: "0.0.0.0:9090"       # Panel gRPC listen address (must be reachable by agents in multi-host/container deployments)
-
+  reuse_http_port: true       # Enable single-port HTTP+gRPC multiplexing on http.addr
 tag: "default"                # Agent tag (optional)
 
 monitor:

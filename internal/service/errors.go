@@ -9,6 +9,8 @@ var (
 	ErrNotFound = errors.New("service: not found / 未找到资源")
 	// ErrBadRequest indicates provided parameters are invalid.
 	ErrBadRequest = errors.New("service: bad request / 请求参数无效")
+	// ErrSystemSettingsInvalid indicates system settings payload validation failed.
+	ErrSystemSettingsInvalid = errors.New("service: system settings invalid / 系统设置参数无效")
 	// ErrInvalidCredentials indicates provided credentials are wrong.
 	ErrInvalidCredentials = errors.New("service: invalid credentials / 凭证无效")
 	// ErrRateLimited indicates caller exceeded allowed attempts.

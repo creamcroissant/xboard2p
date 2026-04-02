@@ -25,7 +25,6 @@ cmd/              # xboard (统一 CLI 入口)
 internal/         # API、Service、Repository、Job、Async、Bootstrap 等核心模块
 pkg/, test/       # 预留扩展库与契约/集成测试
 Dockerfile        # Go 多阶段构建
-.env.example      # 环境变量示例
 config.example.yml # YAML 配置示例
 coding.md         # 官方架构文档
 README.md         # 英文概览
@@ -45,9 +44,7 @@ source ~/.gvm/scripts/gvm && gvm use go1.25.1
 
 # 2. 准备配置
 mkdir -p data
-cp config.example.yml config.yml # 使用 YAML 配置（推荐）
-# 或
-cp .env.example .env   # 使用 .env（向后兼容）
+cp config.example.yml config.yml # 使用 YAML 配置
 
 # 3. 启动服务
 go run ./cmd/xboard serve
@@ -165,6 +162,8 @@ agent 安装相关环境变量：
 `deploy/agent.sh` 安装参数（CLI/ENV 对应）：
 - `-k, --communication-key` / `XBOARD_AGENT_COMMUNICATION_KEY`
 - `-g, --grpc-address` / `XBOARD_AGENT_GRPC_ADDRESS`
+  - 默认双端口部署：填写 Panel 的 gRPC 端点（例如 `10.0.0.2:9090`）。
+  - 若 Panel 开启 `grpc.reuse_http_port=true`：填写 Panel 的 HTTP 端点（例如 `10.0.0.2:8080`）。
 - `-t, --grpc-tls-enabled` / `XBOARD_AGENT_GRPC_TLS_ENABLED`（默认 `false`）
 - `--traffic-type` / `XBOARD_AGENT_TRAFFIC_TYPE`（默认 `netio`）
 - `-f, --force-config-overwrite` / `XBOARD_AGENT_CONFIG_OVERWRITE=1`

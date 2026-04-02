@@ -29,7 +29,6 @@ pkg/, test/           # Shared libraries and contract/integration tests
 web/user-vite/        # Unified frontend (Vite + React + shadcn/ui)
 scripts/              # Build and test scripts
 Dockerfile            # Go multi-stage build
-.env.example          # Environment variable example
 config.example.yml    # YAML configuration example
 ```
 
@@ -45,9 +44,7 @@ source ~/.gvm/scripts/gvm && gvm use go1.25.1   # Or any Go 1.25+
 
 # 2. Initialize configuration
 mkdir -p data
-cp config.example.yml config.yml # Use YAML config (recommended)
-# OR
-cp .env.example .env    # Use .env (backward compatible)
+cp config.example.yml config.yml # Use YAML config
 
 # 3. Start service
 go run ./cmd/xboard serve
@@ -163,6 +160,8 @@ Agent install environment variables:
 Agent install parameters (`deploy/agent.sh`):
 - `-k, --communication-key` / `XBOARD_AGENT_COMMUNICATION_KEY`
 - `-g, --grpc-address` / `XBOARD_AGENT_GRPC_ADDRESS`
+  - Default split-port deployment: set Panel gRPC endpoint (for example `10.0.0.2:9090`).
+  - If Panel enables `grpc.reuse_http_port=true`, set this to the Panel HTTP endpoint (for example `10.0.0.2:8080`).
 - `-t, --grpc-tls-enabled` / `XBOARD_AGENT_GRPC_TLS_ENABLED` (default `false`)
 - `--traffic-type` / `XBOARD_AGENT_TRAFFIC_TYPE` (default `netio`)
 - `-f, --force-config-overwrite` / `XBOARD_AGENT_CONFIG_OVERWRITE=1`

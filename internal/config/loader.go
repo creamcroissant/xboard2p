@@ -36,13 +36,6 @@ func LoadWithOptions(opts LoadOptions) (*Config, error) {
 			return nil, fmt.Errorf("read config: %w", err)
 		}
 	}
-	configDir := configuredDir(v.ConfigFileUsed())
-	if configDir == "" {
-		configDir = effectiveWorkingDir(opts.WorkingDir)
-	}
-	if err := loadDotEnv(v, configDir); err != nil {
-		return nil, err
-	}
 	if strings.TrimSpace(v.GetString("grpc.addr")) == "" {
 		if legacyAddr := strings.TrimSpace(v.GetString("grpc.address")); legacyAddr != "" {
 			v.Set("grpc.addr", legacyAddr)
@@ -52,7 +45,14 @@ func LoadWithOptions(opts LoadOptions) (*Config, error) {
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
-	resolveRelativePaths(&cfg, configDir)
+	if configDir := configuredDir(v.ConfigFileUsed()); configDir != "" {
+		resolveRelativePaths(&cfg, configDir)
+	} else {
+		cfg.DB.Path = resolveRelativePath(effectiveWorkingDir(opts.WorkingDir), cfg.DB.Path)
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("validate config: %w", err)
+	}
 	return &cfg, nil
 }
 
@@ -82,11 +82,14 @@ func bindEnv(v *viper.Viper) error {
 	bindings := map[string][]string{
 		"grpc.enabled":               {"XBOARD_GRPC_ENABLED"},
 		"grpc.addr":                  {"XBOARD_GRPC_ADDR"},
+		"grpc.reuse_http_port":       {"XBOARD_GRPC_REUSE_HTTP_PORT"},
 		"grpc.tls.enabled":           {"XBOARD_GRPC_TLS_ENABLED"},
 		"grpc.tls.cert_file":         {"XBOARD_GRPC_TLS_CERT_FILE"},
 		"grpc.tls.key_file":          {"XBOARD_GRPC_TLS_KEY_FILE"},
 		"ui.install.enabled":         {"XBOARD_UI_INSTALL_ENABLED", "XBOARD_INSTALL_UI_ENABLED", "INSTALL_UI_ENABLED"},
 		"ui.install.dir":             {"XBOARD_UI_INSTALL_DIR", "XBOARD_INSTALL_UI_DIR", "INSTALL_UI_DIR"},
+		"ui.admin.logo":              {"XBOARD_UI_ADMIN_LOGO", "XBOARD_ADMIN_UI_LOGO", "ADMIN_UI_LOGO"},
+		"ui.admin.deploy_script_url": {"XBOARD_UI_ADMIN_DEPLOY_SCRIPT_URL"},
 		"scheduler.stat_user_hourly": {"XBOARD_SCHEDULER_STAT_USER_HOURLY"},
 		"scheduler.traffic_fetch":    {"XBOARD_SCHEDULER_TRAFFIC_FETCH"},
 		"scheduler.email_notify":     {"XBOARD_SCHEDULER_EMAIL_NOTIFY"},
@@ -119,79 +122,19 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("ui.admin.dir", "web/user-vite/dist")
 	v.SetDefault("ui.admin.title", "XBoard Admin")
 	v.SetDefault("ui.admin.version", "1.0.0")
+	v.SetDefault("ui.admin.logo", "https://xboard.io/images/logo.png")
 	v.SetDefault("ui.admin.hidden_modules", []string{"ticket", "gift-card", "plugin", "theme"})
+	v.SetDefault("ui.admin.deploy_script_url", "https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh")
 	v.SetDefault("ui.user.enabled", true)
 	v.SetDefault("ui.user.dir", "web/user-vite/dist")
 	v.SetDefault("ui.user.title", "XBoard")
 	v.SetDefault("ui.install.enabled", true)
 	v.SetDefault("ui.install.dir", "web/install")
+	v.SetDefault("grpc.reuse_http_port", true)
 	v.SetDefault("scheduler.stat_user_hourly", "@every 5m")
 	v.SetDefault("scheduler.traffic_fetch", "@every 1m")
 	v.SetDefault("scheduler.email_notify", "@every 1m")
 	v.SetDefault("scheduler.telegram_notify", "@every 1m")
-}
-
-func loadDotEnv(v *viper.Viper, configDir string) error {
-	candidates := []string{}
-	if configDir != "" {
-		candidates = append(candidates, configDir)
-	}
-	candidates = append(candidates, "/etc/xboard")
-	for _, path := range candidates {
-		file := filepath.Clean(filepath.Join(path, ".env"))
-		if _, err := os.Stat(file); err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return fmt.Errorf("stat .env: %w", err)
-		}
-		envViper := viper.New()
-		envViper.SetConfigFile(file)
-		envViper.SetConfigType("env")
-		if err := envViper.ReadInConfig(); err != nil {
-			return fmt.Errorf("read .env: %w", err)
-		}
-		bindLegacyEnv(v, envViper)
-	}
-	return nil
-}
-
-func bindLegacyEnv(target *viper.Viper, source *viper.Viper) {
-	mappings := map[string]string{
-		"HTTP_ADDR":               "http.addr",
-		"SHUTDOWN_TIMEOUT":        "http.shutdown_timeout",
-		"LOG_LEVEL":               "log.level",
-		"LOG_FORMAT":              "log.format",
-		"LOG_ADD_SOURCE":          "log.add_source",
-		"ENV":                     "log.environment",
-		"APP_ENV":                 "log.environment",
-		"DB_PATH":                 "database.path",
-		"XBOARD_DB_PATH":          "database.path",
-		"AUTH_SIGNING_KEY":        "auth.signing_key",
-		"XBOARD_AUTH_SIGNING_KEY": "auth.signing_key",
-		"APP_KEY":                 "auth.signing_key",
-		"AUTH_TOKEN_TTL":          "auth.token_ttl",
-		"AUTH_ISSUER":             "auth.issuer",
-		"AUTH_AUDIENCE":           "auth.audience",
-		"AUTH_LEEWAY":             "auth.leeway",
-		"AUTH_BCRYPT_COST":        "auth.bcrypt_cost",
-		"ADMIN_UI_ENABLED":        "ui.admin.enabled",
-		"ADMIN_UI_DIR":            "ui.admin.dir",
-		"ADMIN_UI_TITLE":          "ui.admin.title",
-		"ADMIN_UI_VERSION":        "ui.admin.version",
-		"ADMIN_UI_BASE_URL":       "ui.admin.base_url",
-		"USER_UI_ENABLED":         "ui.user.enabled",
-		"USER_UI_DIR":             "ui.user.dir",
-		"USER_UI_TITLE":           "ui.user.title",
-		"USER_UI_BASE_URL":        "ui.user.base_url",
-		"INSTALL_UI_ENABLED":      "ui.install.enabled",
-		"INSTALL_UI_DIR":          "ui.install.dir",
-	}
-	for oldKey, newKey := range mappings {
-		if val := source.GetString(oldKey); val != "" {
-			target.Set(newKey, val)
-		}
-	}
 }
 
 func configuredDir(configPath string) string {

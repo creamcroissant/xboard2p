@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
+	"strings"
 
 	"github.com/creamcroissant/xboard/internal/grpc/interceptor"
 	agentv1 "github.com/creamcroissant/xboard/pkg/pb/agent/v1"
@@ -81,9 +83,33 @@ func (s *Server) Start() error {
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", s.address, err)
 	}
+	return s.Serve(lis)
+}
 
-	s.logger.Info("gRPC server starting", "address", s.address)
+// Serve 在指定 listener 上启动 gRPC 服务。
+func (s *Server) Serve(lis net.Listener) error {
+	if lis == nil {
+		return fmt.Errorf("listener is nil")
+	}
+	s.logger.Info("gRPC server starting", "address", lis.Addr().String())
 	return s.server.Serve(lis)
+}
+
+// Handler 返回 gRPC 的 HTTP 处理器。
+func (s *Server) Handler() http.Handler {
+	return s.server
+}
+
+// IsGRPCRequest 判断请求是否为 gRPC。
+func IsGRPCRequest(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	if r.ProtoMajor != 2 {
+		return false
+	}
+	contentType := strings.ToLower(r.Header.Get("Content-Type"))
+	return strings.HasPrefix(contentType, "application/grpc")
 }
 
 // Stop 优雅停止 gRPC 服务。

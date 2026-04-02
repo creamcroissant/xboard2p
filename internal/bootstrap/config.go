@@ -3,7 +3,6 @@
 package bootstrap
 
 import (
-	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -77,16 +76,11 @@ type InstallUIConfig struct {
 	Dir     string
 }
 
-// LoadConfig loads environment variables (optionally from .env files) into Config.
+// LoadConfig loads runtime environment variables into Config.
 func LoadConfig() (*Config, error) {
 	v := viper.New()
-	v.SetConfigType("env")
 	v.SetEnvPrefix("XBOARD")
 	v.AutomaticEnv()
-
-	if err := mergeDotEnvFiles(v); err != nil {
-		return nil, err
-	}
 
 	cfg := &Config{}
 
@@ -192,24 +186,6 @@ func parseBcryptCost(v *viper.Viper) int {
 		cost = 12
 	}
 	return cost
-}
-
-func mergeDotEnvFiles(v *viper.Viper) error {
-	candidates := []string{".", "..", "../.."}
-	for _, path := range candidates {
-		file := filepath.Clean(filepath.Join(path, ".env"))
-		if _, err := os.Stat(file); err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return fmt.Errorf("stat %s: %w", file, err)
-		}
-		v.SetConfigFile(file)
-		if err := v.MergeInConfig(); err != nil {
-			return fmt.Errorf("merge %s: %w", file, err)
-		}
-	}
-	return nil
 }
 
 func parseCSVList(raw string, def []string) []string {

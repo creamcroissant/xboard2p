@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os/signal"
 	"syscall"
@@ -25,6 +26,8 @@ import (
 	"github.com/creamcroissant/xboard/internal/support/logging"
 	"github.com/creamcroissant/xboard/internal/template"
 	"github.com/spf13/cobra"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 )
 
 var serveCmd = &cobra.Command{
@@ -336,13 +339,14 @@ func runServe(cmd *cobra.Command, args []string) error {
 		services,
 		cfg.Metrics,
 		api.WithAdminUI(api.AdminUIOptions{
-			Enabled:       cfg.UI.Admin.Enabled,
-			Dir:           cfg.UI.Admin.Dir,
-			BaseURL:       cfg.UI.Admin.BaseURL,
-			Title:         cfg.UI.Admin.Title,
-			Version:       cfg.UI.Admin.Version,
-			Logo:          "https://xboard.io/images/logo.png", // TODO: Add to config
-			HiddenModules: cfg.UI.Admin.HiddenModules,
+			Enabled:         cfg.UI.Admin.Enabled,
+			Dir:             cfg.UI.Admin.Dir,
+			BaseURL:         cfg.UI.Admin.BaseURL,
+			Title:           cfg.UI.Admin.Title,
+			Version:         cfg.UI.Admin.Version,
+			Logo:            cfg.UI.Admin.Logo,
+			DeployScriptURL: cfg.UI.Admin.DeployScriptURL,
+			HiddenModules:   cfg.UI.Admin.HiddenModules,
 		}),
 		api.WithUserUI(api.UserUIOptions{
 			Enabled: cfg.UI.User.Enabled,
@@ -395,23 +399,51 @@ func runServe(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
+	}
+
+	if cfg.GRPC.Enabled && cfg.GRPC.ReuseHTTPPort {
+		server.WriteTimeout = 0
+		muxHandler := h2c.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if internalgrpc.IsGRPCRequest(r) {
+				grpcServer.Handler().ServeHTTP(w, r)
+				return
+			}
+			router.ServeHTTP(w, r)
+		}), &http2.Server{})
+		server.Handler = muxHandler
+
+		lis, err := net.Listen("tcp", cfg.HTTP.Addr)
+		if err != nil {
+			return fmt.Errorf("listen on %s: %w", cfg.HTTP.Addr, err)
+		}
+		defer lis.Close()
 
 		go func() {
-			logger.Info("gRPC server starting", "addr", cfg.GRPC.Addr)
-			if err := grpcServer.Start(); err != nil {
-				logger.Error("gRPC server failed", "error", err)
+			logger.Info("http+grpc mux server starting", "addr", cfg.HTTP.Addr, "env", cfg.Log.Environment)
+			if err := server.Serve(lis); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				logger.Error("http+grpc mux server failed", "error", err)
+				stop()
+			}
+		}()
+	} else {
+		if cfg.GRPC.Enabled {
+			go func() {
+				logger.Info("gRPC server starting", "addr", cfg.GRPC.Addr)
+				if err := grpcServer.Start(); err != nil {
+					logger.Error("gRPC server failed", "error", err)
+					stop()
+				}
+			}()
+		}
+
+		go func() {
+			logger.Info("http server starting", "addr", cfg.HTTP.Addr, "env", cfg.Log.Environment)
+			if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				logger.Error("http server failed", "error", err)
 				stop()
 			}
 		}()
 	}
-
-	go func() {
-		logger.Info("http server starting", "addr", cfg.HTTP.Addr, "env", cfg.Log.Environment)
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Error("http server failed", "error", err)
-			stop()
-		}
-	}()
 
 	<-ctx.Done()
 	stopCtx := scheduler.Stop()
