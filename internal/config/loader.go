@@ -7,9 +7,15 @@ import (
 	"strings"
 
 	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
 )
 
 type LoadOptions struct {
+	ConfigPath string
+	WorkingDir string
+}
+
+type EnsureDefaultConfigOptions struct {
 	ConfigPath string
 	WorkingDir string
 }
@@ -54,6 +60,87 @@ func LoadWithOptions(opts LoadOptions) (*Config, error) {
 		return nil, fmt.Errorf("validate config: %w", err)
 	}
 	return &cfg, nil
+}
+
+func EnsureDefaultConfig(opts EnsureDefaultConfigOptions) (string, error) {
+	if strings.TrimSpace(opts.ConfigPath) != "" {
+		return "", nil
+	}
+
+	workingDir := effectiveWorkingDir(opts.WorkingDir)
+	if strings.TrimSpace(workingDir) == "" {
+		return "", fmt.Errorf("resolve working directory")
+	}
+
+	configPath := filepath.Join(workingDir, "config.yml")
+	if _, err := os.Stat(configPath); err == nil {
+		return configPath, nil
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("stat config file: %w", err)
+	}
+
+	if err := writeDefaultConfigFile(configPath); err != nil {
+		return "", err
+	}
+
+	return configPath, nil
+}
+
+func writeDefaultConfigFile(configPath string) error {
+	payload := map[string]any{
+		"http": map[string]any{
+			"addr": "0.0.0.0:8080",
+		},
+		"database": map[string]any{
+			"driver": "sqlite",
+			"path":   "data/xboard.db",
+		},
+		"auth": map[string]any{
+			"signing_key": "change-me",
+		},
+		"log": map[string]any{
+			"level":       "info",
+			"format":      "json",
+			"environment": "production",
+		},
+		"ui": map[string]any{
+			"admin": map[string]any{
+				"enabled":        true,
+				"dir":            "web/user-vite/dist",
+				"title":          "XBoard Admin",
+				"version":        "1.0.0",
+				"logo":           "https://xboard.io/images/logo.png",
+				"hidden_modules": []string{"ticket", "gift-card", "plugin", "theme"},
+			},
+			"user": map[string]any{
+				"enabled": true,
+				"dir":     "web/user-vite/dist",
+				"title":   "XBoard",
+			},
+			"install": map[string]any{
+				"enabled": true,
+				"dir":     "web/install",
+			},
+		},
+		"grpc": map[string]any{
+			"reuse_http_port": true,
+		},
+		"scheduler": map[string]any{
+			"stat_user_hourly": "@every 5m",
+			"traffic_fetch":    "@every 1m",
+			"email_notify":     "@every 1m",
+			"telegram_notify":  "@every 1m",
+		},
+	}
+
+	content, err := yaml.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal default config: %w", err)
+	}
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		return fmt.Errorf("write default config: %w", err)
+	}
+	return nil
 }
 
 func configureConfigFile(v *viper.Viper, opts LoadOptions) error {

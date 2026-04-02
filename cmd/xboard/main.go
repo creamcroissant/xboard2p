@@ -21,12 +21,24 @@ var rootCmd = &cobra.Command{
 	Short: "XBoard Panel and Node",
 	Long:  `XBoard is a panel and node server for managing proxies.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		_, err := config.LoadWithOptions(config.LoadOptions{ConfigPath: configPath})
-		if err != nil {
+		if err := prepareConfigForCommand(cmd); err != nil {
 			return fmt.Errorf("failed to load config: %w", err)
 		}
 		return nil
 	},
+}
+
+func prepareConfigForCommand(cmd *cobra.Command) error {
+	if cmd != nil && cmd.Name() == "serve" {
+		if _, err := config.EnsureDefaultConfig(config.EnsureDefaultConfigOptions{ConfigPath: configPath}); err != nil {
+			return fmt.Errorf("ensure default config: %w", err)
+		}
+	}
+	_, err := config.LoadWithOptions(config.LoadOptions{ConfigPath: configPath})
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func init() {
