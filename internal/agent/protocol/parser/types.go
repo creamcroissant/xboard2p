@@ -31,11 +31,16 @@ type ProtocolDetails struct {
 
 // TransportConfig 描述传输层设置。
 type TransportConfig struct {
-	Type        string            `json:"type"`                   // tcp, ws, grpc, http, quic, h2
-	Path        string            `json:"path,omitempty"`         // WebSocket/HTTP 路径
-	Host        string            `json:"host,omitempty"`         // HTTP Host 头
-	ServiceName string            `json:"service_name,omitempty"` // gRPC 服务名
-	Headers     map[string]string `json:"headers,omitempty"`
+	Type             string            `json:"type"`                   // tcp, ws, grpc, http, quic, h2, xhttp
+	Path             string            `json:"path,omitempty"`         // WebSocket/HTTP 路径
+	Host             string            `json:"host,omitempty"`         // HTTP Host 头
+	ServiceName      string            `json:"service_name,omitempty"` // gRPC 服务名
+	Headers          map[string]string `json:"headers,omitempty"`
+	Mode             string            `json:"mode,omitempty"`
+	Extra            map[string]any    `json:"extra,omitempty"`
+	XMux             map[string]any    `json:"xmux,omitempty"`
+	DownloadSettings map[string]any    `json:"download_settings,omitempty"`
+	XHTTPSettings    map[string]any    `json:"xhttp_settings,omitempty"`
 }
 
 // TLSConfig 描述 TLS 设置。
@@ -76,7 +81,7 @@ type BrutalConfig struct {
 // UserInfo 描述用户配置。
 type UserInfo struct {
 	UUID   string `json:"uuid,omitempty"`
-	Flow   string `json:"flow,omitempty"`   // xtls-rprx-vision 等
+	Flow   string `json:"flow,omitempty"` // xtls-rprx-vision 等
 	Email  string `json:"email,omitempty"`
 	Method string `json:"method,omitempty"` // Shadowsocks 加密方式
 }

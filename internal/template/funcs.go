@@ -151,10 +151,10 @@ func DefaultFuncMap() template.FuncMap {
 		"not": func(a bool) bool { return !a },
 
 		// 字符串辅助函数
-		"lower":    strings.ToLower,
-		"upper":    strings.ToUpper,
-		"trim":     strings.TrimSpace,
-		"replace":  strings.ReplaceAll,
+		"lower":     strings.ToLower,
+		"upper":     strings.ToUpper,
+		"trim":      strings.TrimSpace,
+		"replace":   strings.ReplaceAll,
 		"hasPrefix": strings.HasPrefix,
 		"hasSuffix": strings.HasSuffix,
 
@@ -459,6 +459,7 @@ func DefaultFuncMap() template.FuncMap {
 			switch inbound.Type {
 			case "vless":
 				settings["decryption"] = "none"
+				omitDefaultFlow := inbound.Transport != nil && IsXHTTPNetwork(inbound.Transport.Type)
 				clients := make([]map[string]interface{}, 0, len(users))
 				for _, u := range users {
 					if !u.Enabled {
@@ -468,7 +469,9 @@ func DefaultFuncMap() template.FuncMap {
 						"id":    u.UUID,
 						"email": u.Email,
 						"level": 0,
-						"flow":  "xtls-rprx-vision",
+					}
+					if !omitDefaultFlow {
+						client["flow"] = "xtls-rprx-vision"
 					}
 					clients = append(clients, client)
 				}
@@ -534,9 +537,13 @@ func DefaultFuncMap() template.FuncMap {
 			// 传输/网络
 			if inbound.Transport != nil {
 				hasStreamSettings = true
-				streamSettings["network"] = inbound.Transport.Type
+				network := NormalizeXHTTPNetwork(inbound.Transport.Type)
+				if network == "" {
+					network = "tcp"
+				}
+				streamSettings["network"] = network
 
-				switch inbound.Transport.Type {
+				switch network {
 				case "ws":
 					wsSettings := map[string]interface{}{}
 					if inbound.Transport.Path != "" {
@@ -568,6 +575,12 @@ func DefaultFuncMap() template.FuncMap {
 					}
 					if len(httpSettings) > 0 {
 						streamSettings["httpSettings"] = httpSettings
+					}
+
+				case XHTTPNetwork:
+					xhttpSettings := BuildXHTTPSettingsMap(MergeXHTTPConfig(inbound.Transport.XHTTP, inbound.Transport.Host, inbound.Transport.Path, inbound.Transport.Mode, inbound.Transport.Headers))
+					if len(xhttpSettings) > 0 {
+						streamSettings["xhttpSettings"] = xhttpSettings
 					}
 
 				case "tcp":

@@ -13,16 +13,22 @@ type ClientConfig struct {
 	Password string `json:"password,omitempty"` // Password for hysteria2/trojan/ss/anytls
 
 	// Transport
-	Network     string `json:"network,omitempty"`      // tcp, ws, grpc, http, quic
-	Path        string `json:"path,omitempty"`         // WebSocket/HTTP path
-	ServiceName string `json:"service_name,omitempty"` // gRPC service name
+	Network          string            `json:"network,omitempty"`           // tcp, ws, grpc, http, quic, xhttp
+	Path             string            `json:"path,omitempty"`              // WebSocket/HTTP path
+	Host             string            `json:"host,omitempty"`              // HTTP/XHTTP host
+	Mode             string            `json:"mode,omitempty"`              // XHTTP mode
+	ServiceName      string            `json:"service_name,omitempty"`      // gRPC service name
+	Headers          map[string]string `json:"headers,omitempty"`           // Transport headers
+	Extra            map[string]any    `json:"extra,omitempty"`             // XHTTP extra settings
+	XMux             map[string]any    `json:"xmux,omitempty"`              // XHTTP xmux settings
+	DownloadSettings map[string]any    `json:"download_settings,omitempty"` // XHTTP downloadSettings
 
 	// TLS
-	TLS         bool   `json:"tls"`                    // TLS enabled
-	SNI         string `json:"sni,omitempty"`          // Server Name Indication
-	ALPN        string `json:"alpn,omitempty"`         // ALPN protocols
-	Fingerprint string `json:"fingerprint,omitempty"`  // Certificate fingerprint
-	Insecure    bool   `json:"insecure,omitempty"`     // Skip certificate verification
+	TLS         bool   `json:"tls"`                   // TLS enabled
+	SNI         string `json:"sni,omitempty"`         // Server Name Indication
+	ALPN        string `json:"alpn,omitempty"`        // ALPN protocols
+	Fingerprint string `json:"fingerprint,omitempty"` // Certificate fingerprint
+	Insecure    bool   `json:"insecure,omitempty"`    // Skip certificate verification
 
 	// Reality
 	RealityEnabled   bool   `json:"reality_enabled,omitempty"`

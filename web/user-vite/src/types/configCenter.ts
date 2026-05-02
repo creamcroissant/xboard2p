@@ -1,5 +1,17 @@
 export type ConfigCenterCoreType = "sing-box" | "xray" | "singbox";
 export type ConfigCenterSource = "legacy" | "managed" | "merged";
+export type ConfigCenterXrayTransport = "tcp" | "ws" | "grpc" | "http" | "xhttp";
+export type ConfigCenterXHTTPMode = "auto" | "packet-up" | "stream-up" | "stream-one";
+
+export interface ConfigCenterXHTTPSettings {
+  host?: string;
+  path?: string;
+  mode?: ConfigCenterXHTTPMode | string;
+  headers?: Record<string, string>;
+  extra?: Record<string, unknown>;
+  xmux?: Record<string, unknown>;
+  downloadSettings?: Record<string, unknown>;
+}
 export type ConfigCenterParseStatus = "ok" | "parse_error";
 export type ConfigCenterApplyRunStatus =
   | "pending"

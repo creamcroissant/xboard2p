@@ -14,11 +14,13 @@ type UnifiedInbound struct {
 
 // UnifiedTransport 描述跨核心的传输配置。
 type UnifiedTransport struct {
-	Type        string            `json:"type"` // tcp, ws, grpc, http, h2, quic
+	Type        string            `json:"type"` // tcp, ws, grpc, http, h2, quic, xhttp
 	Path        string            `json:"path,omitempty"`
 	Host        string            `json:"host,omitempty"`
 	ServiceName string            `json:"service_name,omitempty"`
 	Headers     map[string]string `json:"headers,omitempty"`
+	Mode        string            `json:"mode,omitempty"`
+	XHTTP       *XHTTPConfig      `json:"xhttp,omitempty"`
 }
 
 // UnifiedTLS 描述跨核心的 TLS 配置。
@@ -37,7 +39,7 @@ type UnifiedReality struct {
 	PrivateKey      string   `json:"private_key,omitempty"`
 	PublicKey       string   `json:"public_key,omitempty"`
 	ShortIDs        []string `json:"short_ids,omitempty"`
-	ServerNames     []string `json:"server_names,omitempty"`       // 支持多 SNI 防探测
+	ServerNames     []string `json:"server_names,omitempty"` // 支持多 SNI 防探测
 	HandshakeServer string   `json:"handshake_server,omitempty"`
 	HandshakePort   int      `json:"handshake_port,omitempty"`
 	Fingerprint     string   `json:"fingerprint,omitempty"`

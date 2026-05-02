@@ -143,9 +143,9 @@ func (b *GeneralBuilder) buildVmessURI(node Node) string {
 
 func (b *GeneralBuilder) buildTrojanURI(node Node) string {
 	u := url.URL{
-		Scheme: "trojan",
-		User:   url.User(node.Password),
-		Host:   fmt.Sprintf("%s:%d", node.Host, node.Port),
+		Scheme:   "trojan",
+		User:     url.User(node.Password),
+		Host:     fmt.Sprintf("%s:%d", node.Host, node.Port),
 		Fragment: node.Name,
 	}
 	q := u.Query()
@@ -180,9 +180,9 @@ func (b *GeneralBuilder) buildTrojanURI(node Node) string {
 
 func (b *GeneralBuilder) buildVlessURI(node Node) string {
 	u := url.URL{
-		Scheme: "vless",
-		User:   url.User(node.Password),
-		Host:   fmt.Sprintf("%s:%d", node.Host, node.Port),
+		Scheme:   "vless",
+		User:     url.User(node.Password),
+		Host:     fmt.Sprintf("%s:%d", node.Host, node.Port),
 		Fragment: node.Name,
 	}
 	q := u.Query()
@@ -203,7 +203,7 @@ func (b *GeneralBuilder) buildVlessURI(node Node) string {
 		}
 	}
 
-	network := settingString(node.Settings, "network")
+	network := normalizeXHTTPNetwork(settingString(node.Settings, "network"))
 	if network != "" {
 		q.Set("type", network)
 	}
@@ -219,6 +219,8 @@ func (b *GeneralBuilder) buildVlessURI(node Node) string {
 		if serviceName := settingString(node.Settings, "network_settings.serviceName"); serviceName != "" {
 			q.Set("serviceName", serviceName)
 		}
+	} else if network == "xhttp" {
+		applyVLESSXHTTPQuery(q, node.Settings)
 	}
 
 	if flow := settingString(node.Settings, "flow"); flow != "" {
@@ -231,9 +233,9 @@ func (b *GeneralBuilder) buildVlessURI(node Node) string {
 
 func (b *GeneralBuilder) buildHysteria2URI(node Node) string {
 	u := url.URL{
-		Scheme: "hysteria2",
-		User:   url.User(node.Password),
-		Host:   fmt.Sprintf("%s:%d", node.Host, node.Port),
+		Scheme:   "hysteria2",
+		User:     url.User(node.Password),
+		Host:     fmt.Sprintf("%s:%d", node.Host, node.Port),
 		Fragment: node.Name,
 	}
 	q := u.Query()
@@ -256,8 +258,8 @@ func (b *GeneralBuilder) buildHysteria2URI(node Node) string {
 func (b *GeneralBuilder) buildHysteriaURI(node Node) string {
 	// Hysteria 1
 	u := url.URL{
-		Scheme: "hysteria",
-		Host:   fmt.Sprintf("%s:%d", node.Host, node.Port),
+		Scheme:   "hysteria",
+		Host:     fmt.Sprintf("%s:%d", node.Host, node.Port),
 		Fragment: node.Name,
 	}
 	q := u.Query()
@@ -289,9 +291,9 @@ func (b *GeneralBuilder) buildHysteriaURI(node Node) string {
 
 func (b *GeneralBuilder) buildTuicURI(node Node) string {
 	u := url.URL{
-		Scheme: "tuic",
-		User:   url.User(node.Password), // TUIC usually uses UUID as user/password
-		Host:   fmt.Sprintf("%s:%d", node.Host, node.Port),
+		Scheme:   "tuic",
+		User:     url.User(node.Password), // TUIC usually uses UUID as user/password
+		Host:     fmt.Sprintf("%s:%d", node.Host, node.Port),
 		Fragment: node.Name,
 	}
 	q := u.Query()

@@ -156,11 +156,11 @@ func defaultSingboxTemplate() map[string]any {
 				"default": "auto",
 			},
 			{
-				"type": "urltest",
-				"tag":  "auto",
+				"type":      "urltest",
+				"tag":       "auto",
 				"outbounds": []string{},
-				"url": "http://www.gstatic.com/generate_204",
-				"interval": "10m",
+				"url":       "http://www.gstatic.com/generate_204",
+				"interval":  "10m",
 				"tolerance": 50,
 			},
 			{
@@ -176,6 +176,10 @@ func defaultSingboxTemplate() map[string]any {
 }
 
 func buildSingboxOutbound(node Node) map[string]any {
+	if nodeUsesXHTTP(node.Settings) {
+		return nil
+	}
+
 	base := map[string]any{
 		"tag": node.Name,
 	}
@@ -201,7 +205,7 @@ func buildSingboxOutbound(node Node) map[string]any {
 		base["security"] = "auto"
 		if settingBool(node.Settings, "tls") {
 			tls := map[string]any{
-				"enabled": true,
+				"enabled":  true,
 				"insecure": settingBool(node.Settings, "tls_settings.allow_insecure"),
 			}
 			if sni := settingString(node.Settings, "tls_settings.server_name"); sni != "" {
@@ -241,7 +245,7 @@ func buildSingboxOutbound(node Node) map[string]any {
 
 		if settingBool(node.Settings, "tls") {
 			tls := map[string]any{
-				"enabled": true,
+				"enabled":  true,
 				"insecure": settingBool(node.Settings, "tls_settings.allow_insecure"),
 			}
 			if sni := settingString(node.Settings, "tls_settings.server_name"); sni != "" {
@@ -250,13 +254,13 @@ func buildSingboxOutbound(node Node) map[string]any {
 			// Reality
 			if settingBool(node.Settings, "reality") {
 				tls["reality"] = map[string]any{
-					"enabled": true,
+					"enabled":    true,
 					"public_key": settingString(node.Settings, "tls_settings.public_key"),
-					"short_id": settingString(node.Settings, "tls_settings.short_id"),
+					"short_id":   settingString(node.Settings, "tls_settings.short_id"),
 				}
 				if fp := settingString(node.Settings, "tls_settings.fingerprint"); fp != "" {
 					tls["utls"] = map[string]any{
-						"enabled": true,
+						"enabled":     true,
 						"fingerprint": fp,
 					}
 				}
@@ -290,7 +294,7 @@ func buildSingboxOutbound(node Node) map[string]any {
 		base["password"] = node.Password
 
 		tls := map[string]any{
-			"enabled": true,
+			"enabled":  true,
 			"insecure": settingBool(node.Settings, "allow_insecure"),
 		}
 		if sni := settingString(node.Settings, "server_name"); sni != "" {
@@ -326,7 +330,7 @@ func buildSingboxOutbound(node Node) map[string]any {
 		if settingString(node.Settings, "version") == "2" || node.Type == "hysteria2" {
 			// Hysteria 2
 			tls := map[string]any{
-				"enabled": true,
+				"enabled":  true,
 				"insecure": settingBool(node.Settings, "tls.allow_insecure"),
 			}
 			if sni := settingString(node.Settings, "tls.server_name"); sni != "" {
@@ -336,7 +340,7 @@ func buildSingboxOutbound(node Node) map[string]any {
 
 			if obfs := settingString(node.Settings, "obfs"); obfs != "" {
 				base["obfs"] = map[string]any{
-					"type": "salamander",
+					"type":     "salamander",
 					"password": obfs,
 				}
 			}
@@ -363,7 +367,7 @@ func buildSingboxOutbound(node Node) map[string]any {
 			}
 			// Default to Hysteria 2 if version not specified
 			tls := map[string]any{
-				"enabled": true,
+				"enabled":  true,
 				"insecure": settingBool(node.Settings, "tls.allow_insecure"),
 			}
 			if sni := settingString(node.Settings, "tls.server_name"); sni != "" {
@@ -380,7 +384,7 @@ func buildSingboxOutbound(node Node) map[string]any {
 		base["congestion_control"] = "bbr"
 
 		tls := map[string]any{
-			"enabled": true,
+			"enabled":  true,
 			"insecure": settingBool(node.Settings, "allow_insecure"),
 		}
 		if sni := settingString(node.Settings, "server_name"); sni != "" {

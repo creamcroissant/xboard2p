@@ -2,6 +2,9 @@ package parser
 
 import (
 	"encoding/json"
+	"net"
+	"strconv"
+	"strings"
 )
 
 // XrayParser 解析 xray-core 配置文件。
@@ -106,6 +109,7 @@ type xrayStreamSettings struct {
 	GRPCSettings    *xrayGRPCSettings    `json:"grpcSettings"`
 	TCPSettings     *xrayTCPSettings     `json:"tcpSettings"`
 	HTTPSettings    *xrayHTTPSettings    `json:"httpSettings"`
+	XHTTPSettings   map[string]any       `json:"xhttpSettings"`
 }
 
 type xrayTLSSettings struct {
@@ -144,12 +148,13 @@ type xrayHTTPSettings struct {
 }
 
 func (p *XrayParser) parseTransport(ss *xrayStreamSettings) *TransportConfig {
-	config := &TransportConfig{
-		Type: ss.Network,
+	network := normalizeXHTTPNetwork(ss.Network)
+	if network == "" {
+		network = "tcp"
 	}
 
-	if config.Type == "" {
-		config.Type = "tcp"
+	config := &TransportConfig{
+		Type: network,
 	}
 
 	if ss.WSSettings != nil {
@@ -168,7 +173,115 @@ func (p *XrayParser) parseTransport(ss *xrayStreamSettings) *TransportConfig {
 		}
 	}
 
+	if config.Type == "xhttp" && len(ss.XHTTPSettings) > 0 {
+		config.XHTTPSettings = cloneAnyMap(ss.XHTTPSettings)
+		config.Host = stringFromAny(ss.XHTTPSettings["host"])
+		config.Path = stringFromAny(ss.XHTTPSettings["path"])
+		config.Mode = normalizeXHTTPMode(stringFromAny(ss.XHTTPSettings["mode"]))
+		if headers := stringMapFromAny(ss.XHTTPSettings["headers"]); len(headers) > 0 {
+			config.Headers = headers
+		}
+		if extra := anyMapFromAny(ss.XHTTPSettings["extra"]); len(extra) > 0 {
+			config.Extra = extra
+		}
+		if xmux := anyMapFromAny(ss.XHTTPSettings["xmux"]); len(xmux) > 0 {
+			config.XMux = xmux
+		}
+		if downloadSettings := anyMapFromAny(ss.XHTTPSettings["downloadSettings"]); len(downloadSettings) > 0 {
+			config.DownloadSettings = downloadSettings
+		}
+	}
+
 	return config
+}
+
+func normalizeXHTTPNetwork(network string) string {
+	normalized := strings.ToLower(strings.TrimSpace(network))
+	if normalized == "splithttp" {
+		return "xhttp"
+	}
+	return normalized
+}
+
+func normalizeXHTTPMode(mode string) string {
+	normalized := strings.ToLower(strings.TrimSpace(mode))
+	if normalized == "" {
+		return "auto"
+	}
+	return normalized
+}
+
+func stringFromAny(value any) string {
+	text, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(text)
+}
+
+func stringMapFromAny(value any) map[string]string {
+	switch typed := value.(type) {
+	case map[string]string:
+		result := make(map[string]string, len(typed))
+		for key, item := range typed {
+			if strings.TrimSpace(key) != "" {
+				result[key] = item
+			}
+		}
+		return result
+	case map[string]any:
+		result := make(map[string]string, len(typed))
+		for key, item := range typed {
+			if text, ok := item.(string); ok && strings.TrimSpace(key) != "" {
+				result[key] = text
+			}
+		}
+		return result
+	default:
+		return nil
+	}
+}
+
+func anyMapFromAny(value any) map[string]any {
+	switch typed := value.(type) {
+	case map[string]any:
+		return cloneAnyMap(typed)
+	case map[string]string:
+		result := make(map[string]any, len(typed))
+		for key, item := range typed {
+			result[key] = item
+		}
+		return result
+	default:
+		return nil
+	}
+}
+
+func cloneAnyMap(values map[string]any) map[string]any {
+	if len(values) == 0 {
+		return nil
+	}
+	result := make(map[string]any, len(values))
+	for key, value := range values {
+		result[key] = value
+	}
+	return result
+}
+
+func parseRealityDest(dest string) (string, int) {
+	dest = strings.TrimSpace(dest)
+	if dest == "" {
+		return "", 0
+	}
+	host, portText, err := net.SplitHostPort(dest)
+	if err != nil {
+		return dest, 0
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		return host, 0
+	}
+	return host, port
 }
 
 func (p *XrayParser) parseTLS(ss *xrayStreamSettings) *TLSConfig {
@@ -190,10 +303,12 @@ func (p *XrayParser) parseTLS(ss *xrayStreamSettings) *TLSConfig {
 			Enabled:     true,
 			ShortIDs:    ss.RealitySettings.ShortIds,
 			Fingerprint: ss.RealitySettings.Fingerprint,
+			PublicKey:   ss.RealitySettings.PublicKey,
 		}
 		if len(ss.RealitySettings.ServerNames) > 0 {
 			config.Reality.ServerName = ss.RealitySettings.ServerNames[0]
 		}
+		config.Reality.HandshakeAddr, config.Reality.HandshakePort = parseRealityDest(ss.RealitySettings.Dest)
 	}
 
 	return config

@@ -36,6 +36,10 @@ export interface SMTPTestResponse {
 export interface KeyResponse {
   key: string;
   masked: boolean;
+  has_value: boolean;
+  impact?: string;
+  generated?: boolean;
+  last_modified?: number;
 }
 
 /**

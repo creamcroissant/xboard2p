@@ -84,10 +84,10 @@ type AgentInfo struct {
 	ID           int64    `json:"id"`
 	Name         string   `json:"name"`
 	Host         string   `json:"host"`
-	CoreType     string   `json:"core_type"`     // sing-box, xray
-	CoreVersion  string   `json:"core_version"`  // 例如: "1.10.0"
-	Capabilities []string `json:"capabilities"`  // 例如: ["reality", "multiplex", "brutal"]
-	BuildTags    []string `json:"build_tags"`    // 例如: ["with_v2ray_api"]
+	CoreType     string   `json:"core_type"`    // sing-box, xray
+	CoreVersion  string   `json:"core_version"` // 例如: "1.10.0"
+	Capabilities []string `json:"capabilities"` // 例如: ["reality", "multiplex", "brutal"]
+	BuildTags    []string `json:"build_tags"`   // 例如: ["with_v2ray_api"]
 }
 
 // ServerInfo 包含全局服务配置。
@@ -100,30 +100,49 @@ type ServerInfo struct {
 
 // TransportConfig 表示传输层配置。
 type TransportConfig struct {
-	Type        string            `json:"type"`                   // tcp, ws, grpc, http, quic
+	Type        string            `json:"type"`                   // tcp, ws, grpc, http, quic, xhttp
 	Path        string            `json:"path,omitempty"`         // WebSocket/HTTP 路径
 	Host        string            `json:"host,omitempty"`         // HTTP Host 头
 	ServiceName string            `json:"service_name,omitempty"` // gRPC 服务名
 	Headers     map[string]string `json:"headers,omitempty"`
+	Mode        string            `json:"mode,omitempty"`
+	XHTTP       *XHTTPConfig      `json:"xhttp,omitempty"`
+}
+
+// XHTTPConfig 表示 Xray xhttp 传输配置。
+type XHTTPConfig struct {
+	Host                string            `json:"host,omitempty"`
+	Path                string            `json:"path,omitempty"`
+	Mode                string            `json:"mode,omitempty"`
+	Headers             map[string]string `json:"headers,omitempty"`
+	Extra               map[string]any    `json:"extra,omitempty"`
+	XMux                map[string]any    `json:"xmux,omitempty"`
+	DownloadSettings    map[string]any    `json:"downloadSettings,omitempty"`
+	NoGRPCHeader        *bool             `json:"noGRPCHeader,omitempty"`
+	NoSSEHeader         *bool             `json:"noSSEHeader,omitempty"`
+	SCMaxBufferedPosts  *int              `json:"scMaxBufferedPosts,omitempty"`
+	SCMaxEachPostBytes  *int              `json:"scMaxEachPostBytes,omitempty"`
+	SCMinPostsInterval  *int              `json:"scMinPostsIntervalMs,omitempty"`
+	SCStreamUpServerSec *int              `json:"scStreamUpServerSecs,omitempty"`
 }
 
 // TLSConfig 表示 TLS 配置。
 type TLSConfig struct {
-	Enabled     bool          `json:"enabled"`
-	ServerName  string        `json:"server_name,omitempty"`
-	ALPN        []string      `json:"alpn,omitempty"`
-	Certificate string        `json:"certificate,omitempty"` // 证书路径
-	Key         string        `json:"key,omitempty"`         // 密钥路径
+	Enabled     bool           `json:"enabled"`
+	ServerName  string         `json:"server_name,omitempty"`
+	ALPN        []string       `json:"alpn,omitempty"`
+	Certificate string         `json:"certificate,omitempty"` // 证书路径
+	Key         string         `json:"key,omitempty"`         // 密钥路径
 	Reality     *RealityConfig `json:"reality,omitempty"`
 }
 
 // RealityConfig 表示 XTLS Reality 配置。
 type RealityConfig struct {
-	Enabled    bool              `json:"enabled"`
-	PrivateKey string            `json:"private_key,omitempty"` // 服务端私钥
-	PublicKey  string            `json:"public_key,omitempty"`  // 用于客户端配置生成
-	ShortIDs   []string          `json:"short_id,omitempty"`
-	Handshake  *HandshakeConfig  `json:"handshake,omitempty"`
+	Enabled    bool             `json:"enabled"`
+	PrivateKey string           `json:"private_key,omitempty"` // 服务端私钥
+	PublicKey  string           `json:"public_key,omitempty"`  // 用于客户端配置生成
+	ShortIDs   []string         `json:"short_id,omitempty"`
+	Handshake  *HandshakeConfig `json:"handshake,omitempty"`
 }
 
 // HandshakeConfig 表示 Reality 握手配置。
@@ -201,27 +220,27 @@ type StatsConfig struct {
 type Capability string
 
 const (
-	CapReality    Capability = "reality"
-	CapMultiplex  Capability = "multiplex"
-	CapBrutal     Capability = "brutal"
-	CapECH        Capability = "ech"
-	CapUTLS       Capability = "utls"
-	CapQUIC       Capability = "quic"
-	CapV2RayAPI   Capability = "v2ray_api"
-	CapWireguard  Capability = "wireguard"
-	CapTUN        Capability = "tun"
-	CapHTTP3      Capability = "http3"
-	CapDHCP       Capability = "dhcp"
-	CapGeoIP      Capability = "geoip"
-	CapGeoSite    Capability = "geosite"
+	CapReality   Capability = "reality"
+	CapMultiplex Capability = "multiplex"
+	CapBrutal    Capability = "brutal"
+	CapECH       Capability = "ech"
+	CapUTLS      Capability = "utls"
+	CapQUIC      Capability = "quic"
+	CapV2RayAPI  Capability = "v2ray_api"
+	CapWireguard Capability = "wireguard"
+	CapTUN       Capability = "tun"
+	CapHTTP3     Capability = "http3"
+	CapDHCP      Capability = "dhcp"
+	CapGeoIP     Capability = "geoip"
+	CapGeoSite   Capability = "geosite"
 
 	// Xray 专属能力
-	CapXTLS       Capability = "xtls"        // XTLS 流控
-	CapSplitHTTP  Capability = "splithttp"   // SplitHTTP 传输
-	CapMeek       Capability = "meek"        // Meek 传输
-	CapMKCP       Capability = "mkcp"        // mKCP 传输
-	CapDomainSock Capability = "domainsock"  // Unix domain socket
-	CapStats      Capability = "stats"       // Xray stats 模块
+	CapXTLS       Capability = "xtls"       // XTLS 流控
+	CapSplitHTTP  Capability = "splithttp"  // SplitHTTP 传输
+	CapMeek       Capability = "meek"       // Meek 传输
+	CapMKCP       Capability = "mkcp"       // mKCP 传输
+	CapDomainSock Capability = "domainsock" // Unix domain socket
+	CapStats      Capability = "stats"      // Xray stats 模块
 )
 
 // SingBoxVersionRequirements 记录能力所需的最低版本。
@@ -255,10 +274,10 @@ var XrayVersionRequirements = map[Capability]string{
 
 // AgentCapabilities 表示 Agent 支持的能力。
 type AgentCapabilities struct {
-	CoreType     string       `json:"core_type"`     // sing-box, xray
-	CoreVersion  string       `json:"core_version"`  // 例如: "1.10.0"
-	BuildTags    []string     `json:"build_tags"`    // 例如: ["with_v2ray_api", "with_quic"]
-	Capabilities []Capability `json:"capabilities"`  // 由版本号与 build tags 推导
+	CoreType     string       `json:"core_type"`    // sing-box, xray
+	CoreVersion  string       `json:"core_version"` // 例如: "1.10.0"
+	BuildTags    []string     `json:"build_tags"`   // 例如: ["with_v2ray_api", "with_quic"]
+	Capabilities []Capability `json:"capabilities"` // 由版本号与 build tags 推导
 }
 
 // SupportsCapability 判断 Agent 是否支持指定能力。

@@ -49,7 +49,7 @@ func parseClashProxyLine(line string) ClientConfig {
 	case "vless", "vmess":
 		config.UUID = extractClashField(line, "uuid")
 		config.Flow = extractClashField(line, "flow")
-		config.Network = extractClashField(line, "network")
+		config.Network = normalizeXHTTPNetwork(extractClashField(line, "network"))
 
 		// Reality
 		if strings.Contains(line, "reality-opts") {
@@ -70,6 +70,13 @@ func parseClashProxyLine(line string) ClientConfig {
 		// gRPC
 		if config.Network == "grpc" {
 			config.ServiceName = extractNestedField(line, "grpc-opts", "grpc-service-name")
+		}
+
+		if config.Network == "xhttp" {
+			config.Path = extractNestedField(line, "xhttp-opts", "path")
+			config.Host = extractNestedField(line, "xhttp-opts", "host")
+			config.Mode = normalizeXHTTPMode(extractNestedField(line, "xhttp-opts", "mode"))
+			config.Headers = extractNestedStringMap(line, "xhttp-opts", "headers")
 		}
 
 		// Multiplex
@@ -164,11 +171,11 @@ func parseClashProxyLine(line string) ClientConfig {
 func extractClashField(line, field string) string {
 	// Pattern: field: value or field: "value"
 	patterns := []string{
-		field + `: "([^"]*)"`,           // quoted value
-		field + `: '([^']*)'`,           // single quoted value
-		field + `: ([^,}\s]+)`,          // unquoted value
-		`"` + field + `": "([^"]*)"`,    // JSON style quoted
-		`"` + field + `": ([^,}\s]+)`,   // JSON style unquoted
+		field + `: "([^"]*)"`,         // quoted value
+		field + `: '([^']*)'`,         // single quoted value
+		field + `: ([^,}\s]+)`,        // unquoted value
+		`"` + field + `": "([^"]*)"`,  // JSON style quoted
+		`"` + field + `": ([^,}\s]+)`, // JSON style unquoted
 	}
 
 	for _, pattern := range patterns {
@@ -182,15 +189,93 @@ func extractClashField(line, field string) string {
 
 // extractNestedField extracts a field from a nested structure like "opts: { field: value }".
 func extractNestedField(line, parent, field string) string {
-	// Find the parent structure
-	parentPattern := regexp.MustCompile(parent + `:\s*\{([^}]+)\}`)
-	parentMatch := parentPattern.FindStringSubmatch(line)
-	if len(parentMatch) < 2 {
+	block := extractInlineBlock(line, parent)
+	if block == "" {
 		return ""
 	}
+	return extractClashField(block, field)
+}
 
-	// Extract field from within the parent
-	return extractClashField(parentMatch[1], field)
+func extractNestedStringMap(line, parent, field string) map[string]string {
+	block := extractInlineBlock(line, parent)
+	if block == "" {
+		return nil
+	}
+	nested := extractInlineBlock(block, field)
+	if nested == "" {
+		return nil
+	}
+	return parseInlineStringMap(nested)
+}
+
+func extractInlineBlock(content, field string) string {
+	pattern := regexp.MustCompile(regexp.QuoteMeta(field) + `:\s*\{`)
+	match := pattern.FindStringIndex(content)
+	if len(match) != 2 {
+		return ""
+	}
+	start := match[1]
+	depth := 1
+	for i := start; i < len(content); i++ {
+		switch content[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return content[start:i]
+			}
+		}
+	}
+	return ""
+}
+
+func parseInlineStringMap(content string) map[string]string {
+	result := map[string]string{}
+	for _, part := range splitInlineMap(content) {
+		key, value, ok := strings.Cut(part, ":")
+		if !ok {
+			continue
+		}
+		key = trimInlineValue(key)
+		value = trimInlineValue(value)
+		if key != "" && value != "" {
+			result[key] = value
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+func splitInlineMap(content string) []string {
+	var parts []string
+	start := 0
+	depth := 0
+	for i := 0; i < len(content); i++ {
+		switch content[i] {
+		case '{':
+			depth++
+		case '}':
+			if depth > 0 {
+				depth--
+			}
+		case ',':
+			if depth == 0 {
+				parts = append(parts, content[start:i])
+				start = i + 1
+			}
+		}
+	}
+	parts = append(parts, content[start:])
+	return parts
+}
+
+func trimInlineValue(value string) string {
+	value = strings.TrimSpace(value)
+	value = strings.Trim(value, `"'`)
+	return strings.TrimSpace(value)
 }
 
 // parseClashBandwidth parses bandwidth string like "200 Mbps" to int.

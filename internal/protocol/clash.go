@@ -29,7 +29,7 @@ func NewClashBuilder() *ClashBuilder {
 }
 
 func (b *ClashBuilder) Flags() []string {
-	return []string{"clash"}
+	return []string{"clash", "mihomo", "clash-meta", "clashmeta"}
 }
 
 func (b *ClashBuilder) Build(req BuildRequest) (*Result, error) {
@@ -509,7 +509,7 @@ func buildClashVless(node Node) map[string]any {
 	}
 
 	// Network/Transport settings
-	switch strings.ToLower(settingString(node.Settings, "network")) {
+	switch normalizeXHTTPNetwork(settingString(node.Settings, "network")) {
 	case "ws":
 		proxy["network"] = "ws"
 		ws := map[string]any{}
@@ -538,6 +538,11 @@ func buildClashVless(node Node) map[string]any {
 		}
 		if len(h2) > 0 {
 			proxy["h2-opts"] = h2
+		}
+	case "xhttp":
+		proxy["network"] = "xhttp"
+		if opts := buildXHTTPOpts(node.Settings); len(opts) > 0 {
+			proxy["xhttp-opts"] = opts
 		}
 	default:
 		proxy["network"] = "tcp"

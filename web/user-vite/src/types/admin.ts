@@ -16,12 +16,13 @@ export interface AgentHost {
   id: number;
   name: string;
   host: string;
-  port: number;
+  port?: number;
   token?: string;
   host_token?: string;
   template_id?: number;
   status: AgentStatus;
   provision_status?: number;
+  cpu_total?: number;
   cpu_used: number;
   mem_total: number;
   mem_used: number;
@@ -29,6 +30,16 @@ export interface AgentHost {
   disk_used: number;
   upload_total: number;
   download_total: number;
+  upload_rate_bps?: number;
+  download_rate_bps?: number;
+  raw_upload_total_bytes?: number;
+  raw_download_total_bytes?: number;
+  boot_id?: string;
+  last_realtime_report_at?: number;
+  last_restart_at?: number;
+  agent_version?: string;
+  current_core_type?: string;
+  core_version?: string;
   last_heartbeat_at: number;
   created_at: number;
   updated_at: number;
@@ -154,6 +165,170 @@ export interface ListAgentCoreOperationsParams {
 export interface AgentCoreOperationsResponse {
   operations: AgentCoreOperation[];
   total: number;
+}
+
+export type OperationLogScope =
+  | "core_operation"
+  | "apply_run"
+  | "agent_operation"
+  | "agent_traffic"
+  | "traffic_reset"
+  | "threshold_action";
+
+export type OperationLogLevel = "debug" | "info" | "warn" | "error";
+
+export interface OperationLogEntry {
+  id: number;
+  scope: OperationLogScope;
+  target_id: string;
+  agent_host_id: number;
+  sequence: number;
+  phase: string;
+  level: OperationLogLevel;
+  message: string;
+  payload?: unknown;
+  source_event_id?: string;
+  reported_at: number;
+  created_at: number;
+}
+
+export interface ListOperationLogsParams {
+  scope: OperationLogScope;
+  target_id: string;
+  level?: OperationLogLevel;
+  agent_host_id?: number;
+  after_id?: number;
+  limit?: number;
+  offset?: number;
+}
+
+export interface OperationLogsResponse {
+  logs: OperationLogEntry[];
+  total: number;
+}
+
+export type AgentLifecycleOperationType =
+  | "agent_update"
+  | "agent_update_check"
+  | "traffic_reset"
+  | "threshold_action"
+  | "reset_links";
+
+export type AgentLifecycleOperationStatus =
+  | "pending"
+  | "claimed"
+  | "in_progress"
+  | "success"
+  | "failed"
+  | "timeout"
+  | "cancelled"
+  | "unsupported_action"
+  | "queue_full";
+
+export type AgentLifecycleOperationSource = "admin" | "system" | (string & {});
+
+export interface AgentLifecycleOperation {
+  id: string;
+  agent_host_id: number;
+  operation_type: AgentLifecycleOperationType | (string & {});
+  status: AgentLifecycleOperationStatus | (string & {});
+  request_payload?: unknown;
+  result_payload?: unknown;
+  error_message?: string;
+  claimed_by?: string;
+  claimed_at?: number;
+  started_at?: number;
+  finished_at?: number;
+  operator_id?: number;
+  source: AgentLifecycleOperationSource;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ListAgentLifecycleOperationsParams {
+  operation_type?: AgentLifecycleOperationType | (string & {});
+  status?: AgentLifecycleOperationStatus | (string & {});
+  statuses?: Array<AgentLifecycleOperationStatus | (string & {})>;
+  source?: AgentLifecycleOperationSource;
+  start_at?: number;
+  end_at?: number;
+  limit?: number;
+  offset?: number;
+}
+
+export interface AgentLifecycleOperationsResponse {
+  operations: AgentLifecycleOperation[];
+  total: number;
+}
+
+export interface AgentLifecycleUpdateRequest {
+  target_version?: string;
+  release_tag?: string;
+  release_repo?: string;
+  release_base_url?: string;
+  asset_name?: string;
+  asset_url?: string;
+  checksum_url?: string;
+  sha256?: string;
+  jitter_min_seconds?: number;
+  jitter_max_seconds?: number;
+}
+
+export interface AgentTrafficResetOperationRequest {
+  reason?: string;
+  source?: string;
+}
+
+export interface AgentCommandQueueStats {
+  capacity: number;
+  queued: number;
+  inflight: number;
+  workers: number;
+  available: number;
+  active_command_ids?: string[];
+  updated_at: number;
+}
+
+export type BinaryVersionComponent = "agent" | "sing-box" | "xray";
+
+export type BinaryVersionStatus =
+  | "installed"
+  | "missing"
+  | "outdated"
+  | "up_to_date"
+  | "unknown";
+
+export interface BinaryVersionState {
+  id?: number;
+  agent_host_id: number;
+  component: BinaryVersionComponent;
+  local_version: string;
+  remote_version?: string;
+  status: BinaryVersionStatus;
+  capabilities?: string[];
+  build_tags?: string[];
+  last_checked_at?: number;
+  last_check_error?: string;
+  updated_at?: number;
+}
+
+export interface AgentOperationBlocker {
+  scope: "core_operation" | "apply_run" | string;
+  id: string;
+  agent_host_id: number;
+  operation_type: string;
+  status: string;
+  created_at: number;
+}
+
+export interface AdminApiErrorDetails {
+  blocker?: AgentOperationBlocker;
+  fields?: Record<string, string>;
+  violations?: Array<{
+    field?: string;
+    message?: string;
+  }>;
+  [key: string]: unknown;
 }
 
 // Agent core instance interface
@@ -302,6 +477,191 @@ export interface QueueStats {
   periods?: QueuePeriods;
   processes?: number;
   pausedMasters?: number;
+}
+
+export type AgentTrafficLimitType = "upload" | "download" | "sum";
+
+export type AgentTrafficThresholdAction =
+  | "notify_only"
+  | "subscription_exclude"
+  | "disable_servers"
+  | "reset_links";
+
+export type AgentTrafficResetMode = "off" | "fixed_day" | "calendar_month" | "interval_days";
+
+export interface AgentTrafficPolicy {
+  agent_host_id: number;
+  enabled: boolean;
+  limit_bytes: number;
+  limit_type: AgentTrafficLimitType | (string & {});
+  threshold_percent: number;
+  threshold_action: AgentTrafficThresholdAction | (string & {});
+  threshold_reached: boolean;
+  reset_mode: AgentTrafficResetMode | (string & {});
+  reset_day: number;
+  interval_days: number;
+  anchor_at: number;
+  last_reset_at: number;
+  last_reset_cycle_key: string;
+  updated_at: number;
+}
+
+export interface AgentTrafficState {
+  agent_host_id: number;
+  boot_id: string;
+  last_raw_upload_bytes: number;
+  last_raw_download_bytes: number;
+  counter_seen: boolean;
+  cycle_upload_bytes: number;
+  cycle_download_bytes: number;
+  updated_at: number;
+}
+
+export interface AgentTrafficPolicyStatus {
+  agent_host_id: number;
+  policy: AgentTrafficPolicy;
+  state?: AgentTrafficState;
+  usage_bytes: number;
+  threshold_bytes: number;
+  threshold_reached: boolean;
+  next_reset_at?: number;
+  next_reset_cycle_key?: string;
+  cycle_upload_bytes: number;
+  cycle_download_bytes: number;
+  cycle_total_bytes: number;
+  last_raw_upload_bytes?: number;
+  last_raw_download_bytes?: number;
+}
+
+export interface UpdateAgentTrafficPolicyRequest {
+  enabled: boolean;
+  limit_bytes: number;
+  limit_type: AgentTrafficLimitType;
+  threshold_percent: number;
+  threshold_action: AgentTrafficThresholdAction;
+  reset_mode: AgentTrafficResetMode;
+  reset_day: number;
+  interval_days: number;
+  anchor_at: number;
+}
+
+export interface AgentTrafficResetCycleRequest {
+  source?: string;
+}
+
+export interface AgentTrafficResetResult {
+  agent_host_id: number;
+  source: string;
+  reset_at: number;
+  cycle_key: string;
+  state_reset: boolean;
+  threshold_cleared: boolean;
+  restored_servers: number;
+  cleared_filter_reasons: boolean;
+}
+
+export type SubscriptionSourceType = "self_hosted" | "imported_subscription" | "custom_node";
+
+export interface SubscriptionSource {
+  id: number;
+  type: SubscriptionSourceType | (string & {});
+  name: string;
+  url?: string;
+  content?: string;
+  enabled: boolean;
+  last_sync_at?: number;
+  last_sync_err?: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface UpsertSubscriptionSourceRequest {
+  type: SubscriptionSourceType;
+  name: string;
+  url?: string;
+  content?: string;
+  enabled: boolean;
+}
+
+export interface ListSubscriptionSourcesParams {
+  type?: SubscriptionSourceType;
+  enabled?: boolean;
+  keyword?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface SubscriptionSourceListResponse {
+  sources: SubscriptionSource[];
+  total: number;
+}
+
+export interface SubscriptionSourceSyncResult {
+  source: SubscriptionSource;
+  success: boolean;
+  node_count: number;
+  error?: string;
+  synced_at: number;
+}
+
+export type SubscriptionFilterReason =
+  | "hidden"
+  | "offline"
+  | "blocked"
+  | "threshold_reached"
+  | "protocol_disabled"
+  | "group_denied"
+  | "tag_mismatch"
+  | "type_mismatch";
+
+export interface SubscriptionFilterReasonEntry {
+  id: number;
+  source_type: SubscriptionSourceType | (string & {});
+  source_id: number;
+  server_id: number;
+  node_name: string;
+  reason: SubscriptionFilterReason | (string & {});
+  detail?: string;
+  created_at: number;
+}
+
+export interface ListSubscriptionFilterReasonsParams {
+  source_type?: SubscriptionSourceType | (string & {});
+  source_id?: number;
+  server_id?: number;
+  reason?: SubscriptionFilterReason | (string & {});
+  created_after?: number;
+  created_before?: number;
+  limit?: number;
+  offset?: number;
+  types?: string;
+  filter?: string;
+  tags?: string;
+}
+
+export interface SubscriptionFilterReasonListResponse {
+  reasons: SubscriptionFilterReasonEntry[];
+  total: number;
+  available_node_count: number;
+  filtered_node_count: number;
+  total_node_count: number;
+  reason_counts: Record<string, number>;
+}
+
+export interface SubscriptionFilterSummaryParams {
+  types?: string;
+  filter?: string;
+  tags?: string;
+}
+
+export interface SubscriptionFilterSummary {
+  available_node_count: number;
+  filtered_node_count: number;
+  total_node_count: number;
+  self_hosted_count: number;
+  source_node_count: number;
+  enabled_source_count: number;
+  reason_counts: Record<string, number>;
 }
 
 // Pagination params

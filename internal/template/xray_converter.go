@@ -86,6 +86,7 @@ type xrayStreamSettings struct {
 	WSSettings      *xrayWSSettings      `json:"wsSettings"`
 	GRPCSettings    *xrayGRPCSettings    `json:"grpcSettings"`
 	HTTPSettings    *xrayHTTPSettings    `json:"httpSettings"`
+	XHTTPSettings   map[string]any       `json:"xhttpSettings"`
 }
 
 type xrayTLSSettings struct {
@@ -134,7 +135,7 @@ func buildXrayInbound(inbound UnifiedInbound) map[string]any {
 		result["port"] = inbound.Port
 	}
 
-	settings := buildXraySettings(inbound.Protocol, inbound.Users, inbound.Options)
+	settings := buildXraySettings(inbound.Protocol, inbound.Users, inbound.Options, inbound.Transport)
 	if settings != nil {
 		result["settings"] = settings
 	}
@@ -147,17 +148,17 @@ func buildXrayInbound(inbound UnifiedInbound) map[string]any {
 	return result
 }
 
-func buildXraySettings(protocol string, users []UnifiedUser, options map[string]any) map[string]any {
+func buildXraySettings(protocol string, users []UnifiedUser, options map[string]any, transport *UnifiedTransport) map[string]any {
 	settings := map[string]any{}
 
 	switch protocol {
 	case "vless":
 		settings["decryption"] = "none"
-		if clients := buildXrayClients(protocol, users); len(clients) > 0 {
+		if clients := buildXrayClients(protocol, users, isVLESSXHTTPTransport(transport)); len(clients) > 0 {
 			settings["clients"] = clients
 		}
 	case "vmess":
-		if clients := buildXrayClients(protocol, users); len(clients) > 0 {
+		if clients := buildXrayClients(protocol, users, false); len(clients) > 0 {
 			settings["clients"] = clients
 		}
 	case "shadowsocks":
@@ -171,13 +172,13 @@ func buildXraySettings(protocol string, users []UnifiedUser, options map[string]
 		if network := optionString(options, "network"); network != "" {
 			settings["network"] = network
 		}
-		if clients := buildXrayClients(protocol, users); len(clients) > 0 {
+		if clients := buildXrayClients(protocol, users, false); len(clients) > 0 {
 			settings["clients"] = clients
 		} else if password := optionString(options, "password"); password != "" {
 			settings["password"] = password
 		}
 	case "trojan":
-		if clients := buildXrayClients(protocol, users); len(clients) > 0 {
+		if clients := buildXrayClients(protocol, users, false); len(clients) > 0 {
 			settings["clients"] = clients
 		}
 	}
@@ -188,7 +189,7 @@ func buildXraySettings(protocol string, users []UnifiedUser, options map[string]
 	return settings
 }
 
-func buildXrayClients(protocol string, users []UnifiedUser) []map[string]any {
+func buildXrayClients(protocol string, users []UnifiedUser, omitDefaultVLESSFlow bool) []map[string]any {
 	clients := make([]map[string]any, 0, len(users))
 	for _, user := range users {
 		client := map[string]any{}
@@ -201,10 +202,12 @@ func buildXrayClients(protocol string, users []UnifiedUser) []map[string]any {
 			client["email"] = user.Email
 			client["level"] = 0
 			flow := user.Flow
-			if flow == "" {
+			if flow == "" && !omitDefaultVLESSFlow {
 				flow = "xtls-rprx-vision"
 			}
-			client["flow"] = flow
+			if flow != "" {
+				client["flow"] = flow
+			}
 		case "vmess":
 			if user.UUID == "" {
 				continue
@@ -235,6 +238,10 @@ func buildXrayClients(protocol string, users []UnifiedUser) []map[string]any {
 	return clients
 }
 
+func isVLESSXHTTPTransport(transport *UnifiedTransport) bool {
+	return transport != nil && IsXHTTPNetwork(transport.Type)
+}
+
 func buildXrayStreamSettings(transport *UnifiedTransport, tls *UnifiedTLS) map[string]any {
 	if transport == nil && (tls == nil || !tls.Enabled) {
 		return nil
@@ -245,7 +252,7 @@ func buildXrayStreamSettings(transport *UnifiedTransport, tls *UnifiedTLS) map[s
 
 	if transport != nil {
 		hasSettings = true
-		network := transport.Type
+		network := NormalizeXHTTPNetwork(transport.Type)
 		if network == "" {
 			network = "tcp"
 		}
@@ -284,6 +291,11 @@ func buildXrayStreamSettings(transport *UnifiedTransport, tls *UnifiedTLS) map[s
 			}
 			if len(httpSettings) > 0 {
 				streamSettings["httpSettings"] = httpSettings
+			}
+		case XHTTPNetwork:
+			xhttpSettings := BuildXHTTPSettingsMap(MergeXHTTPConfig(transport.XHTTP, transport.Host, transport.Path, transport.Mode, transport.Headers))
+			if len(xhttpSettings) > 0 {
+				streamSettings["xhttpSettings"] = xhttpSettings
 			}
 		}
 	} else {
@@ -388,7 +400,7 @@ func parseXrayTransport(ss *xrayStreamSettings) *UnifiedTransport {
 	}
 
 	transport := &UnifiedTransport{
-		Type: ss.Network,
+		Type: NormalizeXHTTPNetwork(ss.Network),
 	}
 	if transport.Type == "" {
 		transport.Type = "tcp"
@@ -409,6 +421,14 @@ func parseXrayTransport(ss *xrayStreamSettings) *UnifiedTransport {
 		if len(ss.HTTPSettings.Host) > 0 {
 			transport.Host = ss.HTTPSettings.Host[0]
 		}
+	}
+	if transport.Type == XHTTPNetwork && ss.XHTTPSettings != nil {
+		xhttp := xhttpConfigFromMap(ss.XHTTPSettings)
+		transport.XHTTP = &xhttp
+		transport.Host = xhttp.Host
+		transport.Path = xhttp.Path
+		transport.Mode = xhttp.Mode
+		transport.Headers = xhttp.Headers
 	}
 
 	return transport

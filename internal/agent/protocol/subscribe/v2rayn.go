@@ -2,6 +2,7 @@ package subscribe
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"net/url"
 	"strconv"
 	"strings"
@@ -75,7 +76,7 @@ func parseVLESSURL(urlStr string) ClientConfig {
 
 	params := u.Query()
 	config.Flow = params.Get("flow")
-	config.Network = params.Get("type")
+	config.Network = normalizeXHTTPNetwork(params.Get("type"))
 	if config.Network == "" {
 		config.Network = "tcp"
 	}
@@ -100,9 +101,43 @@ func parseVLESSURL(urlStr string) ClientConfig {
 		config.Path = params.Get("path")
 	} else if config.Network == "grpc" {
 		config.ServiceName = params.Get("serviceName")
+	} else if config.Network == "xhttp" {
+		config.Path = params.Get("path")
+		config.Host = params.Get("host")
+		config.Mode = normalizeXHTTPMode(params.Get("mode"))
+		config.Extra = parseJSONMapParam(params.Get("extra"))
+		config.XMux = parseJSONMapParam(params.Get("xmux"))
+		config.DownloadSettings = parseJSONMapParam(params.Get("downloadSettings"))
 	}
 
 	return config
+}
+
+func normalizeXHTTPNetwork(network string) string {
+	normalized := strings.ToLower(strings.TrimSpace(network))
+	if normalized == "splithttp" {
+		return "xhttp"
+	}
+	return normalized
+}
+
+func normalizeXHTTPMode(mode string) string {
+	return strings.ToLower(strings.TrimSpace(mode))
+}
+
+func parseJSONMapParam(raw string) map[string]any {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	var result map[string]any
+	if err := json.Unmarshal([]byte(raw), &result); err != nil {
+		return nil
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 // parseVMessURL parses VMess URL format.
