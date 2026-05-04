@@ -36,6 +36,159 @@ PKG_MANAGER=""
 PKG_CACHE_UPDATED=0
 OPENRC_SERVICE_CMD=""
 OPENRC_UPDATE_CMD=""
+CURRENT_STAGE="startup"
+XBOARD_INSTALL_SKIP_PORT_CHECK="${XBOARD_INSTALL_SKIP_PORT_CHECK:-0}"
+XBOARD_PANEL_HTTP_PORT="${XBOARD_PANEL_HTTP_PORT:-8080}"
+XBOARD_PANEL_GRPC_PORT="${XBOARD_PANEL_GRPC_PORT:-$XBOARD_PANEL_HTTP_PORT}"
+
+set_stage() {
+    CURRENT_STAGE=$1
+    echo "Stage: ${CURRENT_STAGE}"
+}
+
+print_failure_context() {
+    echo "Install failed at stage: ${CURRENT_STAGE:-unknown}."
+    echo "Install dir: ${INSTALL_DIR}"
+    echo "Release: repo=${XBOARD_RELEASE_REPO} tag=${XBOARD_RELEASE_TAG} os=${OS} arch=${ARCH}"
+    echo "Log hints: systemd -> journalctl -u xboard -n 100 --no-pager"
+    echo "Log hints: OpenRC -> rc-service xboard status; check /var/log/messages or /var/log/syslog"
+}
+
+fail_stage() {
+    echo "Failure: $1"
+    print_failure_context
+    exit 1
+}
+
+command_status() {
+    cmd_name=$1
+    if [ "$cmd_name" = "ca-certificates" ]; then
+        if has_ca_certificates; then
+            printf '%s' "available"
+        else
+            printf '%s' "missing"
+        fi
+        return 0
+    fi
+
+    if command -v "$cmd_name" >/dev/null 2>&1; then
+        printf '%s' "available"
+    else
+        printf '%s' "missing"
+    fi
+}
+
+print_required_command_summary() {
+    echo "Required commands:"
+    for cmd_name in "$@"; do
+        echo "  ${cmd_name}: $(command_status "$cmd_name")"
+    done
+}
+
+detect_init_label() {
+    if [ "$SKIP_SYSTEMD" = "1" ]; then
+        printf '%s' "service install skipped"
+        return 0
+    fi
+
+    if is_systemd_available; then
+        printf '%s' "systemd"
+        return 0
+    fi
+
+    if is_openrc_available; then
+        printf '%s' "openrc (${OPENRC_SERVICE_CMD}, ${OPENRC_UPDATE_CMD})"
+        return 0
+    fi
+
+    printf '%s' "none detected"
+}
+
+print_panel_install_summary() {
+    load_os_release
+    detect_pkg_manager >/dev/null 2>&1 || true
+
+    distro="${DISTRO_ID:-unknown}"
+    if [ -n "$DISTRO_ID_LIKE" ]; then
+        distro="${distro} (like ${DISTRO_ID_LIKE})"
+    fi
+
+    panel_asset="xboard-${OS}-${ARCH}"
+    if [ "$OS" = "windows" ]; then
+        panel_asset="xboard-${OS}-${ARCH}.exe"
+    fi
+
+    echo "Install summary:"
+    echo "  component: panel"
+    echo "  install_dir: ${INSTALL_DIR}"
+    echo "  os/arch: ${OS}/${ARCH}"
+    echo "  distro: ${distro}"
+    echo "  init: $(detect_init_label)"
+    echo "  package_manager: ${PKG_MANAGER:-not detected}"
+    echo "  release: repo=${XBOARD_RELEASE_REPO} tag=${XBOARD_RELEASE_TAG} base=${XBOARD_RELEASE_BASE_URL}"
+    echo "  release_assets: ${panel_asset}, ${FRONTEND_RELEASE_ASSET}, ${INSTALL_UI_RELEASE_ASSET}"
+    print_required_command_summary curl ca-certificates tar
+}
+
+port_in_use() {
+    port_value=$1
+
+    if command -v ss >/dev/null 2>&1; then
+        if ss -ltn 2>/dev/null | grep -E "[:.]${port_value}[[:space:]]" >/dev/null 2>&1; then
+            return 0
+        fi
+        return 1
+    fi
+
+    if command -v netstat >/dev/null 2>&1; then
+        if netstat -ltn 2>/dev/null | grep -E "[:.]${port_value}[[:space:]]" >/dev/null 2>&1; then
+            return 0
+        fi
+        return 1
+    fi
+
+    if command -v lsof >/dev/null 2>&1; then
+        if lsof -nP -iTCP:"${port_value}" -sTCP:LISTEN >/dev/null 2>&1; then
+            return 0
+        fi
+        return 1
+    fi
+
+    return 2
+}
+
+check_port_available() {
+    label=$1
+    port_value=$2
+
+    if [ "$XBOARD_INSTALL_SKIP_PORT_CHECK" = "1" ]; then
+        echo "  ${label}: skipped (XBOARD_INSTALL_SKIP_PORT_CHECK=1)"
+        return 0
+    fi
+
+    if port_in_use "$port_value"; then
+        port_status=0
+    else
+        port_status=$?
+    fi
+    case "$port_status" in
+        0)
+            echo "  ${label}: warning, port ${port_value} appears to be in use"
+            ;;
+        1)
+            echo "  ${label}: port ${port_value} appears available"
+            ;;
+        *)
+            echo "  ${label}: skipped, install ss/netstat/lsof for local port diagnostics"
+            ;;
+    esac
+}
+
+print_panel_port_summary() {
+    echo "Port preflight (warning only):"
+    check_port_available "http" "$XBOARD_PANEL_HTTP_PORT"
+    check_port_available "grpc" "$XBOARD_PANEL_GRPC_PORT"
+}
 
 strip_quotes() {
     value=$1
@@ -511,8 +664,10 @@ render_install_service_file() {
         return 1
     fi
 
+    install_root=$(dirname "$INSTALL_DIR")
     escaped_install_dir=$(printf '%s' "$INSTALL_DIR" | sed 's/[&#\\]/\\&/g')
-    if ! sed "s#/opt/xboard#${escaped_install_dir}#g" "$source_path" > "$temp_service"; then
+    escaped_install_root=$(printf '%s' "$install_root" | sed 's/[&#\\]/\\&/g')
+    if ! sed -e "s#/opt/xboard/panel#${escaped_install_dir}#g" -e "s#/opt/xboard#${escaped_install_root}#g" "$source_path" > "$temp_service"; then
         echo "Error: failed to render service file ${source_path}."
         rm -f "$temp_service"
         return 1
@@ -591,6 +746,9 @@ install_release_asset() {
         url="${base}/${XBOARD_RELEASE_REPO}/releases/download/${XBOARD_RELEASE_TAG}/${asset_name}"
         checksum_url="${base}/${XBOARD_RELEASE_REPO}/releases/download/${XBOARD_RELEASE_TAG}/SHA256SUMS.txt"
     fi
+
+    echo "Release asset: ${asset_name}"
+    echo "Release source: repo=${XBOARD_RELEASE_REPO} tag=${XBOARD_RELEASE_TAG} url=${url}"
 
     if ! command -v curl >/dev/null 2>&1; then
         echo "Error: curl not found for release download of ${asset_name}."
@@ -798,6 +956,7 @@ verify_checksum() {
         return 1
     fi
 
+    echo "Checksum verified: ${file_name} (${actual_checksum})"
     return 0
 }
 
@@ -811,7 +970,7 @@ install_binary() {
     fi
 
     if ! ensure_install_dir; then
-        exit 1
+        return 1
     fi
 
     asset_name="${target_bin}-${OS}-${ARCH}"
@@ -823,12 +982,12 @@ install_binary() {
 
     if ! install_release_asset "$asset_name" "$INSTALL_DIR/$target_bin"; then
         echo "Error: failed to install ${bin_name} from GitHub release asset."
-        exit 1
+        return 1
     fi
 
     if ! set_file_mode +x "$INSTALL_DIR/$target_bin"; then
         echo "Error: failed to set executable permission on $INSTALL_DIR/$target_bin."
-        exit 1
+        return 1
     fi
 
     return 0
@@ -982,43 +1141,56 @@ fi
 
 echo "=== Installing Panel ==="
 
+set_stage "diagnostics"
+print_panel_install_summary
+print_panel_port_summary
+
+set_stage "prepare install directory"
 if ! ensure_install_dir; then
-    exit 1
+    fail_stage "cannot create install directory"
 fi
 
+set_stage "check download dependencies"
 if ! ensure_download_dependencies; then
     echo "Error: release download dependency check failed for xboard."
-    exit 1
+    fail_stage "dependency check failed"
 fi
 
-install_binary "xboard" "./cmd/xboard/main.go"
+set_stage "install panel binary"
+if ! install_binary "xboard" "./cmd/xboard/main.go"; then
+    fail_stage "panel binary installation failed"
+fi
 
+set_stage "install frontend assets"
 if ! install_release_archive_dir "$FRONTEND_RELEASE_ASSET" "$INSTALL_DIR/web/user-vite" "dist" "$INSTALL_DIR/web/user-vite/dist"; then
     echo "Error: failed to install frontend assets from GitHub release asset."
-    exit 1
+    fail_stage "frontend asset installation failed"
 fi
 
+set_stage "install setup UI assets"
 if ! install_release_archive_dir "$INSTALL_UI_RELEASE_ASSET" "$INSTALL_DIR/web" "install" "$INSTALL_DIR/web/install"; then
     echo "Error: failed to install install UI assets from GitHub release asset."
-    exit 1
+    fail_stage "install UI asset installation failed"
 fi
 
+set_stage "write panel config"
 if [ ! -f "$INSTALL_DIR/config.yml" ] && [ ! -f "$INSTALL_DIR/.env" ]; then
     if [ -f "config.example.yml" ]; then
         if ! install_file "config.example.yml" "$INSTALL_DIR/config.yml"; then
             echo "Error: failed to create config.yml."
-            exit 1
+            fail_stage "panel config creation failed"
         fi
         echo "Created config.yml."
     elif [ -f ".env.example" ]; then
         if ! install_file ".env.example" "$INSTALL_DIR/.env"; then
             echo "Error: failed to create .env."
-            exit 1
+            fail_stage "panel env creation failed"
         fi
         echo "Created .env."
     fi
 fi
 
+set_stage "install service"
 if [ "$SKIP_SYSTEMD" = "1" ]; then
     echo "Skipping xboard.service installation (XBOARD_INSTALL_SKIP_SYSTEMD=1)."
 elif is_systemd_available; then
@@ -1037,18 +1209,18 @@ elif is_systemd_available; then
                 rm -f "$TEMP_TEMPLATE"
             fi
             echo "Error: failed to install xboard.service."
-            exit 1
+            fail_stage "systemd service installation failed"
         fi
         if [ -n "$TEMP_TEMPLATE" ]; then
             rm -f "$TEMP_TEMPLATE"
         fi
         if ! run_privileged systemctl daemon-reload; then
             echo "Error: failed to run systemctl daemon-reload."
-            exit 1
+            fail_stage "systemd daemon reload failed"
         fi
         if ! run_privileged systemctl enable xboard; then
             echo "Error: failed to enable xboard service."
-            exit 1
+            fail_stage "systemd service enable failed"
         fi
         echo "xboard.service installed."
     else
@@ -1056,9 +1228,12 @@ elif is_systemd_available; then
     fi
 elif is_openrc_available; then
     if ! install_openrc_service "xboard" "${INSTALL_DIR}/xboard" "serve --config ${INSTALL_DIR}/config.yml"; then
-        exit 1
+        fail_stage "OpenRC service installation failed"
     fi
 else
     echo "No supported service manager detected (systemd/openrc). Please manage panel process manually."
 fi
+
+set_stage "completed"
+echo "Panel install completed."
 

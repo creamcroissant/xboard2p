@@ -60,6 +60,218 @@ PKG_MANAGER=""
 PKG_CACHE_UPDATED=0
 OPENRC_SERVICE_CMD=""
 OPENRC_UPDATE_CMD=""
+CURRENT_STAGE="startup"
+XBOARD_INSTALL_SKIP_CONNECT_CHECK="${XBOARD_INSTALL_SKIP_CONNECT_CHECK:-0}"
+
+set_stage() {
+    CURRENT_STAGE=$1
+    echo "Stage: ${CURRENT_STAGE}"
+}
+
+print_failure_context() {
+    echo "Install failed at stage: ${CURRENT_STAGE:-unknown}."
+    echo "Install dir: ${INSTALL_DIR}"
+    echo "Release: repo=${XBOARD_RELEASE_REPO} tag=${XBOARD_RELEASE_TAG} os=${OS} arch=${ARCH}"
+    echo "Log hints: systemd -> journalctl -u xboard-agent -n 100 --no-pager"
+    echo "Log hints: OpenRC -> rc-service xboard-agent status; check /var/log/messages or /var/log/syslog"
+}
+
+fail_stage() {
+    echo "Failure: $1"
+    print_failure_context
+    exit 1
+}
+
+command_status() {
+    cmd_name=$1
+    if [ "$cmd_name" = "ca-certificates" ]; then
+        if has_ca_certificates; then
+            printf '%s' "available"
+        else
+            printf '%s' "missing"
+        fi
+        return 0
+    fi
+
+    if command -v "$cmd_name" >/dev/null 2>&1; then
+        printf '%s' "available"
+    else
+        printf '%s' "missing"
+    fi
+}
+
+print_required_command_summary() {
+    echo "Required commands:"
+    for cmd_name in "$@"; do
+        echo "  ${cmd_name}: $(command_status "$cmd_name")"
+    done
+}
+
+detect_init_label() {
+    if [ "$SKIP_SYSTEMD" = "1" ]; then
+        printf '%s' "service install skipped"
+        return 0
+    fi
+
+    if is_systemd_available; then
+        printf '%s' "systemd"
+        return 0
+    fi
+
+    if is_openrc_available; then
+        printf '%s' "openrc (${OPENRC_SERVICE_CMD}, ${OPENRC_UPDATE_CMD})"
+        return 0
+    fi
+
+    printf '%s' "none detected"
+}
+
+print_agent_install_summary() {
+    load_os_release
+    detect_pkg_manager >/dev/null 2>&1 || true
+
+    distro="${DISTRO_ID:-unknown}"
+    if [ -n "$DISTRO_ID_LIKE" ]; then
+        distro="${distro} (like ${DISTRO_ID_LIKE})"
+    fi
+
+    agent_asset="agent-${OS}-${ARCH}"
+    if [ "$OS" = "windows" ]; then
+        agent_asset="agent-${OS}-${ARCH}.exe"
+    fi
+
+    required_commands="curl ca-certificates unzip"
+    if [ -n "$WITH_CORE_TYPE" ] || [ -n "$CORE_ACTION" ]; then
+        required_commands="${required_commands} python3 tar"
+    fi
+
+    echo "Install summary:"
+    echo "  component: agent"
+    echo "  install_dir: ${INSTALL_DIR}"
+    echo "  os/arch: ${OS}/${ARCH}"
+    echo "  distro: ${distro}"
+    echo "  init: $(detect_init_label)"
+    echo "  package_manager: ${PKG_MANAGER:-not detected}"
+    echo "  release: repo=${XBOARD_RELEASE_REPO} tag=${XBOARD_RELEASE_TAG} base=${XBOARD_RELEASE_BASE_URL}"
+    echo "  release_asset: ${agent_asset}"
+    echo "  grpc_address: ${GRPC_ADDRESS:-not configured}"
+    echo "  auth: shared first registration token; host token is written back after first boot"
+    if [ -n "$WITH_CORE_TYPE" ]; then
+        core_ref="$CORE_VERSION"
+        if [ -z "$core_ref" ]; then
+            core_ref="${CORE_CHANNEL:-latest}"
+        fi
+        echo "  bundled_core: type=${WITH_CORE_TYPE} ref=${core_ref} flavor=${CORE_FLAVOR:-official}"
+    fi
+    if [ -n "$CORE_ACTION" ]; then
+        core_ref="$CORE_VERSION"
+        if [ -z "$core_ref" ]; then
+            core_ref="${CORE_CHANNEL:-latest}"
+        fi
+        echo "  core_action: action=${CORE_ACTION} type=${CORE_TYPE} ref=${core_ref} flavor=${CORE_FLAVOR:-official}"
+    fi
+    print_required_command_summary $required_commands
+}
+
+extract_host_port() {
+    address_value=$1
+    case "$address_value" in
+        *://*) address_value=${address_value#*://} ;;
+    esac
+    address_value=${address_value%%/*}
+    port_value=${address_value##*:}
+    host_value=${address_value%:*}
+    case "$host_value" in
+        \[*\])
+            host_value=${host_value#\[}
+            host_value=${host_value%\]}
+            ;;
+    esac
+
+    case "$port_value" in
+        ""|*[!0-9]*)
+            return 1
+            ;;
+    esac
+
+    if [ -z "$host_value" ] || [ "$host_value" = "$port_value" ]; then
+        return 1
+    fi
+
+    printf '%s %s' "$host_value" "$port_value"
+    return 0
+}
+
+print_agent_connectivity_summary() {
+    echo "Panel connectivity preflight (warning only):"
+    if [ -z "$GRPC_ADDRESS" ]; then
+        echo "  grpc: skipped, address is not configured yet"
+        return 0
+    fi
+
+    host_port=$(extract_host_port "$GRPC_ADDRESS" || true)
+    if [ -z "$host_port" ]; then
+        echo "  grpc: skipped, unable to parse ${GRPC_ADDRESS}"
+        return 0
+    fi
+
+    set -- $host_port
+    target_host=$1
+    target_port=$2
+
+    if [ "$XBOARD_INSTALL_SKIP_CONNECT_CHECK" = "1" ]; then
+        echo "  grpc: skipped (XBOARD_INSTALL_SKIP_CONNECT_CHECK=1)"
+        return 0
+    fi
+
+    if command -v nc >/dev/null 2>&1; then
+        if nc -z -w 2 "$target_host" "$target_port" >/dev/null 2>&1; then
+            echo "  grpc: ${target_host}:${target_port} is reachable"
+        else
+            echo "  grpc: warning, ${target_host}:${target_port} is not reachable from this host"
+        fi
+    else
+        echo "  grpc: skipped, install nc/netcat for connectivity diagnostics"
+    fi
+}
+
+agent_config_inputs_required() {
+    config_path="${INSTALL_DIR}/config.yml"
+    legacy_config_path="${INSTALL_DIR}/agent_config.yml"
+
+    if [ "$FORCE_CONFIG_OVERWRITE" = "1" ]; then
+        return 0
+    fi
+
+    if [ -f "$config_path" ] || [ -f "$legacy_config_path" ]; then
+        return 1
+    fi
+
+    return 0
+}
+
+validate_agent_install_inputs() {
+    if ! agent_config_inputs_required; then
+        return 0
+    fi
+
+    if [ -z "$GRPC_ADDRESS" ]; then
+        echo "Error: missing required config parameters."
+        echo "grpc address is required to initialize config.yml."
+        echo "Example:"
+        echo "  sh ./deploy/agent.sh -k '<communication-key>' -g '127.0.0.1:9090'"
+        return 1
+    fi
+
+    if [ -z "$COMMUNICATION_KEY" ]; then
+        echo "Error: missing required authentication parameters."
+        echo "communication_key is required to initialize config.yml."
+        echo "host_token can only be written back by the Agent after first-boot registration."
+        return 1
+    fi
+
+    return 0
+}
 
 strip_quotes() {
     value=$1
@@ -527,8 +739,10 @@ render_install_service_file() {
         return 1
     fi
 
+    install_root=$(dirname "$INSTALL_DIR")
     escaped_install_dir=$(printf '%s' "$INSTALL_DIR" | sed 's/[&#\\]/\\&/g')
-    if ! sed "s#/opt/xboard#${escaped_install_dir}#g" "$source_path" > "$temp_service"; then
+    escaped_install_root=$(printf '%s' "$install_root" | sed 's/[&#\\]/\\&/g')
+    if ! sed -e "s#/opt/xboard/agent#${escaped_install_dir}#g" -e "s#/opt/xboard#${escaped_install_root}#g" "$source_path" > "$temp_service"; then
         echo "Error: failed to render service file ${source_path}."
         rm -f "$temp_service"
         return 1
@@ -613,6 +827,9 @@ download_release_binary() {
         url="${base}/${XBOARD_RELEASE_REPO}/releases/download/${XBOARD_RELEASE_TAG}/${asset}"
         checksum_url="${base}/${XBOARD_RELEASE_REPO}/releases/download/${XBOARD_RELEASE_TAG}/SHA256SUMS.txt"
     fi
+
+    echo "Release asset: ${asset}"
+    echo "Release source: repo=${XBOARD_RELEASE_REPO} tag=${XBOARD_RELEASE_TAG} url=${url}"
 
     if ! command -v curl >/dev/null 2>&1; then
         echo "Error: curl not found for release download of ${bin_name}."
@@ -826,6 +1043,9 @@ verify_digest_value() {
         echo "Expected: ${normalized}"
         echo "Actual:   ${actual}"
         return 1
+    fi
+    if ! core_output_is_json; then
+        echo "Checksum verified: ${asset_name} (${actual})"
     fi
     return 0
 }
@@ -1135,6 +1355,12 @@ install_core_release() {
     if ! require_command python3; then
         return 1
     fi
+    if [ "$core_type" = "sing-box" ]; then
+        if ! ensure_dependency "tar"; then
+            echo "Error: release download dependency check failed for sing-box archive extraction."
+            return 1
+        fi
+    fi
 
     workdir=$(mktemp -d 2>/dev/null || mktemp -d -t xboard-core-install)
     if [ -z "$workdir" ]; then
@@ -1163,6 +1389,9 @@ install_core_release() {
     download_url=$(json_get_asset_field "$metadata_file" "$CORE_ASSET_NAME" "browser_download_url")
     if ! asset_digest=$(resolve_core_asset_digest "$metadata_file" "$core_type" "$CORE_ASSET_NAME" "$workdir"); then
         return 1
+    fi
+    if ! core_output_is_json; then
+        echo "Core release: type=${core_type} action=${action} repo=${CORE_RELEASE_REPO} requested=${requested_ref} resolved=${resolved_tag} asset=${CORE_ASSET_NAME}"
     fi
     if [ -z "$download_url" ]; then
         echo "Error: release asset '${CORE_ASSET_NAME}' not found in ${CORE_RELEASE_REPO}@${resolved_tag}."
@@ -1284,6 +1513,7 @@ verify_checksum() {
         return 1
     fi
 
+    echo "Checksum verified: ${file_name} (${actual_checksum})"
     return 0
 }
 
@@ -1297,12 +1527,12 @@ install_binary() {
     fi
 
     if ! ensure_install_dir; then
-        exit 1
+        return 1
     fi
 
     if ! download_release_binary "$bin_name" "$INSTALL_DIR/$target_bin"; then
         echo "Error: failed to install ${bin_name} from GitHub release asset."
-        exit 1
+        return 1
     fi
 
     return 0
@@ -1931,8 +2161,9 @@ if [ "$BOOTSTRAP_MODE" = "1" ]; then
     export XBOARD_AGENT_CORE_CHANNEL="$CORE_CHANNEL"
     export XBOARD_AGENT_CORE_FLAVOR="$CORE_FLAVOR"
     unset XBOARD_AGENT_HOST_TOKEN
+    set_stage "bootstrap"
     if ! run_bootstrap_mode "$@"; then
-        exit 1
+        fail_stage "bootstrap install failed"
     fi
     exit 0
 fi
@@ -1942,42 +2173,62 @@ if [ -n "$CORE_ACTION" ]; then
         echo "Error: --core-action cannot be combined with --uninstall."
         exit 1
     fi
+    set_stage "diagnostics"
+    print_agent_install_summary
+    set_stage "core install"
     if ! install_core_release "$CORE_TYPE" "$CORE_ACTION" "$CORE_VERSION" "$CORE_CHANNEL" "$CORE_FLAVOR"; then
-        exit 1
+        fail_stage "core installation failed"
     fi
     exit 0
 fi
 
 echo "=== Installing Agent ==="
 
+set_stage "validate agent config"
 GRPC_TLS_ENABLED_NORMALIZED=$(normalize_bool "$GRPC_TLS_ENABLED" || true)
 if [ -z "$GRPC_TLS_ENABLED_NORMALIZED" ]; then
     echo "Error: invalid grpc tls flag '${GRPC_TLS_ENABLED}'. Expected true/false."
-    exit 1
+    fail_stage "invalid grpc tls flag"
 fi
 GRPC_TLS_ENABLED=$GRPC_TLS_ENABLED_NORMALIZED
 
-if ! ensure_install_dir; then
-    exit 1
+if ! validate_agent_install_inputs; then
+    fail_stage "agent config validation failed"
 fi
 
+set_stage "diagnostics"
+print_agent_install_summary
+print_agent_connectivity_summary
+
+set_stage "prepare install directory"
+if ! ensure_install_dir; then
+    fail_stage "cannot create install directory"
+fi
+
+set_stage "check download dependencies"
 if ! ensure_download_dependencies; then
     echo "Error: release download dependency check failed for agent."
-    exit 1
+    fail_stage "dependency check failed"
 fi
 
-install_binary "agent" "./cmd/agent/main.go"
+set_stage "install agent binary"
+if ! install_binary "agent" "./cmd/agent/main.go"; then
+    fail_stage "agent binary installation failed"
+fi
 
+set_stage "persist deploy assets"
 if ! persist_agent_deploy_assets; then
-    exit 1
+    fail_stage "failed to persist deploy assets"
 fi
 
 if [ -n "$WITH_CORE_TYPE" ]; then
+    set_stage "install bundled core"
     if ! install_core_release "$WITH_CORE_TYPE" "install" "$CORE_VERSION" "$CORE_CHANNEL" "$CORE_FLAVOR"; then
-        exit 1
+        fail_stage "bundled core installation failed"
     fi
 fi
 
+set_stage "write agent config"
 CONFIG_PATH="$INSTALL_DIR/config.yml"
 LEGACY_CONFIG_PATH="$INSTALL_DIR/agent_config.yml"
 if [ ! -f "$CONFIG_PATH" ] && [ -f "$LEGACY_CONFIG_PATH" ]; then
@@ -1985,7 +2236,7 @@ if [ ! -f "$CONFIG_PATH" ] && [ -f "$LEGACY_CONFIG_PATH" ]; then
         echo "Detected legacy agent_config.yml and migrated it to config.yml (${CONFIG_PATH})."
     else
         echo "Error: failed to migrate legacy agent_config.yml to config.yml."
-        exit 1
+        fail_stage "legacy config migration failed"
     fi
 fi
 if [ -f "$CONFIG_PATH" ] && [ "$FORCE_CONFIG_OVERWRITE" != "1" ]; then
@@ -1996,14 +2247,14 @@ else
         echo "grpc address is required to initialize config.yml."
         echo "Example:"
         echo "  sh ./deploy/agent.sh -k '<communication-key>' -g '127.0.0.1:9090'"
-        exit 1
+        fail_stage "grpc address missing"
     fi
 
     if [ -z "$COMMUNICATION_KEY" ]; then
         echo "Error: missing required authentication parameters."
         echo "communication_key is required to initialize config.yml."
         echo "host_token can only be written back by the Agent after first-boot registration."
-        exit 1
+        fail_stage "communication key missing"
     fi
 
     umask 077
@@ -2029,6 +2280,7 @@ EOF
     echo "Initialized config.yml at ${CONFIG_PATH}."
 fi
 
+set_stage "install service"
 if [ "$SKIP_SYSTEMD" = "1" ]; then
     echo "Skipping xboard-agent.service installation (XBOARD_INSTALL_SKIP_SYSTEMD=1)."
 elif is_systemd_available; then
@@ -2036,15 +2288,15 @@ elif is_systemd_available; then
     if [ -n "$SERVICE_FILE" ]; then
         if ! render_install_service_file "$SERVICE_FILE" /etc/systemd/system/xboard-agent.service; then
             echo "Error: failed to install xboard-agent.service."
-            exit 1
+            fail_stage "systemd service installation failed"
         fi
         if ! run_privileged systemctl daemon-reload; then
             echo "Error: failed to run systemctl daemon-reload."
-            exit 1
+            fail_stage "systemd daemon reload failed"
         fi
         if ! run_privileged systemctl enable xboard-agent; then
             echo "Error: failed to enable xboard-agent service."
-            exit 1
+            fail_stage "systemd service enable failed"
         fi
         echo "xboard-agent.service installed."
     else
@@ -2052,8 +2304,11 @@ elif is_systemd_available; then
     fi
 elif is_openrc_available; then
     if ! install_openrc_service "xboard-agent" "${INSTALL_DIR}/agent" "--config ${INSTALL_DIR}/config.yml"; then
-        exit 1
+        fail_stage "OpenRC service installation failed"
     fi
 else
     echo "No supported service manager detected (systemd/openrc). Please manage agent process manually."
 fi
+
+set_stage "completed"
+echo "Agent install completed."

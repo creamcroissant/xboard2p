@@ -67,7 +67,7 @@ ui:
 
 grpc:
   enabled: true                 # Required. Agent only supports gRPC transport.
-  addr: "0.0.0.0:9090"       # Panel gRPC listen address (must be reachable by agents in multi-host/container deployments)
+  addr: "0.0.0.0:8080"       # Same listener as http.addr when reuse_http_port is true
   reuse_http_port: true       # Enable single-port HTTP+gRPC multiplexing on http.addr
 tag: "default"                # Agent tag (optional)
 
