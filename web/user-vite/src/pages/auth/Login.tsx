@@ -12,6 +12,31 @@ import { ROUTES } from "@/lib/constants";
 import ThemeToggle from "@/components/ThemeToggle";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
 
+const sanitizeNextPath = (next: string | null): string => {
+  if (!next) {
+    return ROUTES.DASHBOARD;
+  }
+
+  let decoded = "";
+  try {
+    decoded = decodeURIComponent(next).trim();
+  } catch {
+    return ROUTES.DASHBOARD;
+  }
+
+  if (!decoded.startsWith("/")) {
+    return ROUTES.DASHBOARD;
+  }
+  if (decoded.startsWith("//") || /^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(decoded)) {
+    return ROUTES.DASHBOARD;
+  }
+  if (/[\r\n\t]/.test(decoded)) {
+    return ROUTES.DASHBOARD;
+  }
+
+  return decoded;
+};
+
 export default function Login() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -27,8 +52,8 @@ export default function Login() {
     mutationFn: () => login({ email, password }),
     onSuccess: (data) => {
       authLogin(data.token);
-      const next = searchParams.get("next") || ROUTES.DASHBOARD;
-      navigate(decodeURIComponent(next));
+      const next = sanitizeNextPath(searchParams.get("next"));
+      navigate(next);
     },
   });
 
@@ -49,7 +74,7 @@ export default function Login() {
 
       <Card className="w-full max-w-md border border-border/80 shadow-sm">
         <CardHeader className="items-center space-y-2 pt-8 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary font-semibold">
+          <div className="flex h-12 w-12 items-center justify-center rounded-md bg-primary/10 text-primary font-semibold">
             X
           </div>
           <div className="space-y-1">
@@ -125,7 +150,7 @@ export default function Login() {
                 />
                 <span>{t("auth.rememberMe")}</span>
               </label>
-              <Link to="/forgot-password" className="text-primary hover:underline">
+              <Link to={ROUTES.FORGOT_PASSWORD} className="text-primary hover:underline">
                 {t("auth.forgotPassword")}
               </Link>
             </div>

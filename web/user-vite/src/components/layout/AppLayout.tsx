@@ -57,30 +57,25 @@ export default function AppLayout({ children }: AppLayoutProps) {
   );
 
   useEffect(() => {
-    window.localStorage.setItem(
-      "xboard.sidebar.collapsed",
-      String(sidebarCollapsed)
-    );
+    window.localStorage.setItem("xboard.sidebar.collapsed", String(sidebarCollapsed));
   }, [sidebarCollapsed]);
 
   return (
-    <div className="h-screen bg-background overflow-hidden" style={containerStyle}>
+    <div className="h-dvh overflow-hidden bg-background" style={containerStyle}>
       <NoticePopup notice={notice} open={showNotice} onClose={handleNoticeClose} />
-      <div className="flex h-full">
+      <div className="flex h-full min-h-0">
         <Sidebar
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
           isCollapsed={sidebarCollapsed}
-          onToggleCollapsed={() =>
-            setSidebarCollapsed((previous) => !previous)
-          }
+          onToggleCollapsed={() => setSidebarCollapsed((previous) => !previous)}
         />
 
-        <div className="flex-1 flex flex-col min-h-0 min-w-0 transition-all duration-300">
+        <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <Header onMenuClick={() => setSidebarOpen(true)} />
 
-          <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
-            <div className="w-full mx-auto px-2 md:px-4">{children}</div>
+          <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 md:px-6 md:py-6 lg:px-8 lg:py-8">
+            <div className="mx-auto w-full max-w-7xl">{children}</div>
           </main>
         </div>
       </div>

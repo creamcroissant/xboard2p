@@ -153,12 +153,13 @@ func NewAgentCoreService(
 
 // AgentCoreServiceOptions 定义 gRPC 客户端构造参数。
 type AgentCoreServiceOptions struct {
-	GRPCTLS       *client.TLSConfig
-	Timeout       client.TimeoutConfig
-	Keepalive     *client.KeepaliveConfig
-	GRPCPort      string
-	ClientFactory func(cfg client.Config) (*client.AgentClient, error)
-	Operations    repository.CoreOperationRepository
+	GRPCTLS        *client.TLSConfig
+	Timeout        client.TimeoutConfig
+	Keepalive      *client.KeepaliveConfig
+	GRPCPort       string
+	ClientFactory  func(cfg client.Config) (*client.AgentClient, error)
+	Operations     repository.CoreOperationRepository
+	OperationGuard AgentOperationGuard
 }
 
 // NewAgentCoreServiceWithOptions 构造可定制的核心管理服务。
@@ -194,7 +195,7 @@ func NewAgentCoreServiceWithOptions(
 		grpcKeepalive:  opts.Keepalive,
 		grpcPort:       grpcPort,
 		grpcClientFunc: factory,
-		operations:     NewCoreOperationService(opts.Operations),
+		operations:     NewCoreOperationService(opts.Operations, opts.OperationGuard),
 		snapshots:      NewCoreSnapshotService(agentHosts, instances),
 	}
 }
@@ -425,8 +426,6 @@ func normalizeRawConfigJSON(payload []byte) ([]byte, error) {
 	}
 	return normalized, nil
 }
-
-
 
 func (s *agentCoreService) resolveConfigJSON(ctx context.Context, templateID int64, configJSON json.RawMessage) ([]byte, string, *int64, error) {
 	var payload []byte

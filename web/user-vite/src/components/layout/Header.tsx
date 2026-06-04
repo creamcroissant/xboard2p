@@ -39,11 +39,11 @@ export default function Header({ onMenuClick }: HeaderProps) {
   };
 
   return (
-    <header className="sticky top-0 z-30 h-12 border-b border-border bg-card/80 backdrop-blur-md">
-      <div className="flex h-full items-center justify-between px-3">
+    <header className="relative z-30 h-[var(--header-height)] shrink-0 border-b bg-background">
+      <div className="flex h-full items-center justify-between gap-4 px-4 md:px-6 lg:px-8">
         <div className="flex min-w-0 items-center gap-3">
           <Button
-            variant="ghost"
+            variant="outline"
             size="icon"
             className="lg:hidden"
             onClick={onMenuClick}
@@ -53,7 +53,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
           </Button>
           {currentLabelKey && (
             <div className="min-w-0">
-              <span className="block max-w-[160px] truncate text-sm font-medium text-foreground sm:max-w-[260px] md:max-w-[360px] lg:max-w-[520px]">
+              <span className="block max-w-[180px] truncate text-base font-semibold text-foreground sm:max-w-[300px] md:max-w-[420px] lg:max-w-[560px]">
                 {t(currentLabelKey)}
               </span>
             </div>
@@ -66,16 +66,16 @@ export default function Header({ onMenuClick }: HeaderProps) {
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="gap-2 px-2">
+              <Button variant="outline" className="h-10 gap-2 px-2.5 shadow-none" data-testid="user-menu-trigger">
                 <span
                   className={cn(
                     "inline-flex h-8 w-8 items-center justify-center rounded-full",
-                    "bg-primary text-xs font-semibold text-primary-foreground"
+                    "bg-primary/10 text-xs font-semibold text-primary"
                   )}
                 >
                   {getInitial(user?.email)}
                 </span>
-                <span className="hidden max-w-[120px] truncate text-sm md:inline">
+                <span className="hidden max-w-[140px] truncate text-sm md:inline">
                   {user?.email ?? "-"}
                 </span>
               </Button>

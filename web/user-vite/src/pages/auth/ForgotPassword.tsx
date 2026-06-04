@@ -109,7 +109,7 @@ export default function ForgotPassword() {
 
       <Card className="w-full max-w-md border border-border/80 shadow-sm">
         <CardHeader className="items-center space-y-2 pt-8 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary font-semibold">
+          <div className="flex h-12 w-12 items-center justify-center rounded-md bg-primary/10 text-primary font-semibold">
             X
           </div>
           <div className="space-y-1">

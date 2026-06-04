@@ -183,27 +183,126 @@ type Server struct {
 
 // AgentHost represents a physical server where Agents are deployed.
 type AgentHost struct {
-	ID              int64
-	Name            string   // 服务器名称
-	Host            string   // 服务器 IP 或域名
-	Token           string   // Agent 认证令牌
-	Status          int      // 0: 离线, 1: 在线, 2: 警告
-	ProvisionStatus int      // 0: active, 1: pending
-	TemplateID      int64    // Config Template ID
-	CoreVersion     string   // 核心版本 (如 "1.10.0")
-	Capabilities    []string // 支持的能力 (如 ["reality", "multiplex"])
-	BuildTags       []string // 构建标签 (如 ["with_v2ray_api"])
-	CPUTotal        float64  // CPU 核心数
-	CPUUsed         float64  // CPU 使用率 (%)
-	MemTotal        int64    // 内存总量 (bytes)
-	MemUsed         int64    // 内存使用量 (bytes)
-	DiskTotal       int64    // 磁盘总量 (bytes)
-	DiskUsed        int64    // 磁盘使用量 (bytes)
-	UploadTotal     int64    // 累计上传流量 (bytes)
-	DownloadTotal   int64    // 累计下载流量 (bytes)
-	LastHeartbeatAt int64    // 最后心跳时间
-	CreatedAt       int64
-	UpdatedAt       int64
+	ID                    int64
+	Name                  string   // 服务器名称
+	Host                  string   // 服务器 IP 或域名
+	Token                 string   // Agent 认证令牌
+	Status                int      // 0: 离线, 1: 在线, 2: 警告
+	ProvisionStatus       int      // 0: active, 1: pending
+	TemplateID            int64    // Config Template ID
+	CoreVersion           string   // 核心版本 (如 "1.10.0")
+	Capabilities          []string // 支持的能力 (如 ["reality", "multiplex"])
+	BuildTags             []string // 构建标签 (如 ["with_v2ray_api"])
+	CPUTotal              float64  // CPU 核心数
+	CPUUsed               float64  // CPU 使用率 (%)
+	MemTotal              int64    // 内存总量 (bytes)
+	MemUsed               int64    // 内存使用量 (bytes)
+	DiskTotal             int64    // 磁盘总量 (bytes)
+	DiskUsed              int64    // 磁盘使用量 (bytes)
+	UploadTotal           int64    // 累计上传流量 (bytes)
+	DownloadTotal         int64    // 累计下载流量 (bytes)
+	UploadRateBps         int64    // 实时上传速率 (bytes/s)
+	DownloadRateBps       int64    // 实时下载速率 (bytes/s)
+	RawUploadTotalBytes   int64    // Agent 原始上传计数器
+	RawDownloadTotalBytes int64    // Agent 原始下载计数器
+	BootID                string   // Agent 启动标识
+	LastRealtimeReportAt  int64    // 最后实时指标上报时间
+	LastRestartAt         int64    // 最近一次检测到重启的时间
+	AgentVersion          string   // Agent 二进制版本
+	CurrentCoreType       string   // 当前运行核心类型
+	LastHeartbeatAt       int64    // 最后心跳时间
+	CreatedAt             int64
+	UpdatedAt             int64
+}
+
+// AgentLifecycleOperation represents a panel-issued agent lifecycle command.
+type AgentLifecycleOperation struct {
+	ID             string          `json:"id"`
+	AgentHostID    int64           `json:"agent_host_id"`
+	OperationType  string          `json:"operation_type"`
+	Status         string          `json:"status"`
+	RequestPayload json.RawMessage `json:"request_payload,omitempty"`
+	ResultPayload  json.RawMessage `json:"result_payload,omitempty"`
+	ErrorMessage   string          `json:"error_message,omitempty"`
+	ClaimedBy      string          `json:"claimed_by,omitempty"`
+	ClaimedAt      *int64          `json:"claimed_at,omitempty"`
+	StartedAt      *int64          `json:"started_at,omitempty"`
+	FinishedAt     *int64          `json:"finished_at,omitempty"`
+	OperatorID     *int64          `json:"operator_id,omitempty"`
+	Source         string          `json:"source"`
+	CreatedAt      int64           `json:"created_at"`
+	UpdatedAt      int64           `json:"updated_at"`
+}
+
+// AgentTrafficPolicy stores threshold and reset policy for an agent host.
+type AgentTrafficPolicy struct {
+	AgentHostID       int64  `json:"agent_host_id"`
+	Enabled           bool   `json:"enabled"`
+	LimitBytes        int64  `json:"limit_bytes"`
+	LimitType         string `json:"limit_type"`
+	ThresholdPercent  int    `json:"threshold_percent"`
+	ThresholdAction   string `json:"threshold_action"`
+	ThresholdReached  bool   `json:"threshold_reached"`
+	ResetMode         string `json:"reset_mode"`
+	ResetDay          int    `json:"reset_day"`
+	IntervalDays      int    `json:"interval_days"`
+	AnchorAt          int64  `json:"anchor_at"`
+	LastResetAt       int64  `json:"last_reset_at"`
+	LastResetCycleKey string `json:"last_reset_cycle_key"`
+	UpdatedAt         int64  `json:"updated_at"`
+}
+
+// AgentTrafficState stores the trusted traffic accumulation state for an agent host.
+type AgentTrafficState struct {
+	AgentHostID          int64  `json:"agent_host_id"`
+	BootID               string `json:"boot_id"`
+	LastRawUploadBytes   int64  `json:"last_raw_upload_bytes"`
+	LastRawDownloadBytes int64  `json:"last_raw_download_bytes"`
+	CounterSeen          bool   `json:"counter_seen"`
+	CycleUploadBytes     int64  `json:"cycle_upload_bytes"`
+	CycleDownloadBytes   int64  `json:"cycle_download_bytes"`
+	UpdatedAt            int64  `json:"updated_at"`
+}
+
+// SubscriptionSource stores imported or custom subscription material.
+type SubscriptionSource struct {
+	ID          int64  `json:"id"`
+	Type        string `json:"type"`
+	Name        string `json:"name"`
+	URL         string `json:"url,omitempty"`
+	Content     string `json:"content,omitempty"`
+	Enabled     bool   `json:"enabled"`
+	LastSyncAt  int64  `json:"last_sync_at,omitempty"`
+	LastSyncErr string `json:"last_sync_err,omitempty"`
+	CreatedAt   int64  `json:"created_at"`
+	UpdatedAt   int64  `json:"updated_at"`
+}
+
+// SubscriptionFilterReason stores explainable node exclusion decisions.
+type SubscriptionFilterReason struct {
+	ID         int64  `json:"id"`
+	SourceType string `json:"source_type"`
+	SourceID   int64  `json:"source_id"`
+	ServerID   int64  `json:"server_id"`
+	NodeName   string `json:"node_name"`
+	Reason     string `json:"reason"`
+	Detail     string `json:"detail"`
+	CreatedAt  int64  `json:"created_at"`
+}
+
+// BinaryVersionState tracks local and remote versions for agent-managed binaries.
+type BinaryVersionState struct {
+	ID               int64  `json:"id"`
+	AgentHostID      int64  `json:"agent_host_id"`
+	Component        string `json:"component"`
+	LocalVersion     string `json:"local_version"`
+	RemoteVersion    string `json:"remote_version,omitempty"`
+	Status           string `json:"status"`
+	CapabilitiesJSON string `json:"-"`
+	BuildTagsJSON    string `json:"-"`
+	LastCheckedAt    int64  `json:"last_checked_at,omitempty"`
+	LastCheckError   string `json:"last_check_error,omitempty"`
+	UpdatedAt        int64  `json:"updated_at"`
 }
 
 // ConfigTemplate defines a configuration template for agents.
@@ -458,6 +557,32 @@ type CoreOperation struct {
 	UpdatedAt      int64           `json:"updated_at"`
 }
 
+// OperationLogEntry records one append-only operation event.
+type OperationLogEntry struct {
+	ID            int64           `json:"id"`
+	Scope         string          `json:"scope"`
+	TargetID      string          `json:"target_id"`
+	AgentHostID   int64           `json:"agent_host_id"`
+	Sequence      int64           `json:"sequence"`
+	Phase         string          `json:"phase"`
+	Level         string          `json:"level"`
+	Message       string          `json:"message"`
+	Payload       json.RawMessage `json:"payload,omitempty"`
+	SourceEventID string          `json:"source_event_id,omitempty"`
+	ReportedAt    int64           `json:"reported_at"`
+	CreatedAt     int64           `json:"created_at"`
+}
+
+// OperationBlocker describes an active operation that blocks another operation.
+type OperationBlocker struct {
+	Scope         string `json:"scope"`
+	ID            string `json:"id"`
+	AgentHostID   int64  `json:"agent_host_id"`
+	OperationType string `json:"operation_type"`
+	Status        string `json:"status"`
+	CreatedAt     int64  `json:"created_at"`
+}
+
 // AgentCoreInstance represents a persisted core instance on an agent host.
 type AgentCoreInstance struct {
 	ID               int64               `json:"id"`
@@ -612,6 +737,15 @@ type InboundIndex struct {
 	Transport   json.RawMessage
 	Multiplex   json.RawMessage
 	LastSeenAt  int64
+}
+
+// CDNSiteFilter defines filter conditions for listing CDN sites.
+type CDNSiteFilter struct {
+	Keyword string
+	Status  *string
+	Enabled *bool
+	Limit   int
+	Offset  int
 }
 
 // DriftState tracks desired-applied mismatch status.

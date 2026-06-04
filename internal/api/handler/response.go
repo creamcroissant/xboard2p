@@ -3,10 +3,12 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 
 	"github.com/creamcroissant/xboard/internal/api/requestctx"
+	"github.com/creamcroissant/xboard/internal/service"
 	"github.com/creamcroissant/xboard/internal/support/i18n"
 )
 
@@ -22,18 +24,18 @@ func respondJSON(w http.ResponseWriter, status int, payload any) {
 // Helper to respond with translated JSON
 func respondJSONTranslated(ctx context.Context, w http.ResponseWriter, status int, payload any, i18nMgr *i18n.Manager) {
 	lang := requestctx.GetLanguage(ctx)
-	
+
 	// If payload is a map, try to translate values that look like keys?
 	// For now, let's just assume the payload structure is handled by the caller or we translate specific fields.
 	// A common pattern is to have a Message field.
-	
+
 	if m, ok := payload.(map[string]any); ok {
 		if msg, ok := m["message"].(string); ok {
 			m["message"] = i18nMgr.Translate(lang, msg)
 		}
 		if msg, ok := m["error"].(string); ok {
 			// If error is a key, translate it.
-			// But usually error contains dynamic info. 
+			// But usually error contains dynamic info.
 			// Let's assume for now we pass keys for static errors.
 			m["error"] = i18nMgr.Translate(lang, msg)
 		}
@@ -85,6 +87,29 @@ func RespondErrorI18nAction(ctx context.Context, w http.ResponseWriter, status i
 		resp["action"] = action
 	}
 	respondJSON(w, status, resp)
+}
+
+func respondAgentOperationBusy(ctx context.Context, w http.ResponseWriter, action string, err error, i18nMgr *i18n.Manager) bool {
+	if !errors.Is(err, service.ErrAgentOperationBusy) {
+		return false
+	}
+	blocker, ok := service.OperationBlockerFromError(err)
+	if !ok || blocker == nil {
+		RespondErrorI18nAction(ctx, w, http.StatusConflict, action, "error.conflict", i18nMgr)
+		return true
+	}
+	message := "error.conflict"
+	if i18nMgr != nil {
+		message = i18nMgr.Translate(requestctx.GetLanguage(ctx), message)
+	}
+	respondJSON(w, http.StatusConflict, map[string]any{
+		"error":  message,
+		"action": action,
+		"details": map[string]any{
+			"blocker": blocker,
+		},
+	})
+	return true
 }
 
 // New helper for i18n error responses

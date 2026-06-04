@@ -20,8 +20,15 @@ import {
   listAgentCores,
   switchAgentCore,
 } from "@/api/admin";
+import { isAdminApiError } from "@/api/admin/client";
 import { QUERY_KEYS } from "@/lib/constants";
 import { formatDateTime } from "@/lib/format";
+import { AgentCommandQueuePanel } from "./AgentCommandQueuePanel";
+import { AgentUpdatePanel } from "./AgentUpdatePanel";
+import { BinaryVersionStatusPanel } from "./BinaryVersionStatusPanel";
+import { OperationLogTimeline } from "./OperationLogTimeline";
+import { TrafficCycleStatusCard } from "./TrafficCycleStatusCard";
+import { TrafficPolicyForm } from "./TrafficPolicyForm";
 import {
   Badge,
   Button,
@@ -55,6 +62,8 @@ import type {
   AgentCoreInstance,
   AgentCoreOperation,
   AgentCoreSwitchLog,
+  AgentOperationBlocker,
+  AdminApiErrorDetails,
   CreateAgentCoreInstanceRequest,
   InstallAgentCoreRequest,
   SwitchAgentCoreRequest,
@@ -140,6 +149,66 @@ function buildOperationTarget(operation: AgentCoreOperation): string {
   return operation.core_type || "-";
 }
 
+function extractBlocker(error: unknown): AgentOperationBlocker | null {
+  if (!isAdminApiError(error) || error.status !== 409) {
+    return null;
+  }
+  const details = error.details as AdminApiErrorDetails | undefined;
+  return details?.blocker ?? null;
+}
+
+function describeOperationPayload(operation: AgentCoreOperation): string {
+  if (operation.error_message) {
+    return operation.error_message;
+  }
+  if (!operation.result_payload || Object.keys(operation.result_payload).length === 0) {
+    return "-";
+  }
+  return JSON.stringify(operation.result_payload);
+}
+
+function BusyBlockerAlert({
+  blocker,
+  onDismiss,
+}: {
+  blocker: AgentOperationBlocker;
+  onDismiss: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="rounded-md border border-warning/30 bg-warning/10 p-4 text-sm">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-2">
+          <div className="font-medium text-warning-foreground dark:text-warning">{t("admin.cores.busyTitle")}</div>
+          <div className="text-muted-foreground">{t("admin.cores.busyDescription")}</div>
+          <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <span className="font-medium text-foreground">{t("admin.cores.busyScope")}: </span>
+              {blocker.scope}
+            </div>
+            <div>
+              <span className="font-medium text-foreground">{t("admin.cores.busyOperation")}: </span>
+              {blocker.operation_type}
+            </div>
+            <div>
+              <span className="font-medium text-foreground">{t("admin.cores.busyStatus")}: </span>
+              {blocker.status}
+            </div>
+            <div>
+              <span className="font-medium text-foreground">{t("admin.cores.busyStartedAt")}: </span>
+              {formatDateTime(blocker.created_at)}
+            </div>
+          </div>
+          <div className="break-all font-mono text-xs text-muted-foreground">{blocker.id}</div>
+        </div>
+        <Button size="sm" variant="outline" onClick={onDismiss}>
+          {t("common.close")}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePanelProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -166,6 +235,8 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
     end: "",
   });
   const [trackedOperationIds, setTrackedOperationIds] = useState<string[]>([]);
+  const [selectedOperationId, setSelectedOperationId] = useState<string | null>(null);
+  const [busyBlocker, setBusyBlocker] = useState<AgentOperationBlocker | null>(null);
   const [installingCoreType, setInstallingCoreType] = useState<string | null>(null);
   const previousOperationStatusesRef = useRef<Record<string, string>>({});
 
@@ -192,12 +263,13 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
     }
   };
 
+
   const handleOperationsDialogChange = (open: boolean) => {
     setIsOperationsOpen(open);
     if (!open) {
       setOperationsPage(1);
-      setOperationsStatus("");
-      setOperationsType("");
+      setOperationsStatus(FILTER_ALL);
+      setOperationsType(FILTER_ALL);
       setOperationsDateRange({ start: "", end: "" });
     }
   };
@@ -322,9 +394,21 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
 
 
   const onOperationSubmitted = (operation: AgentCoreOperation, messageKey: string) => {
+    setBusyBlocker(null);
+    setSelectedOperationId(operation.id);
     setTrackedOperationIds((current) => Array.from(new Set([...current, operation.id])));
     queryClient.invalidateQueries({ queryKey: QUERY_KEYS.ADMIN_AGENT_CORE_OPERATIONS });
     toast.success(t(messageKey));
+  };
+
+  const handleOperationError = (error: Error, titleKey: string) => {
+    const blocker = extractBlocker(error);
+    if (blocker) {
+      setBusyBlocker(blocker);
+      toast.warning(t("admin.cores.busyTitle"), { description: error.message });
+      return;
+    }
+    toast.error(t(titleKey), { description: error.message });
   };
 
   const createMutation = useMutation({
@@ -334,7 +418,7 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
       onOperationSubmitted(operation, "admin.cores.operationSubmitted");
     },
     onError: (err: Error) => {
-      toast.error(t("admin.cores.createError"), { description: err.message });
+      handleOperationError(err, "admin.cores.createError");
     },
   });
 
@@ -359,7 +443,7 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
       onOperationSubmitted(operation, "admin.cores.operationSubmitted");
     },
     onError: (err: Error) => {
-      toast.error(t("admin.cores.switchError"), { description: err.message });
+      handleOperationError(err, "admin.cores.switchError");
     },
   });
 
@@ -371,7 +455,7 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
     },
     onError: (err: Error) => {
       setInstallingCoreType(null);
-      toast.error(t("admin.cores.installError"), { description: err.message });
+      handleOperationError(err, "admin.cores.installError");
     },
   });
 
@@ -436,12 +520,12 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
     deleteMutation.mutate(deleteTarget.instance_id);
   };
 
-  const cores = coresQuery.data ?? [];
-  const instances = instancesQuery.data ?? [];
-  const operations = operationsQuery.data?.operations ?? [];
+  const cores = useMemo(() => coresQuery.data ?? [], [coresQuery.data]);
+  const instances = useMemo(() => instancesQuery.data ?? [], [instancesQuery.data]);
+  const operations = useMemo(() => operationsQuery.data?.operations ?? [], [operationsQuery.data?.operations]);
   const operationsTotal = operationsQuery.data?.total ?? 0;
   const operationsTotalPages = Math.ceil(operationsTotal / OPERATIONS_PAGE_SIZE);
-  const logs = logsQuery.data?.logs ?? [];
+  const logs = useMemo(() => logsQuery.data?.logs ?? [], [logsQuery.data?.logs]);
   const logsTotal = logsQuery.data?.total ?? 0;
   const logsTotalPages = Math.ceil(logsTotal / LOGS_PAGE_SIZE);
 
@@ -457,6 +541,10 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
     [instances]
   );
   const recentOperations = useMemo(() => operations.slice(0, 5), [operations]);
+  const selectedOperation = useMemo(
+    () => operations.find((operation) => operation.id === selectedOperationId) ?? recentOperations[0] ?? null,
+    [operations, recentOperations, selectedOperationId]
+  );
   const hasActiveOperations = useMemo(
     () => operations.some((operation) => isOperationActive(operation.status)),
     [operations]
@@ -527,6 +615,19 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
             </Button>
           </div>
 
+          {busyBlocker && <BusyBlockerAlert blocker={busyBlocker} onDismiss={() => setBusyBlocker(null)} />}
+
+          <BinaryVersionStatusPanel agentHostId={agentHostId} />
+
+          <AgentUpdatePanel agentHostId={agentHostId} />
+
+          <AgentCommandQueuePanel agentHostId={agentHostId} />
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            <TrafficCycleStatusCard agentHostId={agentHostId} />
+            <TrafficPolicyForm agentHostId={agentHostId} />
+          </div>
+
           <Card className="border border-border shadow-none">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm">{t("admin.cores.operationsSummaryTitle")}</CardTitle>
@@ -544,30 +645,43 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
                 />
               ) : (
                 <div className="space-y-2">
-                  {recentOperations.map((operation) => (
-                    <div
-                      key={operation.id}
-                      className="flex flex-col gap-2 rounded-md border border-border p-3 sm:flex-row sm:items-center sm:justify-between"
-                    >
-                      <div className="space-y-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge variant={getStatusVariant(operation.status)}>{operation.status}</Badge>
-                          <span className="text-sm font-medium">
-                            {t(`admin.cores.operationType.${operation.operation_type}`)}
-                          </span>
+                  {recentOperations.map((operation) => {
+                    const selected = selectedOperation?.id === operation.id;
+                    return (
+                      <button
+                        type="button"
+                        key={operation.id}
+                        className={`flex w-full flex-col gap-2 rounded-md border p-3 text-left transition-colors sm:flex-row sm:items-center sm:justify-between ${
+                          selected ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"
+                        }`}
+                        onClick={() => setSelectedOperationId(operation.id)}
+                      >
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant={getStatusVariant(operation.status)}>{operation.status}</Badge>
+                            <span className="text-sm font-medium">
+                              {t(`admin.cores.operationType.${operation.operation_type}`)}
+                            </span>
+                          </div>
+                          <div className="text-xs text-muted-foreground">{buildOperationTarget(operation)}</div>
+                          <div className="text-xs text-muted-foreground">{formatDateTime(operation.created_at)}</div>
                         </div>
-                        <div className="text-xs text-muted-foreground">{buildOperationTarget(operation)}</div>
-                        <div className="text-xs text-muted-foreground">{formatDateTime(operation.created_at)}</div>
-                      </div>
-                      <div className="max-w-[360px] text-xs text-muted-foreground">
-                        {operation.error_message || JSON.stringify(operation.result_payload ?? {}) || "-"}
-                      </div>
-                    </div>
-                  ))}
+                        <div className="max-w-[360px] truncate text-xs text-muted-foreground">
+                          {describeOperationPayload(operation)}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
           </Card>
+
+          <OperationLogTimeline
+            agentHostId={agentHostId}
+            targetId={selectedOperation?.id}
+            enabled={Boolean(selectedOperation?.id)}
+          />
 
           {cores.length === 0 ? (
             <EmptyState
@@ -819,7 +933,7 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
           <DialogHeader>
             <DialogTitle>{t("admin.cores.operationsTitle")}</DialogTitle>
           </DialogHeader>
-          <div className="flex flex-col gap-4 py-2">
+          <div className="flex max-h-[calc(100dvh-8rem)] flex-col gap-4 overflow-y-auto py-2 pr-1">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
               <div className="space-y-2">
                 <label className="text-sm font-medium">{t("admin.cores.logsStart")}</label>
@@ -896,11 +1010,15 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
                     <TableHead>{t("admin.cores.logsStatus")}</TableHead>
                     <TableHead>{t("admin.cores.logsDetail")}</TableHead>
                     <TableHead>{t("admin.cores.operationsFinishedAt")}</TableHead>
+                    <TableHead>{t("common.actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {operations.map((operation) => (
-                    <TableRow key={operation.id}>
+                    <TableRow
+                      key={operation.id}
+                      className={selectedOperation?.id === operation.id ? "bg-primary/5" : undefined}
+                    >
                       <TableCell>{formatDateTime(operation.created_at)}</TableCell>
                       <TableCell>{t(`admin.cores.operationType.${operation.operation_type}`)}</TableCell>
                       <TableCell>{buildOperationTarget(operation)}</TableCell>
@@ -909,10 +1027,15 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
                       </TableCell>
                       <TableCell>
                         <div className="max-w-[320px] truncate text-xs text-muted-foreground">
-                          {operation.error_message || JSON.stringify(operation.result_payload ?? {}) || "-"}
+                          {describeOperationPayload(operation)}
                         </div>
                       </TableCell>
                       <TableCell>{formatDateTime(operation.finished_at ?? 0)}</TableCell>
+                      <TableCell>
+                        <Button size="sm" variant="outline" onClick={() => setSelectedOperationId(operation.id)}>
+                          {t("admin.cores.viewTimeline")}
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -920,6 +1043,12 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
             )}
 
             <Pagination page={operationsPage} totalPages={operationsTotalPages} onPageChange={setOperationsPage} />
+
+            <OperationLogTimeline
+              agentHostId={agentHostId}
+              targetId={selectedOperation?.id}
+              enabled={isOperationsOpen && Boolean(selectedOperation?.id)}
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => handleOperationsDialogChange(false)}>
@@ -934,7 +1063,7 @@ export default function AgentCorePanel({ agentHostId, agentName }: AgentCorePane
           <DialogHeader>
             <DialogTitle>{t("admin.cores.logsTitle")}</DialogTitle>
           </DialogHeader>
-          <div className="flex flex-col gap-4 py-2">
+          <div className="flex max-h-[calc(100dvh-8rem)] flex-col gap-4 overflow-y-auto py-2 pr-1">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
               <div className="space-y-2">
                 <label className="text-sm font-medium">{t("admin.cores.logsStart")}</label>

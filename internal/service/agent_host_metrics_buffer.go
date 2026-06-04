@@ -54,6 +54,22 @@ func (b *agentHostMetricsBuffer) Enqueue(ctx context.Context, agentHostID int64,
 	return b.cache.SetJSON(ctx, metricsBufferKey(agentHostID), entry, agentHostMetricsBufferTTL)
 }
 
+func (b *agentHostMetricsBuffer) Latest(ctx context.Context, agentHostID int64) (repository.AgentHostMetrics, bool, error) {
+	if b == nil || b.cache == nil || agentHostID <= 0 {
+		return repository.AgentHostMetrics{}, false, nil
+	}
+	entry := agentHostMetricsBufferEntry{}
+	ok, err := b.cache.GetJSON(ctx, metricsBufferKey(agentHostID), &entry)
+	if err != nil {
+		b.cache.Delete(ctx, metricsBufferKey(agentHostID))
+		return repository.AgentHostMetrics{}, false, err
+	}
+	if !ok || entry.AgentHostID != agentHostID {
+		return repository.AgentHostMetrics{}, false, nil
+	}
+	return entry.Metrics, true, nil
+}
+
 func (b *agentHostMetricsBuffer) Flush(ctx context.Context) error {
 	if b == nil || b.cache == nil || b.repo == nil {
 		return nil

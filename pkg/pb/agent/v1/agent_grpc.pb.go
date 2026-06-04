@@ -33,6 +33,9 @@ const (
 	AgentService_ReportAccessLogs_FullMethodName       = "/agent.v1.AgentService/ReportAccessLogs"
 	AgentService_GetApplyBatch_FullMethodName          = "/agent.v1.AgentService/GetApplyBatch"
 	AgentService_ReportApplyRun_FullMethodName         = "/agent.v1.AgentService/ReportApplyRun"
+	AgentService_GetAgentCommands_FullMethodName       = "/agent.v1.AgentService/GetAgentCommands"
+	AgentService_ReportAgentCommand_FullMethodName     = "/agent.v1.AgentService/ReportAgentCommand"
+	AgentService_ReportOperationEvent_FullMethodName   = "/agent.v1.AgentService/ReportOperationEvent"
 )
 
 // AgentServiceClient is the client API for AgentService service.
@@ -56,6 +59,9 @@ type AgentServiceClient interface {
 	ReportAccessLogs(ctx context.Context, in *AccessLogReport, opts ...grpc.CallOption) (*AccessLogResponse, error)
 	GetApplyBatch(ctx context.Context, in *ApplyBatchRequest, opts ...grpc.CallOption) (*ApplyBatchResponse, error)
 	ReportApplyRun(ctx context.Context, in *ApplyRunReport, opts ...grpc.CallOption) (*ApplyRunResponse, error)
+	GetAgentCommands(ctx context.Context, in *GetAgentCommandsRequest, opts ...grpc.CallOption) (*GetAgentCommandsResponse, error)
+	ReportAgentCommand(ctx context.Context, in *ReportAgentCommandRequest, opts ...grpc.CallOption) (*ReportAgentCommandResponse, error)
+	ReportOperationEvent(ctx context.Context, in *ReportOperationEventRequest, opts ...grpc.CallOption) (*ReportOperationEventResponse, error)
 }
 
 type agentServiceClient struct {
@@ -209,6 +215,36 @@ func (c *agentServiceClient) ReportApplyRun(ctx context.Context, in *ApplyRunRep
 	return out, nil
 }
 
+func (c *agentServiceClient) GetAgentCommands(ctx context.Context, in *GetAgentCommandsRequest, opts ...grpc.CallOption) (*GetAgentCommandsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetAgentCommandsResponse)
+	err := c.cc.Invoke(ctx, AgentService_GetAgentCommands_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) ReportAgentCommand(ctx context.Context, in *ReportAgentCommandRequest, opts ...grpc.CallOption) (*ReportAgentCommandResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReportAgentCommandResponse)
+	err := c.cc.Invoke(ctx, AgentService_ReportAgentCommand_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) ReportOperationEvent(ctx context.Context, in *ReportOperationEventRequest, opts ...grpc.CallOption) (*ReportOperationEventResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReportOperationEventResponse)
+	err := c.cc.Invoke(ctx, AgentService_ReportOperationEvent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AgentServiceServer is the server API for AgentService service.
 // All implementations must embed UnimplementedAgentServiceServer
 // for forward compatibility.
@@ -230,6 +266,9 @@ type AgentServiceServer interface {
 	ReportAccessLogs(context.Context, *AccessLogReport) (*AccessLogResponse, error)
 	GetApplyBatch(context.Context, *ApplyBatchRequest) (*ApplyBatchResponse, error)
 	ReportApplyRun(context.Context, *ApplyRunReport) (*ApplyRunResponse, error)
+	GetAgentCommands(context.Context, *GetAgentCommandsRequest) (*GetAgentCommandsResponse, error)
+	ReportAgentCommand(context.Context, *ReportAgentCommandRequest) (*ReportAgentCommandResponse, error)
+	ReportOperationEvent(context.Context, *ReportOperationEventRequest) (*ReportOperationEventResponse, error)
 	mustEmbedUnimplementedAgentServiceServer()
 }
 
@@ -281,6 +320,15 @@ func (UnimplementedAgentServiceServer) GetApplyBatch(context.Context, *ApplyBatc
 }
 func (UnimplementedAgentServiceServer) ReportApplyRun(context.Context, *ApplyRunReport) (*ApplyRunResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReportApplyRun not implemented")
+}
+func (UnimplementedAgentServiceServer) GetAgentCommands(context.Context, *GetAgentCommandsRequest) (*GetAgentCommandsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetAgentCommands not implemented")
+}
+func (UnimplementedAgentServiceServer) ReportAgentCommand(context.Context, *ReportAgentCommandRequest) (*ReportAgentCommandResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReportAgentCommand not implemented")
+}
+func (UnimplementedAgentServiceServer) ReportOperationEvent(context.Context, *ReportOperationEventRequest) (*ReportOperationEventResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReportOperationEvent not implemented")
 }
 func (UnimplementedAgentServiceServer) mustEmbedUnimplementedAgentServiceServer() {}
 func (UnimplementedAgentServiceServer) testEmbeddedByValue()                      {}
@@ -544,6 +592,60 @@ func _AgentService_ReportApplyRun_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AgentService_GetAgentCommands_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetAgentCommandsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).GetAgentCommands(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_GetAgentCommands_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).GetAgentCommands(ctx, req.(*GetAgentCommandsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_ReportAgentCommand_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportAgentCommandRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).ReportAgentCommand(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_ReportAgentCommand_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).ReportAgentCommand(ctx, req.(*ReportAgentCommandRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_ReportOperationEvent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportOperationEventRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).ReportOperationEvent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_ReportOperationEvent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).ReportOperationEvent(ctx, req.(*ReportOperationEventRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AgentService_ServiceDesc is the grpc.ServiceDesc for AgentService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -602,6 +704,18 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReportApplyRun",
 			Handler:    _AgentService_ReportApplyRun_Handler,
+		},
+		{
+			MethodName: "GetAgentCommands",
+			Handler:    _AgentService_GetAgentCommands_Handler,
+		},
+		{
+			MethodName: "ReportAgentCommand",
+			Handler:    _AgentService_ReportAgentCommand_Handler,
+		},
+		{
+			MethodName: "ReportOperationEvent",
+			Handler:    _AgentService_ReportOperationEvent_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

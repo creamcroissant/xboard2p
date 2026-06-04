@@ -10,6 +10,13 @@ import (
 // Store 暴露每个聚合根对应的仓储接口。
 type Store interface {
 	CoreOperations() CoreOperationRepository
+	OperationLogs() OperationLogRepository
+	BinaryVersionStates() BinaryVersionStateRepository
+	AgentLifecycleOperations() AgentLifecycleOperationRepository
+	AgentTrafficPolicies() AgentTrafficPolicyRepository
+	AgentTrafficStates() AgentTrafficStateRepository
+	SubscriptionSources() SubscriptionSourceRepository
+	SubscriptionFilterReasons() SubscriptionFilterReasonRepository
 	Users() UserRepository
 	Settings() SettingRepository
 	InviteCodes() InviteCodeRepository
@@ -43,6 +50,12 @@ type Store interface {
 	AgentConfigInventories() AgentConfigInventoryRepository
 	InboundIndexes() InboundIndexRepository
 	DriftStates() DriftStateRepository
+	CDNSites() CDNSiteRepository
+	CDNEdges() CDNEdgeRepository
+	CDNCacheRules() CDNCacheRuleRepository
+	CloudflareZones() CloudflareZoneRepository
+	CloudflareDNSRecords() CloudflareDNSRecordRepository
+	CloudFrontDistributions() CloudFrontDistributionRepository
 }
 
 // CoreOperationRepository manages asynchronous core management tasks.
@@ -53,6 +66,68 @@ type CoreOperationRepository interface {
 	List(ctx context.Context, filter CoreOperationFilter) ([]*CoreOperation, error)
 	Count(ctx context.Context, filter CoreOperationFilter) (int64, error)
 	ClaimNext(ctx context.Context, agentHostID int64, statuses []string, claimedBy string, claimedAt int64, reclaimBefore *int64) (*CoreOperation, error)
+}
+
+// OperationLogRepository manages append-only operation event logs.
+type OperationLogRepository interface {
+	Append(ctx context.Context, entry *OperationLogEntry) (*OperationLogEntry, error)
+	List(ctx context.Context, filter OperationLogFilter) ([]*OperationLogEntry, error)
+	Count(ctx context.Context, filter OperationLogFilter) (int64, error)
+}
+
+// BinaryVersionStateRepository manages agent and core binary version states.
+type BinaryVersionStateRepository interface {
+	Upsert(ctx context.Context, state *BinaryVersionState) (*BinaryVersionState, error)
+	FindByHostComponent(ctx context.Context, agentHostID int64, component string) (*BinaryVersionState, error)
+	List(ctx context.Context, filter BinaryVersionFilter) ([]*BinaryVersionState, error)
+	UpdateCheckResult(ctx context.Context, agentHostID int64, component, remoteVersion, status, checkError string, checkedAt int64) error
+}
+
+// AgentLifecycleOperationRepository manages panel-issued agent lifecycle commands.
+type AgentLifecycleOperationRepository interface {
+	Create(ctx context.Context, operation *AgentLifecycleOperation) error
+	UpdateStatus(ctx context.Context, id, status string, resultPayload json.RawMessage, errorMessage string, claimedBy string, claimedAt, startedAt, finishedAt *int64) error
+	UpdateClaimedStatus(ctx context.Context, id, claimedBy, status string, resultPayload json.RawMessage, errorMessage string, startedAt, finishedAt *int64) error
+	FindByID(ctx context.Context, id string) (*AgentLifecycleOperation, error)
+	List(ctx context.Context, filter AgentLifecycleOperationFilter) ([]*AgentLifecycleOperation, error)
+	Count(ctx context.Context, filter AgentLifecycleOperationFilter) (int64, error)
+	ClaimNext(ctx context.Context, agentHostID int64, statuses []string, claimedBy string, claimedAt int64, reclaimBefore *int64, limit int) ([]*AgentLifecycleOperation, error)
+}
+
+// AgentTrafficPolicyRepository manages per-agent traffic threshold and reset policy.
+type AgentTrafficPolicyRepository interface {
+	Upsert(ctx context.Context, policy *AgentTrafficPolicy) (*AgentTrafficPolicy, error)
+	FindByAgentHostID(ctx context.Context, agentHostID int64) (*AgentTrafficPolicy, error)
+	List(ctx context.Context, filter AgentTrafficPolicyFilter) ([]*AgentTrafficPolicy, error)
+	UpdateThresholdReached(ctx context.Context, agentHostID int64, reached bool, updatedAt int64) error
+	UpdateResetState(ctx context.Context, agentHostID int64, lastResetAt int64, cycleKey string, updatedAt int64) error
+}
+
+// AgentTrafficStateRepository manages trusted traffic counter accumulation state.
+type AgentTrafficStateRepository interface {
+	Upsert(ctx context.Context, state *AgentTrafficState) (*AgentTrafficState, error)
+	FindByAgentHostID(ctx context.Context, agentHostID int64) (*AgentTrafficState, error)
+	List(ctx context.Context, filter AgentTrafficStateFilter) ([]*AgentTrafficState, error)
+	ResetCycle(ctx context.Context, agentHostID int64, resetAt int64) error
+}
+
+// SubscriptionSourceRepository manages imported and custom subscription sources.
+type SubscriptionSourceRepository interface {
+	Create(ctx context.Context, source *SubscriptionSource) (*SubscriptionSource, error)
+	Update(ctx context.Context, source *SubscriptionSource) error
+	Delete(ctx context.Context, id int64) error
+	FindByID(ctx context.Context, id int64) (*SubscriptionSource, error)
+	List(ctx context.Context, filter SubscriptionSourceFilter) ([]*SubscriptionSource, error)
+	Count(ctx context.Context, filter SubscriptionSourceFilter) (int64, error)
+	UpdateSyncResult(ctx context.Context, id int64, content string, syncErr string, syncedAt int64) error
+}
+
+// SubscriptionFilterReasonRepository manages explainable subscription filtering results.
+type SubscriptionFilterReasonRepository interface {
+	ReplaceForSource(ctx context.Context, sourceType string, sourceID int64, reasons []*SubscriptionFilterReason) error
+	List(ctx context.Context, filter SubscriptionFilterReasonFilter) ([]*SubscriptionFilterReason, error)
+	Count(ctx context.Context, filter SubscriptionFilterReasonFilter) (int64, error)
+	DeleteBySource(ctx context.Context, sourceType string, sourceID int64) error
 }
 
 // UserRepository 定义用户相关数据访问方法。
@@ -269,14 +344,23 @@ type ConfigTemplateRepository interface {
 
 // AgentHostMetrics contains real-time metrics reported by an agent.
 type AgentHostMetrics struct {
-	CPUTotal      float64
-	CPUUsed       float64
-	MemTotal      int64
-	MemUsed       int64
-	DiskTotal     int64
-	DiskUsed      int64
-	UploadTotal   int64
-	DownloadTotal int64
+	CPUTotal              float64
+	CPUUsed               float64
+	MemTotal              int64
+	MemUsed               int64
+	DiskTotal             int64
+	DiskUsed              int64
+	UploadTotal           int64
+	DownloadTotal         int64
+	UploadRateBps         int64
+	DownloadRateBps       int64
+	RawUploadTotalBytes   int64
+	RawDownloadTotalBytes int64
+	BootID                string
+	LastRealtimeReportAt  int64
+	LastRestartAt         int64
+	AgentVersion          string
+	CurrentCoreType       string
 }
 
 // ServerClientConfigRepository 管理客户端订阅配置。
@@ -527,4 +611,155 @@ type DriftStateRepository interface {
 	MarkRecoveredByHostCore(ctx context.Context, agentHostID int64, coreType string, recoveredAt int64) error
 	List(ctx context.Context, filter DriftStateFilter) ([]*DriftState, error)
 	Count(ctx context.Context, filter DriftStateFilter) (int64, error)
+}
+
+// ----------------------------------------------------------------
+// CDN 数据模型
+// ----------------------------------------------------------------
+
+// CDNSite represents a CDN site/domain configuration.
+type CDNSite struct {
+	ID               int64
+	Name             string
+	Description      string
+	Domain           string
+	OriginType       string // e.g. "ip", "domain", "s3"
+	OriginURL        string
+	CacheTTL         int    // default cache TTL in seconds
+	SSLMode          string // "off", "flexible", "full", "full_strict"
+	Status           string // "active", "deploying", "error"
+	CustomCertPEM    string
+	CustomKeyPEM     string
+	AccelerationMode string // "xhttp" for acceleration
+	InboundSpecID    *int64 // optional link to InboundSpec
+	Provider         string // "cloudflare", "cloudfront", "generic"
+	OriginPath       string // path prefix for origin
+	OriginProtocol   string // "http", "https"
+	Enabled          bool
+	LastDeployedAt   *int64 // timestamp of last deploy
+	CreatedAt        int64
+	UpdatedAt        int64
+}
+
+// CDNEdge represents an edge node assignment for a CDN site.
+type CDNEdge struct {
+	ID          int64
+	SiteID      int64
+	AgentHostID int64
+	Weight      int
+	Enabled     bool
+	Status      string // "pending", "active", "error"
+	LastError   string
+	DeployedAt  *int64
+	CreatedAt   int64
+	UpdatedAt   int64
+}
+
+// CDNCacheRule represents a per-path cache rule for a CDN site.
+type CDNCacheRule struct {
+	ID         int64
+	SiteID     int64
+	MatchType  string // "prefix", "exact", "regex"
+	MatchValue string
+	CacheTTL   int  // TTL in seconds, 0 = no-cache
+	Bypass     bool // bypass CDN entirely
+	Priority   int
+	CreatedAt  int64
+}
+
+// CloudflareZone represents a Cloudflare zone integration.
+type CloudflareZone struct {
+	ID        int64
+	AccountID string
+	ZoneID    string
+	ZoneName  string
+	Status    string
+	Plan      string
+	Enabled   bool
+	CreatedAt int64
+	UpdatedAt int64
+}
+
+// CloudflareDNSRecord represents a Cloudflare DNS record managed by the panel.
+type CloudflareDNSRecord struct {
+	ID       int64
+	ZoneID   int64 // internal CloudflareZone ID
+	RecordID string
+	Name     string
+	Type     string // A, AAAA, CNAME, etc.
+	Content  string
+	TTL      int
+	Proxied  bool
+	CreatedAt int64
+	UpdatedAt int64
+}
+
+// CloudFrontDistribution represents a CloudFront distribution integration.
+type CloudFrontDistribution struct {
+	ID             int64
+	DistributionID string
+	Domain         string
+	OriginDomain   string
+	Aliases        string
+	Status         string
+	Enabled        bool
+	CreatedAt      int64
+	UpdatedAt      int64
+}
+
+// ----------------------------------------------------------------
+// CDN Repository 接口
+// ----------------------------------------------------------------
+
+// CDNSiteRepository manages CDN site configurations.
+type CDNSiteRepository interface {
+	Create(ctx context.Context, site *CDNSite) error
+	Update(ctx context.Context, site *CDNSite) error
+	FindByID(ctx context.Context, id int64) (*CDNSite, error)
+	FindByInboundSpecID(ctx context.Context, specID int64) (*CDNSite, error)
+	List(ctx context.Context, filter CDNSiteFilter) ([]*CDNSite, error)
+	Count(ctx context.Context, filter CDNSiteFilter) (int64, error)
+	Delete(ctx context.Context, id int64) error
+}
+
+// CDNEdgeRepository manages edge node assignments for CDN sites.
+type CDNEdgeRepository interface {
+	Create(ctx context.Context, edge *CDNEdge) error
+	Update(ctx context.Context, edge *CDNEdge) error
+	FindByID(ctx context.Context, id int64) (*CDNEdge, error)
+	ListBySiteID(ctx context.Context, siteID int64) ([]*CDNEdge, error)
+	Delete(ctx context.Context, id int64) error
+}
+
+// CDNCacheRuleRepository manages per-path cache rules for CDN sites.
+type CDNCacheRuleRepository interface {
+	Create(ctx context.Context, rule *CDNCacheRule) error
+	Update(ctx context.Context, rule *CDNCacheRule) error
+	FindByID(ctx context.Context, id int64) (*CDNCacheRule, error)
+	ListBySiteID(ctx context.Context, siteID int64) ([]*CDNCacheRule, error)
+	Delete(ctx context.Context, id int64) error
+}
+
+// CloudflareZoneRepository manages Cloudflare zone integrations.
+type CloudflareZoneRepository interface {
+	Create(ctx context.Context, zone *CloudflareZone) error
+	FindByID(ctx context.Context, id int64) (*CloudflareZone, error)
+	List(ctx context.Context) ([]*CloudflareZone, error)
+	Delete(ctx context.Context, id int64) error
+}
+
+// CloudflareDNSRecordRepository manages Cloudflare DNS record sync.
+type CloudflareDNSRecordRepository interface {
+	Create(ctx context.Context, record *CloudflareDNSRecord) error
+	FindByID(ctx context.Context, id int64) (*CloudflareDNSRecord, error)
+	ListByZoneID(ctx context.Context, zoneID int64) ([]*CloudflareDNSRecord, error)
+	Delete(ctx context.Context, id int64) error
+}
+
+// CloudFrontDistributionRepository manages CloudFront distribution integrations.
+type CloudFrontDistributionRepository interface {
+	Create(ctx context.Context, dist *CloudFrontDistribution) error
+	FindByID(ctx context.Context, id int64) (*CloudFrontDistribution, error)
+	List(ctx context.Context) ([]*CloudFrontDistribution, error)
+	Delete(ctx context.Context, id int64) error
 }

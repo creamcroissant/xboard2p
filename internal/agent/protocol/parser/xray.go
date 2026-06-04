@@ -5,6 +5,8 @@ import (
 	"net"
 	"strconv"
 	"strings"
+
+	"github.com/creamcroissant/xboard/internal/template"
 )
 
 // XrayParser 解析 xray-core 配置文件。
@@ -148,7 +150,7 @@ type xrayHTTPSettings struct {
 }
 
 func (p *XrayParser) parseTransport(ss *xrayStreamSettings) *TransportConfig {
-	network := normalizeXHTTPNetwork(ss.Network)
+	network := template.NormalizeXHTTPNetwork(ss.Network)
 	if network == "" {
 		network = "tcp"
 	}
@@ -177,7 +179,7 @@ func (p *XrayParser) parseTransport(ss *xrayStreamSettings) *TransportConfig {
 		config.XHTTPSettings = cloneAnyMap(ss.XHTTPSettings)
 		config.Host = stringFromAny(ss.XHTTPSettings["host"])
 		config.Path = stringFromAny(ss.XHTTPSettings["path"])
-		config.Mode = normalizeXHTTPMode(stringFromAny(ss.XHTTPSettings["mode"]))
+		config.Mode = template.NormalizeXHTTPMode(stringFromAny(ss.XHTTPSettings["mode"]))
 		if headers := stringMapFromAny(ss.XHTTPSettings["headers"]); len(headers) > 0 {
 			config.Headers = headers
 		}
@@ -193,22 +195,6 @@ func (p *XrayParser) parseTransport(ss *xrayStreamSettings) *TransportConfig {
 	}
 
 	return config
-}
-
-func normalizeXHTTPNetwork(network string) string {
-	normalized := strings.ToLower(strings.TrimSpace(network))
-	if normalized == "splithttp" {
-		return "xhttp"
-	}
-	return normalized
-}
-
-func normalizeXHTTPMode(mode string) string {
-	normalized := strings.ToLower(strings.TrimSpace(mode))
-	if normalized == "" {
-		return "auto"
-	}
-	return normalized
 }
 
 func stringFromAny(value any) string {

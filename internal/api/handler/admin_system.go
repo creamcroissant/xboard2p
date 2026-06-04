@@ -158,6 +158,14 @@ type adminKeyRevealRequest struct {
 	Confirm bool `json:"confirm"`
 }
 
+func communicationKeyActionRequest(r *http.Request, claims requestctx.AdminClaims) service.CommunicationKeyActionRequest {
+	return service.CommunicationKeyActionRequest{ActorID: claims.ID, IP: clientIP(r), UserAgent: r.UserAgent()}
+}
+
+func communicationKeyAuditRequest(r *http.Request, claims requestctx.AdminClaims, action, result, reason string) service.CommunicationKeyAuditRequest {
+	return service.CommunicationKeyAuditRequest{Action: action, ActorID: claims.ID, IP: clientIP(r), UserAgent: r.UserAgent(), Result: result, Reason: reason}
+}
+
 // handleSaveSettings 保存指定分类的系统设置。
 func (h *AdminSystemHandler) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	if h.settings == nil {
@@ -256,12 +264,12 @@ func (h *AdminSystemHandler) handleGetKey(w http.ResponseWriter, r *http.Request
 		RespondErrorI18nAction(r.Context(), w, http.StatusUnauthorized, "admin.system.key", "error.unauthorized", h.i18n)
 		return
 	}
-	key, err := h.settings.GetMaskedCommunicationKey(r.Context())
+	result, err := h.settings.GetMaskedCommunicationKey(r.Context())
 	if err != nil {
 		RespondErrorI18nAction(r.Context(), w, http.StatusInternalServerError, "admin.system.key", "error.internal_server_error", h.i18n)
 		return
 	}
-	respondJSON(w, http.StatusOK, map[string]any{"key": key, "masked": true})
+	respondJSON(w, http.StatusOK, result)
 }
 
 // handleRevealKey 校验确认后返回明文通讯密钥。
@@ -272,24 +280,27 @@ func (h *AdminSystemHandler) handleRevealKey(w http.ResponseWriter, r *http.Requ
 	}
 	claims := requestctx.AdminFromContext(r.Context())
 	if claims.ID == "" {
+		h.settings.AuditCommunicationKeyAction(r.Context(), communicationKeyAuditRequest(r, claims, "reveal", "failure", "unauthorized"))
 		RespondErrorI18nAction(r.Context(), w, http.StatusUnauthorized, "admin.system.key.reveal", "error.unauthorized", h.i18n)
 		return
 	}
 	var payload adminKeyRevealRequest
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		h.settings.AuditCommunicationKeyAction(r.Context(), communicationKeyAuditRequest(r, claims, "reveal", "failure", "bad_request"))
 		RespondErrorI18nAction(r.Context(), w, http.StatusBadRequest, "admin.system.key.reveal", "error.bad_request", h.i18n)
 		return
 	}
 	if !payload.Confirm {
+		h.settings.AuditCommunicationKeyAction(r.Context(), communicationKeyAuditRequest(r, claims, "reveal", "failure", "confirmation_required"))
 		RespondErrorI18nAction(r.Context(), w, http.StatusBadRequest, "admin.system.key.reveal", "error.bad_request", h.i18n)
 		return
 	}
-	key, err := h.settings.GetCommunicationKey(r.Context())
+	result, err := h.settings.GetCommunicationKey(r.Context(), communicationKeyActionRequest(r, claims))
 	if err != nil {
 		RespondErrorI18nAction(r.Context(), w, http.StatusInternalServerError, "admin.system.key.reveal", "error.internal_server_error", h.i18n)
 		return
 	}
-	respondJSON(w, http.StatusOK, map[string]any{"key": key, "masked": false})
+	respondJSON(w, http.StatusOK, result)
 }
 
 // handleResetKey 重置通讯密钥并返回新值。
@@ -300,13 +311,14 @@ func (h *AdminSystemHandler) handleResetKey(w http.ResponseWriter, r *http.Reque
 	}
 	claims := requestctx.AdminFromContext(r.Context())
 	if claims.ID == "" {
+		h.settings.AuditCommunicationKeyAction(r.Context(), communicationKeyAuditRequest(r, claims, "reset", "failure", "unauthorized"))
 		RespondErrorI18nAction(r.Context(), w, http.StatusUnauthorized, "admin.system.key.reset", "error.unauthorized", h.i18n)
 		return
 	}
-	key, err := h.settings.ResetCommunicationKey(r.Context())
+	result, err := h.settings.ResetCommunicationKey(r.Context(), communicationKeyActionRequest(r, claims))
 	if err != nil {
 		RespondErrorI18nAction(r.Context(), w, http.StatusInternalServerError, "admin.system.key.reset", "error.internal_server_error", h.i18n)
 		return
 	}
-	respondJSON(w, http.StatusOK, map[string]any{"key": key, "masked": false})
+	respondJSON(w, http.StatusOK, result)
 }

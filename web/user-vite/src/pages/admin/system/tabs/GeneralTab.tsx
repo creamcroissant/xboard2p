@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -27,14 +27,6 @@ interface GeneralSettingsForm {
   forceHttps: boolean;
 }
 
-const defaultForm: GeneralSettingsForm = {
-  siteName: "",
-  siteDesc: "",
-  siteUrl: "",
-  siteLogo: "",
-  forceHttps: false,
-};
-
 function toBool(value?: string) {
   return value === "true" || value === "1";
 }
@@ -43,10 +35,75 @@ function normalizeUrl(value: string) {
   return value.trim().replace(/\/+$/u, "");
 }
 
+type GeneralTabContentProps = {
+  initialForm: GeneralSettingsForm;
+  onSave: (payload: GeneralSettingsForm) => void;
+  isSaving: boolean;
+};
+
+function GeneralTabContent({ initialForm, onSave, isSaving }: GeneralTabContentProps) {
+  const { t } = useTranslation();
+  const [form, setForm] = useState<GeneralSettingsForm>(initialForm);
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div className="space-y-2">
+        <label className="text-sm font-medium">{t("admin.system.settings.fields.siteName")}</label>
+        <Input
+          value={form.siteName}
+          onChange={(e) => setForm((prev) => ({ ...prev, siteName: e.target.value }))}
+          placeholder={t("admin.system.settings.placeholders.siteName")}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-sm font-medium">{t("admin.system.settings.fields.siteDesc")}</label>
+        <Input
+          value={form.siteDesc}
+          onChange={(e) => setForm((prev) => ({ ...prev, siteDesc: e.target.value }))}
+          placeholder={t("admin.system.settings.placeholders.siteDesc")}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-sm font-medium">{t("admin.system.settings.fields.siteUrl")}</label>
+        <Input
+          value={form.siteUrl}
+          onChange={(e) => setForm((prev) => ({ ...prev, siteUrl: e.target.value }))}
+          placeholder={t("admin.system.settings.placeholders.siteUrl")}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-sm font-medium">{t("admin.system.settings.fields.siteLogo")}</label>
+        <Input
+          value={form.siteLogo}
+          onChange={(e) => setForm((prev) => ({ ...prev, siteLogo: e.target.value }))}
+          placeholder={t("admin.system.settings.placeholders.siteLogo")}
+        />
+      </div>
+
+      <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
+        <div className="space-y-1">
+          <p className="text-sm font-medium">{t("admin.system.settings.fields.forceHttps")}</p>
+          <p className="text-xs text-muted-foreground">{t("admin.system.settings.tooltips.forceHttps")}</p>
+        </div>
+        <Switch
+          checked={form.forceHttps}
+          onCheckedChange={(checked) => setForm((prev) => ({ ...prev, forceHttps: checked }))}
+        />
+      </div>
+
+      <Button onClick={() => onSave(form)} disabled={isSaving}>
+        {isSaving ? t("common.loading") : t("admin.system.settings.actions.save")}
+      </Button>
+    </div>
+  );
+}
+
 export default function GeneralTab() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const [form, setForm] = useState<GeneralSettingsForm>(defaultForm);
 
   const queryKey = useMemo(() => [...QUERY_KEYS.ADMIN_SYSTEM, CATEGORY], []);
 
@@ -55,22 +112,20 @@ export default function GeneralTab() {
     queryFn: () => fetchSettings(CATEGORY),
   });
 
-  useEffect(() => {
-    if (!data) return;
-    setForm({
-      // Map backend keys (app_*) to frontend form fields
-      siteName: data.app_name ?? "",
-      siteDesc: data.app_description ?? "",
-      siteUrl: data.app_url ?? "",
-      siteLogo: data.logo ?? "",
-      forceHttps: toBool(data.force_https),
-    });
-  }, [data]);
+  const initialForm = useMemo<GeneralSettingsForm>(
+    () => ({
+      siteName: data?.app_name ?? "",
+      siteDesc: data?.app_description ?? "",
+      siteUrl: data?.app_url ?? "",
+      siteLogo: data?.logo ?? "",
+      forceHttps: toBool(data?.force_https),
+    }),
+    [data]
+  );
 
   const saveMutation = useMutation({
     mutationFn: (payload: GeneralSettingsForm) =>
       saveSettings(CATEGORY, {
-        // Map frontend form fields to backend keys (app_*)
         app_name: payload.siteName.trim(),
         app_description: payload.siteDesc.trim(),
         app_url: normalizeUrl(payload.siteUrl),
@@ -90,8 +145,8 @@ export default function GeneralTab() {
     },
   });
 
-  const handleSave = () => {
-    saveMutation.mutate(form);
+  const handleSave = (payload: GeneralSettingsForm) => {
+    saveMutation.mutate(payload);
   };
 
   if (isLoading) return <Loading />;
@@ -112,58 +167,11 @@ export default function GeneralTab() {
         <CardDescription>{t("admin.system.settings.description")}</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="space-y-6 max-w-2xl">
-          <div className="space-y-2">
-            <label className="text-sm font-medium">{t("admin.system.settings.fields.siteName")}</label>
-            <Input
-              value={form.siteName}
-              onChange={(e) => setForm((prev) => ({ ...prev, siteName: e.target.value }))}
-              placeholder={t("admin.system.settings.placeholders.siteName")}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">{t("admin.system.settings.fields.siteDesc")}</label>
-            <Input
-              value={form.siteDesc}
-              onChange={(e) => setForm((prev) => ({ ...prev, siteDesc: e.target.value }))}
-              placeholder={t("admin.system.settings.placeholders.siteDesc")}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">{t("admin.system.settings.fields.siteUrl")}</label>
-            <Input
-              value={form.siteUrl}
-              onChange={(e) => setForm((prev) => ({ ...prev, siteUrl: e.target.value }))}
-              placeholder={t("admin.system.settings.placeholders.siteUrl")}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">{t("admin.system.settings.fields.siteLogo")}</label>
-            <Input
-              value={form.siteLogo}
-              onChange={(e) => setForm((prev) => ({ ...prev, siteLogo: e.target.value }))}
-              placeholder={t("admin.system.settings.placeholders.siteLogo")}
-            />
-          </div>
-
-          <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
-            <div className="space-y-1">
-              <p className="text-sm font-medium">{t("admin.system.settings.fields.forceHttps")}</p>
-              <p className="text-xs text-muted-foreground">{t("admin.system.settings.tooltips.forceHttps")}</p>
-            </div>
-            <Switch
-              checked={form.forceHttps}
-              onCheckedChange={(checked) => setForm((prev) => ({ ...prev, forceHttps: checked }))}
-            />
-          </div>
-
-          <Button onClick={handleSave} disabled={saveMutation.isPending}>
-            {saveMutation.isPending ? t("common.loading") : t("admin.system.settings.actions.save")}
-          </Button>
-        </div>
+        <GeneralTabContent
+          initialForm={initialForm}
+          onSave={handleSave}
+          isSaving={saveMutation.isPending}
+        />
       </CardContent>
     </Card>
   );

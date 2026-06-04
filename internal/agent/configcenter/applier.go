@@ -23,12 +23,19 @@ const (
 	applyRunStatusSuccess    = "success"
 	applyRunStatusFailed     = "failed"
 	applyRunStatusRolledBack = "rolled_back"
+
+	operationEventScopeApplyRun = "apply_run"
+
+	operationEventLevelInfo  = "info"
+	operationEventLevelWarn  = "warn"
+	operationEventLevelError = "error"
 )
 
 // BatchClient defines gRPC operations required by AgentBatchApplier.
 type BatchClient interface {
 	GetApplyBatch(ctx context.Context, coreType string, currentRevision int64) (*agentv1.ApplyBatchResponse, error)
 	ReportApplyRun(ctx context.Context, report *agentv1.ApplyRunReport) (*agentv1.ApplyRunResponse, error)
+	ReportOperationEvent(ctx context.Context, events []*agentv1.OperationEvent) (*agentv1.ReportOperationEventResponse, error)
 }
 
 // ProtocolManager defines staged apply capabilities required by AgentBatchApplier.
@@ -112,6 +119,7 @@ func (a *AgentBatchApplier) SyncOnce(ctx context.Context, currentRevision int64)
 	}
 	targetRevision := batchResp.GetTargetRevision()
 	previousRevision := batchResp.GetPreviousRevision()
+	a.reportApplyEvent(ctx, runID, "batch_received", operationEventLevelInfo, "apply batch received", map[string]any{"target_revision": targetRevision, "previous_revision": previousRevision})
 	if targetRevision <= currentRevision {
 		return currentRevision, fmt.Errorf("invalid target revision: %d <= current revision: %d", targetRevision, currentRevision)
 	}
@@ -126,12 +134,14 @@ func (a *AgentBatchApplier) SyncOnce(ctx context.Context, currentRevision int64)
 
 	artifacts, err := a.normalizeArtifacts(batchResp.GetArtifacts())
 	if err != nil {
+		a.reportApplyEvent(ctx, runID, "validation_failed", operationEventLevelError, "apply artifact validation failed", map[string]any{"error": err.Error()})
 		reportErr := a.reportApplyResult(ctx, runID, targetRevision, false, applyRunStatusFailed, err.Error(), 0)
 		if reportErr != nil {
 			return currentRevision, errors.Join(err, fmt.Errorf("report failed status: %w", reportErr))
 		}
 		return currentRevision, err
 	}
+	a.reportApplyEvent(ctx, runID, "validated", operationEventLevelInfo, "apply artifacts validated", map[string]any{"artifact_count": len(artifacts)})
 
 	if reportErr := a.reportApplyResult(ctx, runID, targetRevision, false, applyRunStatusApplying, "", 0); reportErr != nil {
 		a.logger.Warn("failed to report applying status",
@@ -140,21 +150,30 @@ func (a *AgentBatchApplier) SyncOnce(ctx context.Context, currentRevision int64)
 			"error_category", transport.ClassifyError(reportErr).String(),
 		)
 	}
+	a.reportApplyEvent(ctx, runID, "applying", operationEventLevelInfo, "apply execution started", nil)
 
 	execResult, applyErr := a.applyBatch(ctx, runID, previousRevision, artifacts)
 	if applyErr != nil {
 		status := applyRunStatusFailed
 		rollbackRevision := int64(0)
+		phase := "failed"
+		level := operationEventLevelError
+		message := "apply execution failed"
 		if execResult.rolledBack {
 			status = applyRunStatusRolledBack
 			rollbackRevision = execResult.rollbackRevision
+			phase = "rolled_back"
+			level = operationEventLevelWarn
+			message = "apply execution rolled back"
 		}
+		a.reportApplyEvent(ctx, runID, phase, level, message, map[string]any{"error": applyErr.Error(), "rollback_revision": rollbackRevision})
 		reportErr := a.reportApplyResult(ctx, runID, targetRevision, false, status, applyErr.Error(), rollbackRevision)
 		if reportErr != nil {
 			return currentRevision, errors.Join(applyErr, fmt.Errorf("report %s status: %w", status, reportErr))
 		}
 		return currentRevision, applyErr
 	}
+	a.reportApplyEvent(ctx, runID, "completed", operationEventLevelInfo, "apply execution completed", map[string]any{"target_revision": targetRevision})
 
 	reportErr := a.reportApplyResult(ctx, runID, targetRevision, true, applyRunStatusSuccess, "", 0)
 	if reportErr != nil {
@@ -252,6 +271,49 @@ func toSnapshotFiles(artifacts []normalizedArtifact) []protocol.StagedApplyFile 
 		})
 	}
 	return files
+}
+
+func (a *AgentBatchApplier) reportApplyEvent(ctx context.Context, runID, phase, level, message string, payload map[string]any) {
+	if a == nil || a.client == nil {
+		return
+	}
+	runID = strings.TrimSpace(runID)
+	if runID == "" {
+		return
+	}
+	payloadBytes := encodeOperationEventPayload(payload)
+	resp, err := a.client.ReportOperationEvent(ctx, []*agentv1.OperationEvent{{
+		Scope:       operationEventScopeApplyRun,
+		TargetId:    runID,
+		Phase:       strings.TrimSpace(phase),
+		Level:       strings.TrimSpace(level),
+		Message:     strings.TrimSpace(message),
+		OccurredAt:  time.Now().Unix(),
+		PayloadJson: payloadBytes,
+	}})
+	if err != nil {
+		a.logger.Warn("failed to report apply operation event",
+			"run_id", runID,
+			"phase", phase,
+			"error", err,
+			"error_category", transport.ClassifyError(err).String(),
+		)
+		return
+	}
+	if resp != nil && !resp.GetSuccess() {
+		a.logger.Warn("panel rejected apply operation event", "run_id", runID, "phase", phase, "message", resp.GetMessage())
+	}
+}
+
+func encodeOperationEventPayload(payload map[string]any) []byte {
+	if len(payload) == 0 {
+		return []byte(`{}`)
+	}
+	data, err := json.Marshal(payload)
+	if err != nil || !json.Valid(data) {
+		return []byte(`{}`)
+	}
+	return data
 }
 
 func (a *AgentBatchApplier) reportApplyResult(

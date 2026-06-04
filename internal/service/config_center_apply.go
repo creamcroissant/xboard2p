@@ -38,7 +38,6 @@ type ApplyOrchestratorService interface {
 	ReportApplyResult(ctx context.Context, req ReportApplyResultRequest) error
 }
 
-
 // PrepareApplyRunRequest validates target revision artifacts and creates/reuses one apply run.
 // CreateApplyRunRequest defines one apply run creation.
 type CreateApplyRunRequest struct {
@@ -132,6 +131,7 @@ type applyOrchestratorService struct {
 	artifacts   repository.DesiredArtifactRepository
 	applyRuns   repository.ApplyRunRepository
 	diagnostics DriftAndDiffService
+	guard       AgentOperationGuard
 }
 
 // NewApplyOrchestratorService creates ApplyOrchestratorService.
@@ -144,13 +144,31 @@ func NewApplyOrchestratorService(
 	if len(diagnostics) > 0 {
 		diff = diagnostics[0]
 	}
+	return newApplyOrchestratorService(artifacts, applyRuns, diff, nil)
+}
+
+func NewApplyOrchestratorServiceWithGuard(
+	artifacts repository.DesiredArtifactRepository,
+	applyRuns repository.ApplyRunRepository,
+	diagnostics DriftAndDiffService,
+	guard AgentOperationGuard,
+) ApplyOrchestratorService {
+	return newApplyOrchestratorService(artifacts, applyRuns, diagnostics, guard)
+}
+
+func newApplyOrchestratorService(
+	artifacts repository.DesiredArtifactRepository,
+	applyRuns repository.ApplyRunRepository,
+	diagnostics DriftAndDiffService,
+	guard AgentOperationGuard,
+) ApplyOrchestratorService {
 	return &applyOrchestratorService{
 		artifacts:   artifacts,
 		applyRuns:   applyRuns,
-		diagnostics: diff,
+		diagnostics: diagnostics,
+		guard:       guard,
 	}
 }
-
 
 func (s *applyOrchestratorService) PrepareApplyRun(ctx context.Context, req PrepareApplyRunRequest) (*repository.ApplyRun, error) {
 	if s == nil || s.artifacts == nil || s.applyRuns == nil {
@@ -187,6 +205,11 @@ func (s *applyOrchestratorService) PrepareApplyRun(ctx context.Context, req Prep
 		return nil, err
 	}
 	if openRun != nil {
+		if s.guard != nil {
+			if err := s.guard.CheckIdle(ctx, AgentOperationGuardRequest{AgentHostID: req.AgentHostID, Scope: OperationLogScopeApplyRun, OperationType: agentOperationTypeApply, TargetID: openRun.RunID, OperatorID: applyRunOperatorIDPtr(req.OperatorID)}); err != nil {
+				return nil, err
+			}
+		}
 		return openRun, nil
 	}
 
@@ -213,6 +236,11 @@ func (s *applyOrchestratorService) CreateApplyRun(ctx context.Context, req Creat
 	coreType := normalizeCoreType(req.CoreType)
 	if coreType == "" {
 		return nil, fmt.Errorf("%w (core_type must be sing-box or xray / 必须是 sing-box 或 xray)", ErrApplyOrchestratorInvalidRequest)
+	}
+	if s.guard != nil {
+		if err := s.guard.CheckIdle(ctx, AgentOperationGuardRequest{AgentHostID: req.AgentHostID, Scope: OperationLogScopeApplyRun, OperationType: agentOperationTypeApply, OperatorID: applyRunOperatorIDPtr(req.OperatorID)}); err != nil {
+			return nil, err
+		}
 	}
 
 	runID, err := generateApplyRunID(req.AgentHostID)
@@ -592,6 +620,13 @@ func validateApplyResultStatusConsistency(success bool, statusValue, nextStatus 
 		return fmt.Errorf("%w (status and success are inconsistent)", ErrApplyOrchestratorInvalidRequest)
 	}
 	return nil
+}
+
+func applyRunOperatorIDPtr(operatorID int64) *int64 {
+	if operatorID <= 0 {
+		return nil
+	}
+	return &operatorID
 }
 
 func findReusableOpenApplyRun(ctx context.Context, applyRuns repository.ApplyRunRepository, agentHostID int64, coreType string, targetRevision int64) (*repository.ApplyRun, error) {

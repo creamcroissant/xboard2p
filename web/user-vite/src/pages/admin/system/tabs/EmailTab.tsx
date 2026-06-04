@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -39,20 +39,6 @@ interface EmailForm {
   alertExpireThreshold: string;
 }
 
-const defaultForm: EmailForm = {
-  smtpHost: "",
-  smtpPort: "",
-  smtpEncryption: "none",
-  smtpUsername: "",
-  smtpPassword: "",
-  smtpFrom: "",
-  smtpTo: "",
-  alertTrafficEnabled: false,
-  alertTrafficThreshold: "",
-  alertExpireEnabled: false,
-  alertExpireThreshold: "",
-};
-
 function toBool(value?: string) {
   return value === "true" || value === "1";
 }
@@ -62,47 +48,17 @@ function isEmail(value: string) {
   return /^\S+@\S+\.\S+$/u.test(value);
 }
 
-export default function EmailTab() {
+type EmailTabContentProps = {
+  initialForm: EmailForm;
+};
+
+function EmailTabContent({ initialForm }: EmailTabContentProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const [form, setForm] = useState<EmailForm>(defaultForm);
+  const [form, setForm] = useState<EmailForm>(initialForm);
 
   const smtpQueryKey = useMemo(() => [...QUERY_KEYS.ADMIN_SYSTEM, CATEGORY], []);
   const alertQueryKey = useMemo(() => [...QUERY_KEYS.ADMIN_SYSTEM, ALERT_CATEGORY], []);
-
-  const smtpQuery = useQuery({
-    queryKey: smtpQueryKey,
-    queryFn: () => fetchSettings(CATEGORY),
-  });
-
-  const alertQuery = useQuery({
-    queryKey: alertQueryKey,
-    queryFn: () => fetchSettings(ALERT_CATEGORY),
-  });
-
-  useEffect(() => {
-    if (!smtpQuery.data) return;
-    setForm((prev) => ({
-      ...prev,
-      smtpHost: smtpQuery.data.smtp_host ?? "",
-      smtpPort: smtpQuery.data.smtp_port ?? "",
-      smtpEncryption: smtpQuery.data.smtp_encryption ?? "none",
-      smtpUsername: smtpQuery.data.smtp_username ?? "",
-      smtpFrom: smtpQuery.data.smtp_from ?? "",
-      smtpTo: smtpQuery.data.smtp_to ?? "",
-    }));
-  }, [smtpQuery.data]);
-
-  useEffect(() => {
-    if (!alertQuery.data) return;
-    setForm((prev) => ({
-      ...prev,
-      alertTrafficEnabled: toBool(alertQuery.data.alert_traffic_enabled),
-      alertTrafficThreshold: alertQuery.data.alert_traffic_threshold ?? "",
-      alertExpireEnabled: toBool(alertQuery.data.alert_expire_enabled),
-      alertExpireThreshold: alertQuery.data.alert_expire_days ?? "",
-    }));
-  }, [alertQuery.data]);
 
   const saveSMTPMutation = useMutation({
     mutationFn: (payload: EmailForm) =>
@@ -199,20 +155,6 @@ export default function EmailTab() {
     testMutation.mutate(form);
   };
 
-  if (smtpQuery.isLoading || alertQuery.isLoading) return <Loading />;
-
-  if (smtpQuery.error || alertQuery.error) {
-    return (
-      <ErrorBanner
-        message={t("admin.system.settings.messages.loadError")}
-        onRetry={() => {
-          smtpQuery.refetch();
-          alertQuery.refetch();
-        }}
-      />
-    );
-  }
-
   return (
     <div className="space-y-6">
       <Card>
@@ -259,9 +201,9 @@ export default function EmailTab() {
                   <SelectValue placeholder={t("admin.system.settings.fields.smtpEncryption")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  <SelectItem value="starttls">STARTTLS</SelectItem>
-                  <SelectItem value="ssl">SSL/TLS</SelectItem>
+                  <SelectItem value="none">{t("admin.system.settings.options.smtpEncryption.none")}</SelectItem>
+                  <SelectItem value="starttls">{t("admin.system.settings.options.smtpEncryption.starttls")}</SelectItem>
+                  <SelectItem value="ssl">{t("admin.system.settings.options.smtpEncryption.ssl")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -404,4 +346,54 @@ export default function EmailTab() {
       </Card>
     </div>
   );
+}
+
+export default function EmailTab() {
+  const { t } = useTranslation();
+
+  const smtpQueryKey = useMemo(() => [...QUERY_KEYS.ADMIN_SYSTEM, CATEGORY], []);
+  const alertQueryKey = useMemo(() => [...QUERY_KEYS.ADMIN_SYSTEM, ALERT_CATEGORY], []);
+
+  const smtpQuery = useQuery({
+    queryKey: smtpQueryKey,
+    queryFn: () => fetchSettings(CATEGORY),
+  });
+
+  const alertQuery = useQuery({
+    queryKey: alertQueryKey,
+    queryFn: () => fetchSettings(ALERT_CATEGORY),
+  });
+
+  const initialForm = useMemo<EmailForm>(
+    () => ({
+      smtpHost: smtpQuery.data?.smtp_host ?? "",
+      smtpPort: smtpQuery.data?.smtp_port ?? "",
+      smtpEncryption: smtpQuery.data?.smtp_encryption ?? "none",
+      smtpUsername: smtpQuery.data?.smtp_username ?? "",
+      smtpPassword: "",
+      smtpFrom: smtpQuery.data?.smtp_from ?? "",
+      smtpTo: smtpQuery.data?.smtp_to ?? "",
+      alertTrafficEnabled: toBool(alertQuery.data?.alert_traffic_enabled),
+      alertTrafficThreshold: alertQuery.data?.alert_traffic_threshold ?? "",
+      alertExpireEnabled: toBool(alertQuery.data?.alert_expire_enabled),
+      alertExpireThreshold: alertQuery.data?.alert_expire_days ?? "",
+    }),
+    [alertQuery.data, smtpQuery.data]
+  );
+
+  if (smtpQuery.isLoading || alertQuery.isLoading) return <Loading />;
+
+  if (smtpQuery.error || alertQuery.error) {
+    return (
+      <ErrorBanner
+        message={t("admin.system.settings.messages.loadError")}
+        onRetry={() => {
+          smtpQuery.refetch();
+          alertQuery.refetch();
+        }}
+      />
+    );
+  }
+
+  return <EmailTabContent initialForm={initialForm} />;
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -17,29 +17,68 @@ import { fetchUserInfo } from "@/api/user";
 import { getQueueStats, getSystemStatus } from "@/api/admin";
 import { useAuth } from "@/providers/AuthProvider";
 import { Badge, Card, CardContent, CardHeader, ResponsiveGrid } from "@/components/ui";
+import StatCard from "@/components/ui/StatCard";
 import { Button } from "@/components/ui/button";
 import { Loading, ErrorBanner } from "@/components/ui";
 import { formatBytes, formatDate, formatDateTime, daysUntil, isExpired } from "@/lib/format";
 import { QUERY_KEYS } from "@/lib/constants";
 
-const toneStyles = {
-  primary: {
-    iconBg: "bg-primary/10",
-    iconText: "text-primary",
-  },
-  success: {
-    iconBg: "bg-emerald-500/10",
-    iconText: "text-emerald-600",
-  },
-  warning: {
-    iconBg: "bg-amber-500/10",
-    iconText: "text-amber-600",
-  },
-  danger: {
-    iconBg: "bg-red-500/10",
-    iconText: "text-red-600",
-  },
-};
+function SectionHeader({
+  title,
+  description,
+  action,
+}: {
+  title: string;
+  description?: ReactNode;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+      <div className="space-y-1">
+        <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
+        {description && <p className="text-sm text-muted-foreground">{description}</p>}
+      </div>
+      {action && <div className="shrink-0">{action}</div>}
+    </div>
+  );
+}
+
+function DetailItem({
+  icon,
+  label,
+  value,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-md border bg-card p-3.5">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+        {icon}
+      </div>
+      <div className="min-w-0">
+        <p className="text-sm text-muted-foreground">{label}</p>
+        <div className="truncate text-sm font-semibold text-foreground">{value}</div>
+      </div>
+    </div>
+  );
+}
+
+function MetricTile({
+  label,
+  value,
+}: {
+  label: string;
+  value: ReactNode;
+}) {
+  return (
+    <div className="rounded-md border bg-muted/30 p-3.5">
+      <p className="text-sm text-muted-foreground">{label}</p>
+      <div className="mt-1 break-words text-xl font-semibold leading-tight text-foreground">{value}</div>
+    </div>
+  );
+}
 
 export default function Dashboard() {
   const { t } = useTranslation();
@@ -68,14 +107,12 @@ export default function Dashboard() {
   });
 
   if (isLoading) return <Loading />;
-  if (error)
-    return <ErrorBanner message={t("error.loadProfile")} onRetry={refetch} />;
+  if (error) return <ErrorBanner message={t("error.loadProfile")} onRetry={refetch} />;
   if (!user) return <ErrorBanner message={t("error.loadProfile")} onRetry={refetch} />;
 
   const transferUsed = (user.u || 0) + (user.d || 0);
   const transferEnable = user.transfer_enable || 0;
-  const usagePercent =
-    transferEnable > 0 ? (transferUsed / transferEnable) * 100 : 0;
+  const usagePercent = transferEnable > 0 ? (transferUsed / transferEnable) * 100 : 0;
 
   const expired = user.expired_at ? isExpired(user.expired_at) : false;
   const days = user.expired_at ? daysUntil(user.expired_at) : Infinity;
@@ -93,8 +130,7 @@ export default function Dashboard() {
     return formatDate(user.expired_at);
   };
 
-  const usageTone =
-    usagePercent > 80 ? "danger" : usagePercent > 50 ? "warning" : "success";
+  const usageTone = usagePercent > 80 ? "danger" : usagePercent > 50 ? "warning" : "success";
 
   const formatUptime = (seconds: number): string => {
     const days = Math.floor(seconds / 86400);
@@ -128,339 +164,140 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">{t("nav.dashboard")}</h1>
+    <div className="space-y-6 lg:space-y-8">
+      <header className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="space-y-1.5">
+          <h1 className="text-2xl font-semibold tracking-tight">{t("nav.dashboard")}</h1>
           <p className="text-sm text-muted-foreground">
             {t("dashboard.welcome")}, {user.email}
           </p>
         </div>
-        <Button
-          variant="outline"
-          className="gap-2"
-          onClick={() => refetch()}
-        >
+        <Button variant="outline" className="gap-2 self-start" onClick={() => refetch()}>
           <RefreshCw size={16} />
           {t("common.refresh")}
         </Button>
-      </div>
+      </header>
 
-      <ResponsiveGrid minColWidth={320} gap={16}>
-        <Card>
-          <CardContent className="p-5">
-            <div className="flex items-start gap-4">
+      <section className="space-y-4">
+        <ResponsiveGrid minColWidth={300} gap={16}>
+          <StatCard
+            className="shadow-none"
+            title={t("dashboard.planStatus")}
+            value={getPlanStatus()}
+            hint={getExpiryHint()}
+            icon={<Calendar className="h-5 w-5" />}
+            variant={expired ? "danger" : days <= 7 ? "warning" : "primary"}
+          />
+
+          <StatCard
+            className="shadow-none"
+            title={t("dashboard.dataUsage")}
+            value={`${formatBytes(transferUsed)} / ${formatBytes(transferEnable)}`}
+            hint={`${usagePercent.toFixed(1)}% ${t("common.used")}`}
+            icon={<Database className="h-5 w-5" />}
+            variant={usageTone}
+          >
+            <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted/80">
               <div
-                className={`flex h-10 w-10 items-center justify-center rounded-lg ${
-                  toneStyles[expired ? "danger" : days <= 7 ? "warning" : "primary"]
-                    .iconBg
-                } ${
-                  toneStyles[expired ? "danger" : days <= 7 ? "warning" : "primary"]
-                    .iconText
+                className={`h-full transition-all ${
+                  usageTone === "danger" ? "bg-red-500" : usageTone === "warning" ? "bg-amber-500" : "bg-primary"
                 }`}
-              >
-                <Calendar className="h-5 w-5" />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm text-muted-foreground">
-                  {t("dashboard.planStatus")}
-                </p>
-                <p className="text-2xl font-semibold text-foreground">
-                  {getPlanStatus()}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {getExpiryHint()}
-                </p>
-              </div>
+                style={{ width: `${Math.min(usagePercent, 100)}%` }}
+              />
             </div>
-          </CardContent>
-        </Card>
+          </StatCard>
+        </ResponsiveGrid>
 
-        <Card>
-          <CardContent className="p-5">
-            <div className="flex items-start gap-4">
-              <div
-                className={`flex h-10 w-10 items-center justify-center rounded-lg ${
-                  toneStyles[usageTone].iconBg
-                } ${toneStyles[usageTone].iconText}`}
-              >
-                <Database className="h-5 w-5" />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm text-muted-foreground">
-                  {t("dashboard.dataUsage")}
-                </p>
-                <p className="text-xl font-semibold text-foreground">
-                  {`${formatBytes(transferUsed)} / ${formatBytes(transferEnable)}`}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {`${usagePercent.toFixed(1)}% ${t("common.used")}`}
-                </p>
-                <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-muted">
-                  <div
-                    className={`h-full transition-all ${
-                      usageTone === "danger"
-                        ? "bg-red-500"
-                        : usageTone === "warning"
-                          ? "bg-amber-500"
-                          : "bg-primary"
-                    }`}
-                    style={{ width: `${Math.min(usagePercent, 100)}%` }}
-                  />
+        {user.subscribe_url && (
+          <Card className="shadow-none">
+            <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div className="space-y-1.5">
+                <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">{t("dashboard.subscription")}</p>
+                <div className="flex items-center gap-2 text-base font-semibold tracking-tight">
+                  <LinkIcon className="h-4 w-4 text-primary" />
+                  <span>{t("dashboard.subscribeUrl")}</span>
                 </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-
-      </ResponsiveGrid>
-
-      {user.subscribe_url && (
-        <Card>
-          <CardHeader className="flex flex-col gap-4 pb-0 md:flex-row md:items-center md:justify-between">
-            <div className="space-y-1">
-              <p className="text-xs uppercase text-muted-foreground">
-                {t("dashboard.subscription")}
-              </p>
-              <div className="flex items-center gap-2 text-lg font-semibold">
-                <LinkIcon className="h-5 w-5 text-primary" />
-                <span>{t("dashboard.subscribeUrl")}</span>
-              </div>
-            </div>
-            <Button variant="outline" size="sm" onClick={handleCopy}>
-              {copied ? t("common.copied") : t("common.copy")}
-            </Button>
-          </CardHeader>
-          <CardContent className="pt-4">
-            <div className="rounded-md border border-border bg-muted/50 p-3 text-sm text-foreground">
-              <span className="block break-all font-mono">
-                {user.subscribe_url}
-              </span>
-            </div>
-            <p className="mt-2 text-xs text-muted-foreground">
-              {t("dashboard.copyHint")}
-            </p>
-          </CardContent>
-        </Card>
-      )}
-
-      {isAdmin && systemStatus && (
-        <div className="space-y-4">
-          <h2 className="text-lg font-semibold">{t("dashboard.systemStats")}</h2>
-          <ResponsiveGrid minColWidth={200} gap={16}>
-            <Card>
-              <CardContent className="flex items-center gap-4 p-4">
-                <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <Users className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">
-                    {t("admin.system.totalUsers")}
-                  </p>
-                  <p className="text-2xl font-semibold text-foreground">
-                    {systemStatus.user_count}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="flex items-center gap-4 p-4">
-                <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                  <Server className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">
-                    {t("admin.system.totalServers")}
-                  </p>
-                  <p className="text-2xl font-semibold text-foreground">
-                    {systemStatus.server_count}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="flex items-center gap-4 p-4">
-                <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600">
-                  <MonitorDot className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">
-                    {t("admin.system.totalAgents")}
-                  </p>
-                  <p className="text-2xl font-semibold text-foreground">
-                    {systemStatus.agent_count}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="flex items-center gap-4 p-4">
-                <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600">
-                  <Wifi className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">
-                    {t("admin.system.onlineAgents")}
-                  </p>
-                  <p className="text-2xl font-semibold text-foreground">
-                    {systemStatus.online_agent_count}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          </ResponsiveGrid>
-
-          <Card>
-            <CardHeader>
-              <h3 className="text-lg font-semibold">{t("dashboard.systemInfo")}</h3>
+              <Button variant="outline" size="sm" onClick={handleCopy}>
+                {copied ? t("common.copied") : t("common.copy")}
+              </Button>
             </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                    <Code className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">
-                      {t("admin.system.version")}
-                    </p>
-                    <Badge variant="secondary">
-                      {systemStatus.version || "go-dev"}
-                    </Badge>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                    <Code className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">
-                      {t("admin.system.goVersion")}
-                    </p>
-                    <Badge variant="default">
-                      {systemStatus.go_version || "go1.25"}
-                    </Badge>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                    <Clock className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">
-                      {t("admin.system.uptime")}
-                    </p>
-                    <p className="font-medium text-foreground">
-                      {formatUptime(systemStatus.uptime || 0)}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                    <Server className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">
-                      {t("dashboard.environment")}
-                    </p>
-                    <p className="font-medium text-foreground">
-                      {systemStatus.environment || "-"}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                    <Server className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">
-                      {t("dashboard.hostname")}
-                    </p>
-                    <p className="font-medium text-foreground">
-                      {systemStatus.hostname || "-"}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                    <Clock className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">
-                      {t("dashboard.startedAt")}
-                    </p>
-                    <p className="font-medium text-foreground">
-                      {formatStartedAt(systemStatus.started_at)}
-                    </p>
-                  </div>
-                </div>
+            <CardContent className="space-y-3">
+              <div className="rounded-md border bg-muted/30 p-3 text-sm text-foreground">
+                <span className="block break-all font-mono leading-6">{user.subscribe_url}</span>
               </div>
+              <p className="text-sm text-muted-foreground">{t("dashboard.copyHint")}</p>
             </CardContent>
           </Card>
+        )}
+      </section>
 
-          <ResponsiveGrid minColWidth={300} gap={16}>
-            <Card>
-              <CardHeader>
-                <h3 className="text-base font-semibold">{t("dashboard.logs")}</h3>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">{t("dashboard.logInfo")}</p>
-                    <p className="text-lg font-semibold text-foreground">{systemStatus.logs?.info ?? 0}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">{t("dashboard.logWarning")}</p>
-                    <p className="text-lg font-semibold text-foreground">{systemStatus.logs?.warning ?? 0}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">{t("dashboard.logError")}</p>
-                    <p className="text-lg font-semibold text-foreground">{systemStatus.logs?.error ?? 0}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">{t("dashboard.logTotal")}</p>
-                    <p className="text-lg font-semibold text-foreground">{systemStatus.logs?.total ?? 0}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+      {isAdmin && systemStatus && (
+        <section className="space-y-5 border-t pt-5 lg:pt-6">
+          <SectionHeader title={t("dashboard.systemStats")} description={t("dashboard.systemStatsHint")} />
 
-            <Card>
-              <CardHeader>
-                <h3 className="text-base font-semibold">{t("dashboard.queueStats")}</h3>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">{t("dashboard.recentJobs")}</p>
-                    <p className="text-lg font-semibold text-foreground">{queueStats?.recentJobs ?? 0}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">{t("dashboard.jobsPerMinute")}</p>
-                    <p className="text-lg font-semibold text-foreground">
-                      {(queueStats?.jobsPerMinute ?? 0).toFixed(1)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">{t("dashboard.failedJobs")}</p>
-                    <p className="text-lg font-semibold text-foreground">{queueStats?.failedJobs ?? 0}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">{t("dashboard.maxThroughputQueue")}</p>
-                    <p className="text-sm font-medium text-foreground">
-                      {queueStats?.queueWithMaxThroughput?.name
-                        ? `${queueStats.queueWithMaxThroughput.name} (${queueStats.queueWithMaxThroughput.throughput})`
-                        : "-"}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+          <ResponsiveGrid minColWidth={220} gap={14}>
+            <StatCard className="shadow-none" title={t("admin.system.totalUsers")} value={systemStatus.user_count} icon={<Users className="h-5 w-5" />} variant="primary" />
+            <StatCard className="shadow-none" title={t("admin.system.totalServers")} value={systemStatus.server_count} icon={<Server className="h-5 w-5" />} variant="default" />
+            <StatCard className="shadow-none" title={t("admin.system.totalAgents")} value={systemStatus.agent_count} icon={<MonitorDot className="h-5 w-5" />} variant="warning" />
+            <StatCard className="shadow-none" title={t("admin.system.onlineAgents")} value={systemStatus.online_agent_count} icon={<Wifi className="h-5 w-5" />} variant="success" />
           </ResponsiveGrid>
-        </div>
+
+          <div className="grid gap-4 xl:grid-cols-3">
+            <Card className="shadow-none xl:col-span-2">
+              <CardHeader>
+                <h3 className="text-lg font-semibold tracking-tight">{t("dashboard.systemInfo")}</h3>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <DetailItem icon={<Code className="h-4 w-4" />} label={t("admin.system.version")} value={<Badge variant="secondary">{systemStatus.version || "go-dev"}</Badge>} />
+                  <DetailItem icon={<Code className="h-4 w-4" />} label={t("admin.system.goVersion")} value={<Badge variant="default">{systemStatus.go_version || "go1.25"}</Badge>} />
+                  <DetailItem icon={<Clock className="h-4 w-4" />} label={t("admin.system.uptime")} value={formatUptime(systemStatus.uptime || 0)} />
+                  <DetailItem icon={<Server className="h-4 w-4" />} label={t("dashboard.environment")} value={systemStatus.environment || "-"} />
+                  <DetailItem icon={<Server className="h-4 w-4" />} label={t("dashboard.hostname")} value={systemStatus.hostname || "-"} />
+                  <DetailItem icon={<Clock className="h-4 w-4" />} label={t("dashboard.startedAt")} value={formatStartedAt(systemStatus.started_at)} />
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
+              <Card className="shadow-none">
+                <CardHeader>
+                  <h3 className="text-base font-semibold">{t("dashboard.logs")}</h3>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 gap-3">
+                    <MetricTile label={t("dashboard.logInfo")} value={systemStatus.logs?.info ?? 0} />
+                    <MetricTile label={t("dashboard.logWarning")} value={systemStatus.logs?.warning ?? 0} />
+                    <MetricTile label={t("dashboard.logError")} value={systemStatus.logs?.error ?? 0} />
+                    <MetricTile label={t("dashboard.logTotal")} value={systemStatus.logs?.total ?? 0} />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-none">
+                <CardHeader>
+                  <h3 className="text-base font-semibold">{t("dashboard.queueStats")}</h3>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 gap-3">
+                    <MetricTile label={t("dashboard.recentJobs")} value={queueStats?.recentJobs ?? 0} />
+                    <MetricTile label={t("dashboard.jobsPerMinute")} value={(queueStats?.jobsPerMinute ?? 0).toFixed(1)} />
+                    <MetricTile label={t("dashboard.failedJobs")} value={queueStats?.failedJobs ?? 0} />
+                    <MetricTile
+                      label={t("dashboard.maxThroughputQueue")}
+                      value={
+                        queueStats?.queueWithMaxThroughput?.name
+                          ? `${queueStats.queueWithMaxThroughput.name} (${queueStats.queueWithMaxThroughput.throughput})`
+                          : "-"
+                      }
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </section>
       )}
     </div>
   );

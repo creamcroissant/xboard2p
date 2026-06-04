@@ -44,10 +44,10 @@ export default function ResourceGauge({
   const formattedTotal = unit === "bytes" ? formatBytes(total) : `${total.toFixed(1)}${unit || ""}`;
 
   return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <span className="text-xs font-medium text-foreground">{label}</span>
-        <span>
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+        <span className="font-medium text-foreground">{label}</span>
+        <span className="text-right">
           {formattedUsed} / {formattedTotal}
           {showPercentage && ` (${percentage.toFixed(0)}%)`}
         </span>
@@ -58,14 +58,10 @@ export default function ResourceGauge({
         aria-valuenow={Math.round(percentage)}
         aria-valuemin={0}
         aria-valuemax={100}
-        className="h-2 w-full rounded-full bg-muted"
+        className="h-2.5 w-full overflow-hidden rounded-full bg-muted/80"
       >
-        <div
-          className={`h-2 rounded-full transition-all ${colorClasses[color]}`}
-          style={{ width: `${percentage}%` }}
-        />
+        <div className={`h-full rounded-full transition-all ${colorClasses[color]}`} style={{ width: `${percentage}%` }} />
       </div>
     </div>
   );
 }
-

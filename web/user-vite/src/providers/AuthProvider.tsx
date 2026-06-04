@@ -4,7 +4,6 @@ import {
   useContext,
   useState,
   useCallback,
-  useEffect,
   type ReactNode,
 } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -33,7 +32,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const queryClient = useQueryClient();
   const [token, setTokenState] = useState<string | null>(getToken());
 
-  const { data: user, isLoading, error } = useQuery<UserProfile, Error>({
+  const { data: user, isLoading } = useQuery<UserProfile, Error>({
     queryKey: QUERY_KEYS.USER_INFO,
     queryFn: fetchUserInfo,
     enabled: !!token,
@@ -59,19 +58,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
     setTokenState(null);
     queryClient.clear();
   }, [queryClient]);
-  // Auto logout on auth error
-  useEffect(() => {
-    if (error && token) {
-      clearToken();
-      setTokenState(null);
-      queryClient.clear();
-    }
-  }, [error, token, queryClient]);
 
   return (
     <AuthContext.Provider
       value={{
-        isAuthenticated: !!token && !!user,
+        isAuthenticated: !!token,
         isLoading: isLoading && !!token,
         isAdmin: user?.is_admin ?? false,
         user: user ?? null,

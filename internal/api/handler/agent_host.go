@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/creamcroissant/xboard/internal/api/requestctx"
+	"github.com/creamcroissant/xboard/internal/repository"
 	"github.com/creamcroissant/xboard/internal/service"
 	"github.com/creamcroissant/xboard/internal/support/i18n"
 	"github.com/go-chi/chi/v5"
@@ -22,6 +23,68 @@ type AgentHostHandler struct {
 // NewAgentHostHandler creates a new agent host handler.
 func NewAgentHostHandler(svc service.AgentHostService, i18nMgr *i18n.Manager) *AgentHostHandler {
 	return &AgentHostHandler{service: svc, i18n: i18nMgr}
+}
+
+type agentHostResponse struct {
+	ID                    int64   `json:"id"`
+	Name                  string  `json:"name"`
+	Host                  string  `json:"host"`
+	Status                int     `json:"status"`
+	ProvisionStatus       int     `json:"provision_status"`
+	TemplateID            int64   `json:"template_id,omitempty"`
+	CoreVersion           string  `json:"core_version,omitempty"`
+	CPUTotal              float64 `json:"cpu_total"`
+	CPUUsed               float64 `json:"cpu_used"`
+	MemTotal              int64   `json:"mem_total"`
+	MemUsed               int64   `json:"mem_used"`
+	DiskTotal             int64   `json:"disk_total"`
+	DiskUsed              int64   `json:"disk_used"`
+	UploadTotal           int64   `json:"upload_total"`
+	DownloadTotal         int64   `json:"download_total"`
+	UploadRateBps         int64   `json:"upload_rate_bps"`
+	DownloadRateBps       int64   `json:"download_rate_bps"`
+	RawUploadTotalBytes   int64   `json:"raw_upload_total_bytes"`
+	RawDownloadTotalBytes int64   `json:"raw_download_total_bytes"`
+	BootID                string  `json:"boot_id,omitempty"`
+	LastRealtimeReportAt  int64   `json:"last_realtime_report_at"`
+	LastRestartAt         int64   `json:"last_restart_at"`
+	AgentVersion          string  `json:"agent_version,omitempty"`
+	CurrentCoreType       string  `json:"current_core_type,omitempty"`
+	LastHeartbeatAt       int64   `json:"last_heartbeat_at"`
+	CreatedAt             int64   `json:"created_at"`
+	UpdatedAt             int64   `json:"updated_at"`
+}
+
+func newAgentHostResponse(host *repository.AgentHost) agentHostResponse {
+	return agentHostResponse{
+		ID:                    host.ID,
+		Name:                  host.Name,
+		Host:                  host.Host,
+		Status:                host.Status,
+		ProvisionStatus:       host.ProvisionStatus,
+		TemplateID:            host.TemplateID,
+		CoreVersion:           host.CoreVersion,
+		CPUTotal:              host.CPUTotal,
+		CPUUsed:               host.CPUUsed,
+		MemTotal:              host.MemTotal,
+		MemUsed:               host.MemUsed,
+		DiskTotal:             host.DiskTotal,
+		DiskUsed:              host.DiskUsed,
+		UploadTotal:           host.UploadTotal,
+		DownloadTotal:         host.DownloadTotal,
+		UploadRateBps:         host.UploadRateBps,
+		DownloadRateBps:       host.DownloadRateBps,
+		RawUploadTotalBytes:   host.RawUploadTotalBytes,
+		RawDownloadTotalBytes: host.RawDownloadTotalBytes,
+		BootID:                host.BootID,
+		LastRealtimeReportAt:  host.LastRealtimeReportAt,
+		LastRestartAt:         host.LastRestartAt,
+		AgentVersion:          host.AgentVersion,
+		CurrentCoreType:       host.CurrentCoreType,
+		LastHeartbeatAt:       host.LastHeartbeatAt,
+		CreatedAt:             host.CreatedAt,
+		UpdatedAt:             host.UpdatedAt,
+	}
 }
 
 // AgentHostStatusRequest represents the status payload from an agent.
@@ -118,41 +181,9 @@ func (h *AgentHostHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	type hostResponse struct {
-		ID              int64   `json:"id"`
-		Name            string  `json:"name"`
-		Host            string  `json:"host"`
-		Status          int     `json:"status"`
-		CPUTotal        float64 `json:"cpu_total"`
-		CPUUsed         float64 `json:"cpu_used"`
-		MemTotal        int64   `json:"mem_total"`
-		MemUsed         int64   `json:"mem_used"`
-		DiskTotal       int64   `json:"disk_total"`
-		DiskUsed        int64   `json:"disk_used"`
-		UploadTotal     int64   `json:"upload_total"`
-		DownloadTotal   int64   `json:"download_total"`
-		LastHeartbeatAt int64   `json:"last_heartbeat_at"`
-		CreatedAt       int64   `json:"created_at"`
-	}
-
-	response := make([]hostResponse, len(hosts))
-	for i, h := range hosts {
-		response[i] = hostResponse{
-			ID:              h.ID,
-			Name:            h.Name,
-			Host:            h.Host,
-			Status:          h.Status,
-			CPUTotal:        h.CPUTotal,
-			CPUUsed:         h.CPUUsed,
-			MemTotal:        h.MemTotal,
-			MemUsed:         h.MemUsed,
-			DiskTotal:       h.DiskTotal,
-			DiskUsed:        h.DiskUsed,
-			UploadTotal:     h.UploadTotal,
-			DownloadTotal:   h.DownloadTotal,
-			LastHeartbeatAt: h.LastHeartbeatAt,
-			CreatedAt:       h.CreatedAt,
-		}
+	response := make([]agentHostResponse, len(hosts))
+	for i, host := range hosts {
+		response[i] = newAgentHostResponse(host)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -187,6 +218,10 @@ func (h *AgentHostHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Host: req.Host,
 	})
 	if err != nil {
+		if strings.Contains(err.Error(), "required") {
+			RespondErrorI18nAction(ctx, w, http.StatusBadRequest, "agent_host.create", "error.missing_fields", h.i18n)
+			return
+		}
 		RespondErrorI18nAction(ctx, w, http.StatusInternalServerError, "agent_host.create", "error.internal_server_error", h.i18n)
 		return
 	}
@@ -243,22 +278,7 @@ func (h *AgentHostHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"data": map[string]any{
-			"id":                host.ID,
-			"name":              host.Name,
-			"host":              host.Host,
-			"status":            host.Status,
-			"cpu_total":         host.CPUTotal,
-			"cpu_used":          host.CPUUsed,
-			"mem_total":         host.MemTotal,
-			"mem_used":          host.MemUsed,
-			"disk_total":        host.DiskTotal,
-			"disk_used":         host.DiskUsed,
-			"upload_total":      host.UploadTotal,
-			"download_total":    host.DownloadTotal,
-			"last_heartbeat_at": host.LastHeartbeatAt,
-			"created_at":        host.CreatedAt,
-		},
+		"data": newAgentHostResponse(host),
 	})
 }
 
@@ -314,10 +334,11 @@ func (h *AgentHostHandler) Register(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]any{
 		"data": map[string]any{
-			"id":         host.ID,
-			"name":       host.Name,
-			"host":       host.Host,
-			"host_token": host.Token,
+			"id":               host.ID,
+			"name":             host.Name,
+			"host":             host.Host,
+			"host_token":       host.Token,
+			"provision_status": host.ProvisionStatus,
 		},
 	})
 }
@@ -357,6 +378,9 @@ func (h *AgentHostHandler) Update(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, service.ErrNotFound) {
 			status = http.StatusNotFound
 			key = "error.not_found"
+		} else if strings.Contains(err.Error(), "required") {
+			status = http.StatusBadRequest
+			key = "error.missing_fields"
 		}
 		RespondErrorI18nAction(ctx, w, status, "agent_host.update", key, h.i18n)
 		return

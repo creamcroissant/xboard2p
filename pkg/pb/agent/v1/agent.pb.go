@@ -10,6 +10,7 @@ import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
+	sync "sync"
 	unsafe "unsafe"
 )
 
@@ -20,11 +21,824 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type AgentCommand struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	AgentHostId    int64                  `protobuf:"varint,2,opt,name=agent_host_id,json=agentHostId,proto3" json:"agent_host_id,omitempty"`
+	OperationType  string                 `protobuf:"bytes,3,opt,name=operation_type,json=operationType,proto3" json:"operation_type,omitempty"`
+	RequestPayload []byte                 `protobuf:"bytes,4,opt,name=request_payload,json=requestPayload,proto3" json:"request_payload,omitempty"`
+	CreatedAt      int64                  `protobuf:"varint,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt      int64                  `protobuf:"varint,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	Source         string                 `protobuf:"bytes,7,opt,name=source,proto3" json:"source,omitempty"`
+	TimeoutSeconds int64                  `protobuf:"varint,8,opt,name=timeout_seconds,json=timeoutSeconds,proto3" json:"timeout_seconds,omitempty"`
+	CorrelationId  string                 `protobuf:"bytes,9,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *AgentCommand) Reset() {
+	*x = AgentCommand{}
+	mi := &file_agent_v1_agent_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentCommand) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentCommand) ProtoMessage() {}
+
+func (x *AgentCommand) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentCommand.ProtoReflect.Descriptor instead.
+func (*AgentCommand) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *AgentCommand) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *AgentCommand) GetAgentHostId() int64 {
+	if x != nil {
+		return x.AgentHostId
+	}
+	return 0
+}
+
+func (x *AgentCommand) GetOperationType() string {
+	if x != nil {
+		return x.OperationType
+	}
+	return ""
+}
+
+func (x *AgentCommand) GetRequestPayload() []byte {
+	if x != nil {
+		return x.RequestPayload
+	}
+	return nil
+}
+
+func (x *AgentCommand) GetCreatedAt() int64 {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return 0
+}
+
+func (x *AgentCommand) GetUpdatedAt() int64 {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return 0
+}
+
+func (x *AgentCommand) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+func (x *AgentCommand) GetTimeoutSeconds() int64 {
+	if x != nil {
+		return x.TimeoutSeconds
+	}
+	return 0
+}
+
+func (x *AgentCommand) GetCorrelationId() string {
+	if x != nil {
+		return x.CorrelationId
+	}
+	return ""
+}
+
+type GetAgentCommandsRequest struct {
+	state            protoimpl.MessageState  `protogen:"open.v1"`
+	SupportedActions []string                `protobuf:"bytes,1,rep,name=supported_actions,json=supportedActions,proto3" json:"supported_actions,omitempty"`
+	QueueStats       *AgentCommandQueueStats `protobuf:"bytes,2,opt,name=queue_stats,json=queueStats,proto3" json:"queue_stats,omitempty"`
+	Limit            int32                   `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	WorkerId         string                  `protobuf:"bytes,4,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
+	RequestedAt      int64                   `protobuf:"varint,5,opt,name=requested_at,json=requestedAt,proto3" json:"requested_at,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *GetAgentCommandsRequest) Reset() {
+	*x = GetAgentCommandsRequest{}
+	mi := &file_agent_v1_agent_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAgentCommandsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAgentCommandsRequest) ProtoMessage() {}
+
+func (x *GetAgentCommandsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAgentCommandsRequest.ProtoReflect.Descriptor instead.
+func (*GetAgentCommandsRequest) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *GetAgentCommandsRequest) GetSupportedActions() []string {
+	if x != nil {
+		return x.SupportedActions
+	}
+	return nil
+}
+
+func (x *GetAgentCommandsRequest) GetQueueStats() *AgentCommandQueueStats {
+	if x != nil {
+		return x.QueueStats
+	}
+	return nil
+}
+
+func (x *GetAgentCommandsRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *GetAgentCommandsRequest) GetWorkerId() string {
+	if x != nil {
+		return x.WorkerId
+	}
+	return ""
+}
+
+func (x *GetAgentCommandsRequest) GetRequestedAt() int64 {
+	if x != nil {
+		return x.RequestedAt
+	}
+	return 0
+}
+
+type GetAgentCommandsResponse struct {
+	state                   protoimpl.MessageState `protogen:"open.v1"`
+	Success                 bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Commands                []*AgentCommand        `protobuf:"bytes,2,rep,name=commands,proto3" json:"commands,omitempty"`
+	Message                 string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	NextPollIntervalSeconds int32                  `protobuf:"varint,4,opt,name=next_poll_interval_seconds,json=nextPollIntervalSeconds,proto3" json:"next_poll_interval_seconds,omitempty"`
+	ServerTime              int64                  `protobuf:"varint,5,opt,name=server_time,json=serverTime,proto3" json:"server_time,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *GetAgentCommandsResponse) Reset() {
+	*x = GetAgentCommandsResponse{}
+	mi := &file_agent_v1_agent_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAgentCommandsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAgentCommandsResponse) ProtoMessage() {}
+
+func (x *GetAgentCommandsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAgentCommandsResponse.ProtoReflect.Descriptor instead.
+func (*GetAgentCommandsResponse) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *GetAgentCommandsResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *GetAgentCommandsResponse) GetCommands() []*AgentCommand {
+	if x != nil {
+		return x.Commands
+	}
+	return nil
+}
+
+func (x *GetAgentCommandsResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *GetAgentCommandsResponse) GetNextPollIntervalSeconds() int32 {
+	if x != nil {
+		return x.NextPollIntervalSeconds
+	}
+	return 0
+}
+
+func (x *GetAgentCommandsResponse) GetServerTime() int64 {
+	if x != nil {
+		return x.ServerTime
+	}
+	return 0
+}
+
+type AgentCommandEvent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CommandId     string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	EventType     string                 `protobuf:"bytes,2,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"`
+	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
+	Phase         string                 `protobuf:"bytes,4,opt,name=phase,proto3" json:"phase,omitempty"`
+	Level         string                 `protobuf:"bytes,5,opt,name=level,proto3" json:"level,omitempty"`
+	Message       string                 `protobuf:"bytes,6,opt,name=message,proto3" json:"message,omitempty"`
+	PayloadJson   []byte                 `protobuf:"bytes,7,opt,name=payload_json,json=payloadJson,proto3" json:"payload_json,omitempty"`
+	ErrorMessage  string                 `protobuf:"bytes,8,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	OccurredAt    int64                  `protobuf:"varint,9,opt,name=occurred_at,json=occurredAt,proto3" json:"occurred_at,omitempty"`
+	SourceEventId string                 `protobuf:"bytes,10,opt,name=source_event_id,json=sourceEventId,proto3" json:"source_event_id,omitempty"`
+	Sequence      int64                  `protobuf:"varint,11,opt,name=sequence,proto3" json:"sequence,omitempty"`
+	Terminal      bool                   `protobuf:"varint,12,opt,name=terminal,proto3" json:"terminal,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AgentCommandEvent) Reset() {
+	*x = AgentCommandEvent{}
+	mi := &file_agent_v1_agent_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentCommandEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentCommandEvent) ProtoMessage() {}
+
+func (x *AgentCommandEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentCommandEvent.ProtoReflect.Descriptor instead.
+func (*AgentCommandEvent) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *AgentCommandEvent) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *AgentCommandEvent) GetEventType() string {
+	if x != nil {
+		return x.EventType
+	}
+	return ""
+}
+
+func (x *AgentCommandEvent) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *AgentCommandEvent) GetPhase() string {
+	if x != nil {
+		return x.Phase
+	}
+	return ""
+}
+
+func (x *AgentCommandEvent) GetLevel() string {
+	if x != nil {
+		return x.Level
+	}
+	return ""
+}
+
+func (x *AgentCommandEvent) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *AgentCommandEvent) GetPayloadJson() []byte {
+	if x != nil {
+		return x.PayloadJson
+	}
+	return nil
+}
+
+func (x *AgentCommandEvent) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
+func (x *AgentCommandEvent) GetOccurredAt() int64 {
+	if x != nil {
+		return x.OccurredAt
+	}
+	return 0
+}
+
+func (x *AgentCommandEvent) GetSourceEventId() string {
+	if x != nil {
+		return x.SourceEventId
+	}
+	return ""
+}
+
+func (x *AgentCommandEvent) GetSequence() int64 {
+	if x != nil {
+		return x.Sequence
+	}
+	return 0
+}
+
+func (x *AgentCommandEvent) GetTerminal() bool {
+	if x != nil {
+		return x.Terminal
+	}
+	return false
+}
+
+type ReportAgentCommandRequest struct {
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Events        []*AgentCommandEvent    `protobuf:"bytes,1,rep,name=events,proto3" json:"events,omitempty"`
+	QueueStats    *AgentCommandQueueStats `protobuf:"bytes,2,opt,name=queue_stats,json=queueStats,proto3" json:"queue_stats,omitempty"`
+	WorkerId      string                  `protobuf:"bytes,3,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReportAgentCommandRequest) Reset() {
+	*x = ReportAgentCommandRequest{}
+	mi := &file_agent_v1_agent_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportAgentCommandRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportAgentCommandRequest) ProtoMessage() {}
+
+func (x *ReportAgentCommandRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportAgentCommandRequest.ProtoReflect.Descriptor instead.
+func (*ReportAgentCommandRequest) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ReportAgentCommandRequest) GetEvents() []*AgentCommandEvent {
+	if x != nil {
+		return x.Events
+	}
+	return nil
+}
+
+func (x *ReportAgentCommandRequest) GetQueueStats() *AgentCommandQueueStats {
+	if x != nil {
+		return x.QueueStats
+	}
+	return nil
+}
+
+func (x *ReportAgentCommandRequest) GetWorkerId() string {
+	if x != nil {
+		return x.WorkerId
+	}
+	return ""
+}
+
+type ReportAgentCommandResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	Accepted      int32                  `protobuf:"varint,3,opt,name=accepted,proto3" json:"accepted,omitempty"`
+	ServerTime    int64                  `protobuf:"varint,4,opt,name=server_time,json=serverTime,proto3" json:"server_time,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReportAgentCommandResponse) Reset() {
+	*x = ReportAgentCommandResponse{}
+	mi := &file_agent_v1_agent_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportAgentCommandResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportAgentCommandResponse) ProtoMessage() {}
+
+func (x *ReportAgentCommandResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportAgentCommandResponse.ProtoReflect.Descriptor instead.
+func (*ReportAgentCommandResponse) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ReportAgentCommandResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *ReportAgentCommandResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *ReportAgentCommandResponse) GetAccepted() int32 {
+	if x != nil {
+		return x.Accepted
+	}
+	return 0
+}
+
+func (x *ReportAgentCommandResponse) GetServerTime() int64 {
+	if x != nil {
+		return x.ServerTime
+	}
+	return 0
+}
+
+type OperationEvent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Scope         string                 `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"`
+	TargetId      string                 `protobuf:"bytes,2,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
+	Phase         string                 `protobuf:"bytes,3,opt,name=phase,proto3" json:"phase,omitempty"`
+	Level         string                 `protobuf:"bytes,4,opt,name=level,proto3" json:"level,omitempty"`
+	Message       string                 `protobuf:"bytes,5,opt,name=message,proto3" json:"message,omitempty"`
+	OccurredAt    int64                  `protobuf:"varint,6,opt,name=occurred_at,json=occurredAt,proto3" json:"occurred_at,omitempty"`
+	SourceEventId string                 `protobuf:"bytes,7,opt,name=source_event_id,json=sourceEventId,proto3" json:"source_event_id,omitempty"`
+	PayloadJson   []byte                 `protobuf:"bytes,8,opt,name=payload_json,json=payloadJson,proto3" json:"payload_json,omitempty"`
+	Sequence      int64                  `protobuf:"varint,9,opt,name=sequence,proto3" json:"sequence,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OperationEvent) Reset() {
+	*x = OperationEvent{}
+	mi := &file_agent_v1_agent_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OperationEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OperationEvent) ProtoMessage() {}
+
+func (x *OperationEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OperationEvent.ProtoReflect.Descriptor instead.
+func (*OperationEvent) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *OperationEvent) GetScope() string {
+	if x != nil {
+		return x.Scope
+	}
+	return ""
+}
+
+func (x *OperationEvent) GetTargetId() string {
+	if x != nil {
+		return x.TargetId
+	}
+	return ""
+}
+
+func (x *OperationEvent) GetPhase() string {
+	if x != nil {
+		return x.Phase
+	}
+	return ""
+}
+
+func (x *OperationEvent) GetLevel() string {
+	if x != nil {
+		return x.Level
+	}
+	return ""
+}
+
+func (x *OperationEvent) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *OperationEvent) GetOccurredAt() int64 {
+	if x != nil {
+		return x.OccurredAt
+	}
+	return 0
+}
+
+func (x *OperationEvent) GetSourceEventId() string {
+	if x != nil {
+		return x.SourceEventId
+	}
+	return ""
+}
+
+func (x *OperationEvent) GetPayloadJson() []byte {
+	if x != nil {
+		return x.PayloadJson
+	}
+	return nil
+}
+
+func (x *OperationEvent) GetSequence() int64 {
+	if x != nil {
+		return x.Sequence
+	}
+	return 0
+}
+
+type ReportOperationEventRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Events        []*OperationEvent      `protobuf:"bytes,1,rep,name=events,proto3" json:"events,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReportOperationEventRequest) Reset() {
+	*x = ReportOperationEventRequest{}
+	mi := &file_agent_v1_agent_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportOperationEventRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportOperationEventRequest) ProtoMessage() {}
+
+func (x *ReportOperationEventRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportOperationEventRequest.ProtoReflect.Descriptor instead.
+func (*ReportOperationEventRequest) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ReportOperationEventRequest) GetEvents() []*OperationEvent {
+	if x != nil {
+		return x.Events
+	}
+	return nil
+}
+
+type ReportOperationEventResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Accepted      int32                  `protobuf:"varint,1,opt,name=accepted,proto3" json:"accepted,omitempty"`
+	Success       bool                   `protobuf:"varint,2,opt,name=success,proto3" json:"success,omitempty"`
+	Message       string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	LastLogId     int64                  `protobuf:"varint,4,opt,name=last_log_id,json=lastLogId,proto3" json:"last_log_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReportOperationEventResponse) Reset() {
+	*x = ReportOperationEventResponse{}
+	mi := &file_agent_v1_agent_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportOperationEventResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportOperationEventResponse) ProtoMessage() {}
+
+func (x *ReportOperationEventResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportOperationEventResponse.ProtoReflect.Descriptor instead.
+func (*ReportOperationEventResponse) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ReportOperationEventResponse) GetAccepted() int32 {
+	if x != nil {
+		return x.Accepted
+	}
+	return 0
+}
+
+func (x *ReportOperationEventResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *ReportOperationEventResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *ReportOperationEventResponse) GetLastLogId() int64 {
+	if x != nil {
+		return x.LastLogId
+	}
+	return 0
+}
+
 var File_agent_v1_agent_proto protoreflect.FileDescriptor
 
 const file_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
-	"\x14agent/v1/agent.proto\x12\bagent.v1\x1a\x15agent/v1/status.proto\x1a\x15agent/v1/config.proto\x1a\x16agent/v1/traffic.proto\x1a\x19agent/v1/forwarding.proto\x1a\x13agent/v1/core.proto\x1a\x19agent/v1/access_log.proto\x1a\x1cagent/v1/config_center.proto2\xaf\b\n" +
+	"\x14agent/v1/agent.proto\x12\bagent.v1\x1a\x15agent/v1/status.proto\x1a\x15agent/v1/config.proto\x1a\x16agent/v1/traffic.proto\x1a\x19agent/v1/forwarding.proto\x1a\x13agent/v1/core.proto\x1a\x19agent/v1/access_log.proto\x1a\x1cagent/v1/config_center.proto\"\xb8\x02\n" +
+	"\fAgentCommand\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\"\n" +
+	"\ragent_host_id\x18\x02 \x01(\x03R\vagentHostId\x12%\n" +
+	"\x0eoperation_type\x18\x03 \x01(\tR\roperationType\x12'\n" +
+	"\x0frequest_payload\x18\x04 \x01(\fR\x0erequestPayload\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\x05 \x01(\x03R\tcreatedAt\x12\x1d\n" +
+	"\n" +
+	"updated_at\x18\x06 \x01(\x03R\tupdatedAt\x12\x16\n" +
+	"\x06source\x18\a \x01(\tR\x06source\x12'\n" +
+	"\x0ftimeout_seconds\x18\b \x01(\x03R\x0etimeoutSeconds\x12%\n" +
+	"\x0ecorrelation_id\x18\t \x01(\tR\rcorrelationId\"\xdf\x01\n" +
+	"\x17GetAgentCommandsRequest\x12+\n" +
+	"\x11supported_actions\x18\x01 \x03(\tR\x10supportedActions\x12A\n" +
+	"\vqueue_stats\x18\x02 \x01(\v2 .agent.v1.AgentCommandQueueStatsR\n" +
+	"queueStats\x12\x14\n" +
+	"\x05limit\x18\x03 \x01(\x05R\x05limit\x12\x1b\n" +
+	"\tworker_id\x18\x04 \x01(\tR\bworkerId\x12!\n" +
+	"\frequested_at\x18\x05 \x01(\x03R\vrequestedAt\"\xe0\x01\n" +
+	"\x18GetAgentCommandsResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x122\n" +
+	"\bcommands\x18\x02 \x03(\v2\x16.agent.v1.AgentCommandR\bcommands\x12\x18\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\x12;\n" +
+	"\x1anext_poll_interval_seconds\x18\x04 \x01(\x05R\x17nextPollIntervalSeconds\x12\x1f\n" +
+	"\vserver_time\x18\x05 \x01(\x03R\n" +
+	"serverTime\"\xf8\x02\n" +
+	"\x11AgentCommandEvent\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x01 \x01(\tR\tcommandId\x12\x1d\n" +
+	"\n" +
+	"event_type\x18\x02 \x01(\tR\teventType\x12\x16\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\x12\x14\n" +
+	"\x05phase\x18\x04 \x01(\tR\x05phase\x12\x14\n" +
+	"\x05level\x18\x05 \x01(\tR\x05level\x12\x18\n" +
+	"\amessage\x18\x06 \x01(\tR\amessage\x12!\n" +
+	"\fpayload_json\x18\a \x01(\fR\vpayloadJson\x12#\n" +
+	"\rerror_message\x18\b \x01(\tR\ferrorMessage\x12\x1f\n" +
+	"\voccurred_at\x18\t \x01(\x03R\n" +
+	"occurredAt\x12&\n" +
+	"\x0fsource_event_id\x18\n" +
+	" \x01(\tR\rsourceEventId\x12\x1a\n" +
+	"\bsequence\x18\v \x01(\x03R\bsequence\x12\x1a\n" +
+	"\bterminal\x18\f \x01(\bR\bterminal\"\xb0\x01\n" +
+	"\x19ReportAgentCommandRequest\x123\n" +
+	"\x06events\x18\x01 \x03(\v2\x1b.agent.v1.AgentCommandEventR\x06events\x12A\n" +
+	"\vqueue_stats\x18\x02 \x01(\v2 .agent.v1.AgentCommandQueueStatsR\n" +
+	"queueStats\x12\x1b\n" +
+	"\tworker_id\x18\x03 \x01(\tR\bworkerId\"\x8d\x01\n" +
+	"\x1aReportAgentCommandResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1a\n" +
+	"\baccepted\x18\x03 \x01(\x05R\baccepted\x12\x1f\n" +
+	"\vserver_time\x18\x04 \x01(\x03R\n" +
+	"serverTime\"\x91\x02\n" +
+	"\x0eOperationEvent\x12\x14\n" +
+	"\x05scope\x18\x01 \x01(\tR\x05scope\x12\x1b\n" +
+	"\ttarget_id\x18\x02 \x01(\tR\btargetId\x12\x14\n" +
+	"\x05phase\x18\x03 \x01(\tR\x05phase\x12\x14\n" +
+	"\x05level\x18\x04 \x01(\tR\x05level\x12\x18\n" +
+	"\amessage\x18\x05 \x01(\tR\amessage\x12\x1f\n" +
+	"\voccurred_at\x18\x06 \x01(\x03R\n" +
+	"occurredAt\x12&\n" +
+	"\x0fsource_event_id\x18\a \x01(\tR\rsourceEventId\x12!\n" +
+	"\fpayload_json\x18\b \x01(\fR\vpayloadJson\x12\x1a\n" +
+	"\bsequence\x18\t \x01(\x03R\bsequence\"O\n" +
+	"\x1bReportOperationEventRequest\x120\n" +
+	"\x06events\x18\x01 \x03(\v2\x18.agent.v1.OperationEventR\x06events\"\x8e\x01\n" +
+	"\x1cReportOperationEventResponse\x12\x1a\n" +
+	"\baccepted\x18\x01 \x01(\x05R\baccepted\x12\x18\n" +
+	"\asuccess\x18\x02 \x01(\bR\asuccess\x12\x18\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\x12\x1e\n" +
+	"\vlast_log_id\x18\x04 \x01(\x03R\tlastLogId2\xd2\n" +
+	"\n" +
 	"\fAgentService\x12D\n" +
 	"\tHeartbeat\x12\x1a.agent.v1.HeartbeatRequest\x1a\x1b.agent.v1.HeartbeatResponse\x12@\n" +
 	"\fReportStatus\x12\x16.agent.v1.StatusReport\x1a\x18.agent.v1.StatusResponse\x12>\n" +
@@ -39,70 +853,107 @@ const file_agent_v1_agent_proto_rawDesc = "" +
 	"\x13ReportCoreOperation\x12$.agent.v1.ReportCoreOperationRequest\x1a%.agent.v1.ReportCoreOperationResponse\x12J\n" +
 	"\x10ReportAccessLogs\x12\x19.agent.v1.AccessLogReport\x1a\x1b.agent.v1.AccessLogResponse\x12J\n" +
 	"\rGetApplyBatch\x12\x1b.agent.v1.ApplyBatchRequest\x1a\x1c.agent.v1.ApplyBatchResponse\x12F\n" +
-	"\x0eReportApplyRun\x12\x18.agent.v1.ApplyRunReport\x1a\x1a.agent.v1.ApplyRunResponseB:Z8github.com/creamcroissant/xboard/pkg/pb/agent/v1;agentv1b\x06proto3"
+	"\x0eReportApplyRun\x12\x18.agent.v1.ApplyRunReport\x1a\x1a.agent.v1.ApplyRunResponse\x12Y\n" +
+	"\x10GetAgentCommands\x12!.agent.v1.GetAgentCommandsRequest\x1a\".agent.v1.GetAgentCommandsResponse\x12_\n" +
+	"\x12ReportAgentCommand\x12#.agent.v1.ReportAgentCommandRequest\x1a$.agent.v1.ReportAgentCommandResponse\x12e\n" +
+	"\x14ReportOperationEvent\x12%.agent.v1.ReportOperationEventRequest\x1a&.agent.v1.ReportOperationEventResponseB:Z8github.com/creamcroissant/xboard/pkg/pb/agent/v1;agentv1b\x06proto3"
 
+var (
+	file_agent_v1_agent_proto_rawDescOnce sync.Once
+	file_agent_v1_agent_proto_rawDescData []byte
+)
+
+func file_agent_v1_agent_proto_rawDescGZIP() []byte {
+	file_agent_v1_agent_proto_rawDescOnce.Do(func() {
+		file_agent_v1_agent_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_agent_v1_agent_proto_rawDesc), len(file_agent_v1_agent_proto_rawDesc)))
+	})
+	return file_agent_v1_agent_proto_rawDescData
+}
+
+var file_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_agent_v1_agent_proto_goTypes = []any{
-	(*HeartbeatRequest)(nil),            // 0: agent.v1.HeartbeatRequest
-	(*StatusReport)(nil),                // 1: agent.v1.StatusReport
-	(*ConfigRequest)(nil),               // 2: agent.v1.ConfigRequest
-	(*UsersRequest)(nil),                // 3: agent.v1.UsersRequest
-	(*TrafficReport)(nil),               // 4: agent.v1.TrafficReport
-	(*AliveReport)(nil),                 // 5: agent.v1.AliveReport
-	(*ForwardingRulesRequest)(nil),      // 6: agent.v1.ForwardingRulesRequest
-	(*ForwardingStatusReport)(nil),      // 7: agent.v1.ForwardingStatusReport
-	(*GetCoreOperationsRequest)(nil),    // 8: agent.v1.GetCoreOperationsRequest
-	(*ReportCoreOperationRequest)(nil),  // 9: agent.v1.ReportCoreOperationRequest
-	(*AccessLogReport)(nil),             // 10: agent.v1.AccessLogReport
-	(*ApplyBatchRequest)(nil),           // 11: agent.v1.ApplyBatchRequest
-	(*ApplyRunReport)(nil),              // 12: agent.v1.ApplyRunReport
-	(*HeartbeatResponse)(nil),           // 13: agent.v1.HeartbeatResponse
-	(*StatusResponse)(nil),              // 14: agent.v1.StatusResponse
-	(*ConfigResponse)(nil),              // 15: agent.v1.ConfigResponse
-	(*UsersResponse)(nil),               // 16: agent.v1.UsersResponse
-	(*TrafficResponse)(nil),             // 17: agent.v1.TrafficResponse
-	(*AliveResponse)(nil),               // 18: agent.v1.AliveResponse
-	(*StatusCommand)(nil),               // 19: agent.v1.StatusCommand
-	(*ForwardingRulesResponse)(nil),     // 20: agent.v1.ForwardingRulesResponse
-	(*GetCoreOperationsResponse)(nil),   // 21: agent.v1.GetCoreOperationsResponse
-	(*ReportCoreOperationResponse)(nil), // 22: agent.v1.ReportCoreOperationResponse
-	(*AccessLogResponse)(nil),           // 23: agent.v1.AccessLogResponse
-	(*ApplyBatchResponse)(nil),          // 24: agent.v1.ApplyBatchResponse
-	(*ApplyRunResponse)(nil),            // 25: agent.v1.ApplyRunResponse
+	(*AgentCommand)(nil),                 // 0: agent.v1.AgentCommand
+	(*GetAgentCommandsRequest)(nil),      // 1: agent.v1.GetAgentCommandsRequest
+	(*GetAgentCommandsResponse)(nil),     // 2: agent.v1.GetAgentCommandsResponse
+	(*AgentCommandEvent)(nil),            // 3: agent.v1.AgentCommandEvent
+	(*ReportAgentCommandRequest)(nil),    // 4: agent.v1.ReportAgentCommandRequest
+	(*ReportAgentCommandResponse)(nil),   // 5: agent.v1.ReportAgentCommandResponse
+	(*OperationEvent)(nil),               // 6: agent.v1.OperationEvent
+	(*ReportOperationEventRequest)(nil),  // 7: agent.v1.ReportOperationEventRequest
+	(*ReportOperationEventResponse)(nil), // 8: agent.v1.ReportOperationEventResponse
+	(*AgentCommandQueueStats)(nil),       // 9: agent.v1.AgentCommandQueueStats
+	(*HeartbeatRequest)(nil),             // 10: agent.v1.HeartbeatRequest
+	(*StatusReport)(nil),                 // 11: agent.v1.StatusReport
+	(*ConfigRequest)(nil),                // 12: agent.v1.ConfigRequest
+	(*UsersRequest)(nil),                 // 13: agent.v1.UsersRequest
+	(*TrafficReport)(nil),                // 14: agent.v1.TrafficReport
+	(*AliveReport)(nil),                  // 15: agent.v1.AliveReport
+	(*ForwardingRulesRequest)(nil),       // 16: agent.v1.ForwardingRulesRequest
+	(*ForwardingStatusReport)(nil),       // 17: agent.v1.ForwardingStatusReport
+	(*GetCoreOperationsRequest)(nil),     // 18: agent.v1.GetCoreOperationsRequest
+	(*ReportCoreOperationRequest)(nil),   // 19: agent.v1.ReportCoreOperationRequest
+	(*AccessLogReport)(nil),              // 20: agent.v1.AccessLogReport
+	(*ApplyBatchRequest)(nil),            // 21: agent.v1.ApplyBatchRequest
+	(*ApplyRunReport)(nil),               // 22: agent.v1.ApplyRunReport
+	(*HeartbeatResponse)(nil),            // 23: agent.v1.HeartbeatResponse
+	(*StatusResponse)(nil),               // 24: agent.v1.StatusResponse
+	(*ConfigResponse)(nil),               // 25: agent.v1.ConfigResponse
+	(*UsersResponse)(nil),                // 26: agent.v1.UsersResponse
+	(*TrafficResponse)(nil),              // 27: agent.v1.TrafficResponse
+	(*AliveResponse)(nil),                // 28: agent.v1.AliveResponse
+	(*StatusCommand)(nil),                // 29: agent.v1.StatusCommand
+	(*ForwardingRulesResponse)(nil),      // 30: agent.v1.ForwardingRulesResponse
+	(*GetCoreOperationsResponse)(nil),    // 31: agent.v1.GetCoreOperationsResponse
+	(*ReportCoreOperationResponse)(nil),  // 32: agent.v1.ReportCoreOperationResponse
+	(*AccessLogResponse)(nil),            // 33: agent.v1.AccessLogResponse
+	(*ApplyBatchResponse)(nil),           // 34: agent.v1.ApplyBatchResponse
+	(*ApplyRunResponse)(nil),             // 35: agent.v1.ApplyRunResponse
 }
 var file_agent_v1_agent_proto_depIdxs = []int32{
-	0,  // 0: agent.v1.AgentService.Heartbeat:input_type -> agent.v1.HeartbeatRequest
-	1,  // 1: agent.v1.AgentService.ReportStatus:input_type -> agent.v1.StatusReport
-	2,  // 2: agent.v1.AgentService.GetConfig:input_type -> agent.v1.ConfigRequest
-	3,  // 3: agent.v1.AgentService.GetUsers:input_type -> agent.v1.UsersRequest
-	4,  // 4: agent.v1.AgentService.ReportTraffic:input_type -> agent.v1.TrafficReport
-	5,  // 5: agent.v1.AgentService.ReportAlive:input_type -> agent.v1.AliveReport
-	1,  // 6: agent.v1.AgentService.StatusStream:input_type -> agent.v1.StatusReport
-	6,  // 7: agent.v1.AgentService.GetForwardingRules:input_type -> agent.v1.ForwardingRulesRequest
-	7,  // 8: agent.v1.AgentService.ReportForwardingStatus:input_type -> agent.v1.ForwardingStatusReport
-	8,  // 9: agent.v1.AgentService.GetCoreOperations:input_type -> agent.v1.GetCoreOperationsRequest
-	9,  // 10: agent.v1.AgentService.ReportCoreOperation:input_type -> agent.v1.ReportCoreOperationRequest
-	10, // 11: agent.v1.AgentService.ReportAccessLogs:input_type -> agent.v1.AccessLogReport
-	11, // 12: agent.v1.AgentService.GetApplyBatch:input_type -> agent.v1.ApplyBatchRequest
-	12, // 13: agent.v1.AgentService.ReportApplyRun:input_type -> agent.v1.ApplyRunReport
-	13, // 14: agent.v1.AgentService.Heartbeat:output_type -> agent.v1.HeartbeatResponse
-	14, // 15: agent.v1.AgentService.ReportStatus:output_type -> agent.v1.StatusResponse
-	15, // 16: agent.v1.AgentService.GetConfig:output_type -> agent.v1.ConfigResponse
-	16, // 17: agent.v1.AgentService.GetUsers:output_type -> agent.v1.UsersResponse
-	17, // 18: agent.v1.AgentService.ReportTraffic:output_type -> agent.v1.TrafficResponse
-	18, // 19: agent.v1.AgentService.ReportAlive:output_type -> agent.v1.AliveResponse
-	19, // 20: agent.v1.AgentService.StatusStream:output_type -> agent.v1.StatusCommand
-	20, // 21: agent.v1.AgentService.GetForwardingRules:output_type -> agent.v1.ForwardingRulesResponse
-	14, // 22: agent.v1.AgentService.ReportForwardingStatus:output_type -> agent.v1.StatusResponse
-	21, // 23: agent.v1.AgentService.GetCoreOperations:output_type -> agent.v1.GetCoreOperationsResponse
-	22, // 24: agent.v1.AgentService.ReportCoreOperation:output_type -> agent.v1.ReportCoreOperationResponse
-	23, // 25: agent.v1.AgentService.ReportAccessLogs:output_type -> agent.v1.AccessLogResponse
-	24, // 26: agent.v1.AgentService.GetApplyBatch:output_type -> agent.v1.ApplyBatchResponse
-	25, // 27: agent.v1.AgentService.ReportApplyRun:output_type -> agent.v1.ApplyRunResponse
-	14, // [14:28] is the sub-list for method output_type
-	0,  // [0:14] is the sub-list for method input_type
-	0,  // [0:0] is the sub-list for extension type_name
-	0,  // [0:0] is the sub-list for extension extendee
-	0,  // [0:0] is the sub-list for field type_name
+	9,  // 0: agent.v1.GetAgentCommandsRequest.queue_stats:type_name -> agent.v1.AgentCommandQueueStats
+	0,  // 1: agent.v1.GetAgentCommandsResponse.commands:type_name -> agent.v1.AgentCommand
+	3,  // 2: agent.v1.ReportAgentCommandRequest.events:type_name -> agent.v1.AgentCommandEvent
+	9,  // 3: agent.v1.ReportAgentCommandRequest.queue_stats:type_name -> agent.v1.AgentCommandQueueStats
+	6,  // 4: agent.v1.ReportOperationEventRequest.events:type_name -> agent.v1.OperationEvent
+	10, // 5: agent.v1.AgentService.Heartbeat:input_type -> agent.v1.HeartbeatRequest
+	11, // 6: agent.v1.AgentService.ReportStatus:input_type -> agent.v1.StatusReport
+	12, // 7: agent.v1.AgentService.GetConfig:input_type -> agent.v1.ConfigRequest
+	13, // 8: agent.v1.AgentService.GetUsers:input_type -> agent.v1.UsersRequest
+	14, // 9: agent.v1.AgentService.ReportTraffic:input_type -> agent.v1.TrafficReport
+	15, // 10: agent.v1.AgentService.ReportAlive:input_type -> agent.v1.AliveReport
+	11, // 11: agent.v1.AgentService.StatusStream:input_type -> agent.v1.StatusReport
+	16, // 12: agent.v1.AgentService.GetForwardingRules:input_type -> agent.v1.ForwardingRulesRequest
+	17, // 13: agent.v1.AgentService.ReportForwardingStatus:input_type -> agent.v1.ForwardingStatusReport
+	18, // 14: agent.v1.AgentService.GetCoreOperations:input_type -> agent.v1.GetCoreOperationsRequest
+	19, // 15: agent.v1.AgentService.ReportCoreOperation:input_type -> agent.v1.ReportCoreOperationRequest
+	20, // 16: agent.v1.AgentService.ReportAccessLogs:input_type -> agent.v1.AccessLogReport
+	21, // 17: agent.v1.AgentService.GetApplyBatch:input_type -> agent.v1.ApplyBatchRequest
+	22, // 18: agent.v1.AgentService.ReportApplyRun:input_type -> agent.v1.ApplyRunReport
+	1,  // 19: agent.v1.AgentService.GetAgentCommands:input_type -> agent.v1.GetAgentCommandsRequest
+	4,  // 20: agent.v1.AgentService.ReportAgentCommand:input_type -> agent.v1.ReportAgentCommandRequest
+	7,  // 21: agent.v1.AgentService.ReportOperationEvent:input_type -> agent.v1.ReportOperationEventRequest
+	23, // 22: agent.v1.AgentService.Heartbeat:output_type -> agent.v1.HeartbeatResponse
+	24, // 23: agent.v1.AgentService.ReportStatus:output_type -> agent.v1.StatusResponse
+	25, // 24: agent.v1.AgentService.GetConfig:output_type -> agent.v1.ConfigResponse
+	26, // 25: agent.v1.AgentService.GetUsers:output_type -> agent.v1.UsersResponse
+	27, // 26: agent.v1.AgentService.ReportTraffic:output_type -> agent.v1.TrafficResponse
+	28, // 27: agent.v1.AgentService.ReportAlive:output_type -> agent.v1.AliveResponse
+	29, // 28: agent.v1.AgentService.StatusStream:output_type -> agent.v1.StatusCommand
+	30, // 29: agent.v1.AgentService.GetForwardingRules:output_type -> agent.v1.ForwardingRulesResponse
+	24, // 30: agent.v1.AgentService.ReportForwardingStatus:output_type -> agent.v1.StatusResponse
+	31, // 31: agent.v1.AgentService.GetCoreOperations:output_type -> agent.v1.GetCoreOperationsResponse
+	32, // 32: agent.v1.AgentService.ReportCoreOperation:output_type -> agent.v1.ReportCoreOperationResponse
+	33, // 33: agent.v1.AgentService.ReportAccessLogs:output_type -> agent.v1.AccessLogResponse
+	34, // 34: agent.v1.AgentService.GetApplyBatch:output_type -> agent.v1.ApplyBatchResponse
+	35, // 35: agent.v1.AgentService.ReportApplyRun:output_type -> agent.v1.ApplyRunResponse
+	2,  // 36: agent.v1.AgentService.GetAgentCommands:output_type -> agent.v1.GetAgentCommandsResponse
+	5,  // 37: agent.v1.AgentService.ReportAgentCommand:output_type -> agent.v1.ReportAgentCommandResponse
+	8,  // 38: agent.v1.AgentService.ReportOperationEvent:output_type -> agent.v1.ReportOperationEventResponse
+	22, // [22:39] is the sub-list for method output_type
+	5,  // [5:22] is the sub-list for method input_type
+	5,  // [5:5] is the sub-list for extension type_name
+	5,  // [5:5] is the sub-list for extension extendee
+	0,  // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_agent_v1_agent_proto_init() }
@@ -123,12 +974,13 @@ func file_agent_v1_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agent_v1_agent_proto_rawDesc), len(file_agent_v1_agent_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   0,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_agent_v1_agent_proto_goTypes,
 		DependencyIndexes: file_agent_v1_agent_proto_depIdxs,
+		MessageInfos:      file_agent_v1_agent_proto_msgTypes,
 	}.Build()
 	File_agent_v1_agent_proto = out.File
 	file_agent_v1_agent_proto_goTypes = nil

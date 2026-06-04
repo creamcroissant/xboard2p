@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
+	"github.com/creamcroissant/xboard/internal/template"
 )
 
 // GeneralBuilder emits a standard base64 subscription compatible with V2RayN, Shadowrocket, etc.
 type GeneralBuilder struct {
 	base *BaseBuilder
+	cdn  *CDNConfig
 }
 
 // NewGeneralBuilder returns a ready-to-use general builder instance.
@@ -27,6 +30,7 @@ func (b *GeneralBuilder) Flags() []string {
 
 // Build renders a newline-delimited list of scheme URIs (base64 encoded) for the provided nodes.
 func (b *GeneralBuilder) Build(req BuildRequest) (*Result, error) {
+	b.cdn = req.CDN
 	nodes := req.Nodes
 	if b.base != nil {
 		nodes = b.base.FilterNodes(req)
@@ -203,7 +207,7 @@ func (b *GeneralBuilder) buildVlessURI(node Node) string {
 		}
 	}
 
-	network := normalizeXHTTPNetwork(settingString(node.Settings, "network"))
+	network := template.NormalizeXHTTPNetwork(settingString(node.Settings, "network"))
 	if network != "" {
 		q.Set("type", network)
 	}
@@ -221,6 +225,20 @@ func (b *GeneralBuilder) buildVlessURI(node Node) string {
 		}
 	} else if network == "xhttp" {
 		applyVLESSXHTTPQuery(q, node.Settings)
+	}
+
+	// CDN 域名替换：仅对 xhttp 协议生效
+	if b.cdn != nil && network == "xhttp" {
+		u.Host = fmt.Sprintf("%s:%d", b.cdn.Domain, 443)
+		q.Set("sni", b.cdn.Domain)
+		if b.cdn.Host != "" {
+			q.Set("host", b.cdn.Host)
+		} else {
+			q.Set("host", b.cdn.Domain)
+		}
+		if b.cdn.Path != "" {
+			q.Set("path", b.cdn.Path)
+		}
 	}
 
 	if flow := settingString(node.Settings, "flow"); flow != "" {

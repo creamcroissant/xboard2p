@@ -1,5 +1,5 @@
 // Admin API module exports
-export { adminApi } from "./client";
+export { adminApi, AdminApiError, isAdminApiError } from "./client";
 
 // Agent Host API
 export {
@@ -75,6 +75,42 @@ export {
   listAgentCoreSwitchLogs,
 } from "./cores";
 
+// Agent observability API
+export {
+  listOperationLogs,
+  getOperationLogStreamURL,
+  listAgentBinaryVersions,
+  refreshAgentBinaryVersion,
+} from "./operationLogs";
+
+// Agent lifecycle API
+export {
+  listAgentLifecycleOperations,
+  createAgentUpdateCheckOperation,
+  createAgentUpdateOperation,
+  createAgentTrafficResetOperation,
+} from "./lifecycle";
+
+// Agent traffic API
+export {
+  getAgentTrafficPolicy,
+  updateAgentTrafficPolicy,
+  getAgentTrafficStatus,
+  resetAgentTrafficCycle,
+} from "./traffic";
+
+// Subscription diagnostics API
+export {
+  listSubscriptionSources,
+  createSubscriptionSource,
+  getSubscriptionSource,
+  updateSubscriptionSource,
+  deleteSubscriptionSource,
+  syncSubscriptionSource,
+  listSubscriptionFilterReasons,
+  getSubscriptionFilterSummary,
+} from "./subscription";
+
 // Access Logs API
 export { fetchAccessLogs, getAccessLogStats, cleanupAccessLogs } from "./accessLog";
 
@@ -103,3 +139,13 @@ export {
   listConfigCenterDriftStates,
   listConfigCenterRecoveryStates,
 } from "./configCenter";
+
+// CDN API
+export {
+  fetchCDNSites,
+  createCDNSite,
+  updateCDNSite,
+  deleteCDNSite,
+  deployCDNSite,
+  undeployCDNSite,
+} from "./cdn";

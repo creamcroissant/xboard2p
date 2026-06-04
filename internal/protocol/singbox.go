@@ -16,6 +16,7 @@ const (
 
 type SingboxBuilder struct {
 	base *BaseBuilder
+	cdn  *CDNConfig
 }
 
 func NewSingboxBuilder() *SingboxBuilder {
@@ -33,6 +34,7 @@ func (b *SingboxBuilder) Build(req BuildRequest) (*Result, error) {
 	if b.base != nil {
 		nodes = b.base.FilterNodes(req)
 	}
+	b.cdn = req.CDN
 
 	outbounds := make([]map[string]any, 0, len(nodes))
 	proxyTags := make([]string, 0, len(nodes))

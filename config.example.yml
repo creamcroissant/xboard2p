@@ -69,7 +69,7 @@ grpc:
   enabled: true                 # Required. Agent only supports gRPC transport.
   addr: "0.0.0.0:8080"       # Same listener as http.addr when reuse_http_port is true
   reuse_http_port: true       # Enable single-port HTTP+gRPC multiplexing on http.addr
-tag: "default"                # Agent tag (optional)
+# tag: "default"                # Agent tag (optional)
 
 monitor:
   interval: "10s"              # System metrics interval

@@ -167,6 +167,7 @@ function NodeTabContent({ initialForm }: NodeTabContentProps) {
                 readOnly
                 className="pr-11 font-mono text-xs"
                 aria-label={t("admin.system.settings.fields.communicationKey")}
+                data-testid="system-settings-node-key"
               />
               <Button
                 type="button"
@@ -177,11 +178,12 @@ function NodeTabContent({ initialForm }: NodeTabContentProps) {
                 disabled={!form.hasValue || revealMutation.isPending}
                 aria-label={t("admin.system.settings.actions.reveal")}
                 title={t("admin.system.settings.actions.reveal")}
+                data-testid="system-settings-reveal-key-button"
               >
                 <Eye className="h-4 w-4" aria-hidden="true" />
               </Button>
             </div>
-            <Button type="button" variant="destructive" onClick={() => setResetOpen(true)}>
+            <Button type="button" variant="destructive" onClick={() => setResetOpen(true)} data-testid="system-settings-reset-key-button">
               {t("admin.system.settings.actions.reset")}
             </Button>
           </div>

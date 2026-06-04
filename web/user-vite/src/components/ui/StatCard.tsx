@@ -29,19 +29,19 @@ export default function StatCard({
 }: StatCardProps) {
   const variantStyles = {
     default: {
-      iconText: "text-muted-foreground",
+      iconWrap: "bg-muted text-muted-foreground",
     },
     primary: {
-      iconText: "text-primary",
+      iconWrap: "bg-primary/10 text-primary",
     },
     success: {
-      iconText: "text-emerald-600",
+      iconWrap: "bg-emerald-500/10 text-emerald-600",
     },
     warning: {
-      iconText: "text-amber-600",
+      iconWrap: "bg-amber-500/10 text-amber-600",
     },
     danger: {
-      iconText: "text-red-600",
+      iconWrap: "bg-red-500/10 text-red-600",
     },
   };
 
@@ -66,37 +66,28 @@ export default function StatCard({
   };
 
   return (
-    <Card className={cn("transition-shadow", className)}>
-      <CardContent className="p-4">
-        <div className="flex items-start gap-3">
+    <Card className={className}>
+      <CardContent className="p-5 sm:p-6">
+        <div className="flex items-start gap-4">
           {icon && (
-            <div
-              className={cn(
-                "flex h-9 w-9 items-center justify-center flex-shrink-0",
-                styles.iconText
-              )}
-            >
+            <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-md", styles.iconWrap)}>
               {icon}
             </div>
           )}
-          <div className="flex-1 min-w-0">
-            <p className="text-sm text-muted-foreground">{title}</p>
-            <div className="mt-1 flex items-baseline gap-2">
-              <p className="text-xl font-semibold text-foreground truncate">
-                {value}
-              </p>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-muted-foreground">{title}</p>
+            <div className="mt-2 flex flex-wrap items-end gap-2">
+              <p className="truncate text-2xl font-semibold tracking-tight text-foreground">{value}</p>
               {trend && (
-                <div className={cn("flex items-center gap-1 text-xs", getTrendColor())}>
+                <div className={cn("flex items-center gap-1 text-xs font-medium", getTrendColor())}>
                   {getTrendIcon()}
                   <span>{Math.abs(trend.value)}%</span>
-                  {trend.label && (
-                    <span className="text-muted-foreground">{trend.label}</span>
-                  )}
+                  {trend.label && <span className="text-muted-foreground">{trend.label}</span>}
                 </div>
               )}
             </div>
-            {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
-            {children}
+            {hint && <p className="mt-2 text-sm text-muted-foreground">{hint}</p>}
+            {children ? <div className="mt-4">{children}</div> : null}
           </div>
         </div>
       </CardContent>

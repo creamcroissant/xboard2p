@@ -51,6 +51,79 @@ type DesiredArtifactFilter struct {
 	Offset          int
 }
 
+// OperationLogFilter constrains operation log listing queries.
+type OperationLogFilter struct {
+	Scope       *string
+	TargetID    *string
+	AgentHostID *int64
+	AfterID     *int64
+	Level       *string
+	Limit       int
+	Offset      int
+}
+
+// AgentLifecycleOperationFilter constrains agent lifecycle operation queries.
+type AgentLifecycleOperationFilter struct {
+	AgentHostID   *int64
+	OperationType *string
+	Status        *string
+	Statuses      []string
+	ClaimedBy     *string
+	Source        *string
+	CreatedAfter  *int64
+	CreatedBefore *int64
+	Limit         int
+	Offset        int
+}
+
+// AgentTrafficPolicyFilter constrains traffic policy queries.
+type AgentTrafficPolicyFilter struct {
+	AgentHostID      *int64
+	Enabled          *bool
+	ThresholdReached *bool
+	ResetMode        *string
+	Limit            int
+	Offset           int
+}
+
+// AgentTrafficStateFilter constrains traffic state queries.
+type AgentTrafficStateFilter struct {
+	AgentHostID *int64
+	BootID      *string
+	Limit       int
+	Offset      int
+}
+
+// SubscriptionSourceFilter constrains imported/custom subscription source queries.
+type SubscriptionSourceFilter struct {
+	Type    *string
+	Enabled *bool
+	Keyword string
+	Limit   int
+	Offset  int
+}
+
+// SubscriptionFilterReasonFilter constrains subscription filtering explanation queries.
+type SubscriptionFilterReasonFilter struct {
+	SourceType    *string
+	SourceID      *int64
+	ServerID      *int64
+	Reason        *string
+	CreatedAfter  *int64
+	CreatedBefore *int64
+	Limit         int
+	Offset        int
+}
+
+// BinaryVersionFilter constrains binary version state listing queries.
+type BinaryVersionFilter struct {
+	AgentHostID *int64
+	Component   *string
+	Status      *string
+	Limit       int
+	Offset      int
+}
+
 // CoreOperationFilter constrains core operation listing and claim queries.
 type CoreOperationFilter struct {
 	AgentHostID   *int64

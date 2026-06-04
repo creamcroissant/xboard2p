@@ -141,16 +141,23 @@ type UpdateAgentHostRequest struct {
 
 // AgentHostMetricsReport contains metrics reported by an agent.
 type AgentHostMetricsReport struct {
-	CPUTotal      float64
-	CPUUsed       float64
-	MemTotal      int64
-	MemUsed       int64
-	DiskTotal     int64
-	DiskUsed      int64
-	UploadTotal   int64
-	DownloadTotal int64
+	CPUTotal              float64
+	CPUUsed               float64
+	MemTotal              int64
+	MemUsed               int64
+	DiskTotal             int64
+	DiskUsed              int64
+	UploadTotal           int64
+	DownloadTotal         int64
+	UploadRateBps         *int64
+	DownloadRateBps       *int64
+	RawUploadTotalBytes   *int64
+	RawDownloadTotalBytes *int64
+	BootID                string
+	ReportedAt            int64
+	AgentVersion          string
+	CurrentCoreType       string
 }
-
 
 // ClientConfigInfo represents a client configuration reported by the agent.
 type ClientConfigInfo struct {
@@ -206,7 +213,6 @@ func NewAgentHostService(
 ) AgentHostService {
 	return NewAgentHostServiceWithOptions(agentHosts, servers, serverClientConfigs, configTemplates, users, settings, AgentHostServiceOptions{})
 }
-
 
 func (s *agentHostService) Create(ctx context.Context, req CreateAgentHostRequest) (*repository.AgentHost, error) {
 	token, err := generateAgentHostToken()
@@ -332,22 +338,81 @@ func (s *agentHostService) FlushMetrics(ctx context.Context) error {
 	return s.metricsBuffer.Flush(ctx)
 }
 
-
 func (s *agentHostService) UpdateMetrics(ctx context.Context, token string, metrics AgentHostMetricsReport) error {
 	host, err := s.agentHosts.FindByToken(ctx, token)
 	if err != nil {
 		return err
 	}
 
+	if s.metricsBuffer != nil {
+		if latest, ok, latestErr := s.metricsBuffer.Latest(ctx, host.ID); latestErr != nil {
+			return latestErr
+		} else if ok {
+			host.UploadRateBps = latest.UploadRateBps
+			host.DownloadRateBps = latest.DownloadRateBps
+			host.RawUploadTotalBytes = latest.RawUploadTotalBytes
+			host.RawDownloadTotalBytes = latest.RawDownloadTotalBytes
+			host.BootID = latest.BootID
+			host.LastRealtimeReportAt = latest.LastRealtimeReportAt
+			host.LastRestartAt = latest.LastRestartAt
+			host.AgentVersion = latest.AgentVersion
+			host.CurrentCoreType = latest.CurrentCoreType
+		}
+	}
+
+	reportAt := metrics.ReportedAt
+	if reportAt == 0 {
+		reportAt = time.Now().Unix()
+	}
 	repoMetrics := repository.AgentHostMetrics{
-		CPUTotal:      metrics.CPUTotal,
-		CPUUsed:       metrics.CPUUsed,
-		MemTotal:      metrics.MemTotal,
-		MemUsed:       metrics.MemUsed,
-		DiskTotal:     metrics.DiskTotal,
-		DiskUsed:      metrics.DiskUsed,
-		UploadTotal:   metrics.UploadTotal,
-		DownloadTotal: metrics.DownloadTotal,
+		CPUTotal:              metrics.CPUTotal,
+		CPUUsed:               metrics.CPUUsed,
+		MemTotal:              metrics.MemTotal,
+		MemUsed:               metrics.MemUsed,
+		DiskTotal:             metrics.DiskTotal,
+		DiskUsed:              metrics.DiskUsed,
+		UploadTotal:           metrics.UploadTotal,
+		DownloadTotal:         metrics.DownloadTotal,
+		UploadRateBps:         host.UploadRateBps,
+		DownloadRateBps:       host.DownloadRateBps,
+		RawUploadTotalBytes:   host.RawUploadTotalBytes,
+		RawDownloadTotalBytes: host.RawDownloadTotalBytes,
+		BootID:                host.BootID,
+		LastRealtimeReportAt:  host.LastRealtimeReportAt,
+		LastRestartAt:         host.LastRestartAt,
+		AgentVersion:          host.AgentVersion,
+		CurrentCoreType:       host.CurrentCoreType,
+	}
+	if metrics.UploadRateBps != nil {
+		repoMetrics.UploadRateBps = *metrics.UploadRateBps
+		repoMetrics.LastRealtimeReportAt = reportAt
+	}
+	if metrics.DownloadRateBps != nil {
+		repoMetrics.DownloadRateBps = *metrics.DownloadRateBps
+		repoMetrics.LastRealtimeReportAt = reportAt
+	}
+	if metrics.RawUploadTotalBytes != nil {
+		repoMetrics.RawUploadTotalBytes = *metrics.RawUploadTotalBytes
+		repoMetrics.LastRealtimeReportAt = reportAt
+	}
+	if metrics.RawDownloadTotalBytes != nil {
+		repoMetrics.RawDownloadTotalBytes = *metrics.RawDownloadTotalBytes
+		repoMetrics.LastRealtimeReportAt = reportAt
+	}
+	if metrics.BootID != "" {
+		if host.BootID != "" && host.BootID != metrics.BootID {
+			repoMetrics.LastRestartAt = reportAt
+		}
+		repoMetrics.BootID = metrics.BootID
+		repoMetrics.LastRealtimeReportAt = reportAt
+	}
+	if metrics.AgentVersion != "" {
+		repoMetrics.AgentVersion = metrics.AgentVersion
+		repoMetrics.LastRealtimeReportAt = reportAt
+	}
+	if metrics.CurrentCoreType != "" {
+		repoMetrics.CurrentCoreType = metrics.CurrentCoreType
+		repoMetrics.LastRealtimeReportAt = reportAt
 	}
 
 	if s.metricsBuffer != nil {

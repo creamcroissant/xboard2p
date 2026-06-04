@@ -81,10 +81,15 @@ type ReportCoreOperationResultRequest struct {
 
 type coreOperationService struct {
 	operations repository.CoreOperationRepository
+	guard      AgentOperationGuard
 }
 
-func NewCoreOperationService(operations repository.CoreOperationRepository) CoreOperationService {
-	return &coreOperationService{operations: operations}
+func NewCoreOperationService(operations repository.CoreOperationRepository, guards ...AgentOperationGuard) CoreOperationService {
+	var guard AgentOperationGuard
+	if len(guards) > 0 {
+		guard = guards[0]
+	}
+	return &coreOperationService{operations: operations, guard: guard}
 }
 
 func (s *coreOperationService) Create(ctx context.Context, req CreateCoreOperationRequest) (*repository.CoreOperation, error) {
@@ -94,8 +99,15 @@ func (s *coreOperationService) Create(ctx context.Context, req CreateCoreOperati
 	if req.AgentHostID <= 0 || strings.TrimSpace(req.OperationType) == "" || strings.TrimSpace(req.CoreType) == "" {
 		return nil, ErrCoreOperationInvalidRequest
 	}
+	operationType := strings.TrimSpace(req.OperationType)
+	coreType := strings.TrimSpace(req.CoreType)
 	if len(req.RequestPayload) == 0 {
 		req.RequestPayload = json.RawMessage(`{}`)
+	}
+	if s.guard != nil {
+		if err := s.guard.CheckIdle(ctx, AgentOperationGuardRequest{AgentHostID: req.AgentHostID, Scope: OperationLogScopeCoreOperation, OperationType: operationType, OperatorID: req.OperatorID}); err != nil {
+			return nil, err
+		}
 	}
 	id, err := generateCoreOperationID(req.AgentHostID)
 	if err != nil {
@@ -105,8 +117,8 @@ func (s *coreOperationService) Create(ctx context.Context, req CreateCoreOperati
 	op := &repository.CoreOperation{
 		ID:             id,
 		AgentHostID:    req.AgentHostID,
-		OperationType:  strings.TrimSpace(req.OperationType),
-		CoreType:       strings.TrimSpace(req.CoreType),
+		OperationType:  operationType,
+		CoreType:       coreType,
 		Status:         coreOperationStatusPending,
 		RequestPayload: append(json.RawMessage(nil), req.RequestPayload...),
 		ResultPayload:  json.RawMessage(`{}`),

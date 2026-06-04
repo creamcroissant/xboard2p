@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -15,6 +16,8 @@ import (
 	"github.com/creamcroissant/xboard/internal/agent/access"
 	"github.com/creamcroissant/xboard/internal/agent/api"
 	"github.com/creamcroissant/xboard/internal/agent/capability"
+	"github.com/creamcroissant/xboard/internal/agent/cdn"
+	"github.com/creamcroissant/xboard/internal/agent/command"
 	"github.com/creamcroissant/xboard/internal/agent/config"
 	"github.com/creamcroissant/xboard/internal/agent/configcenter"
 	"github.com/creamcroissant/xboard/internal/agent/core"
@@ -33,28 +36,36 @@ import (
 )
 
 type Agent struct {
-	cfg        *config.Config
-	grpc       *transport.GRPCClient
-	conn       *transport.ConnectionManager
-	forward    *forwarding.Manager
-	syncer     *syncer.Syncer
-	monitor    *monitor.Monitor
-	traffic    traffic.Collector
-	netio      *traffic.NetIOCollector // Node-level network traffic
-	access     *access.Manager         // Access log manager
-	protoMgr   *protocol.Manager
-	coreMgr    *core.Manager
-	switcher   *proxy.Switcher
-	server     *server.Server
-	grpcServer *agentgrpc.Server
-	subParse   *subscribe.Parser    // Subscribe directory parser
-	capDet     *capability.Detector // Capability detector
+	cfg             *config.Config
+	grpc            *transport.GRPCClient
+	coreOperations  coreOperationClient
+	operationEvents operationEventReporter
+	agentCommands   agentCommandClient
+	commandQueue    *command.Queue
+	updater         agentUpdater
+	conn            *transport.ConnectionManager
+	forward         *forwarding.Manager
+	syncer          *syncer.Syncer
+	monitor         *monitor.Monitor
+	traffic         traffic.Collector
+	netio           *traffic.NetIOCollector // Node-level network traffic
+	access          *access.Manager         // Access log manager
+	protoMgr        *protocol.Manager
+	coreMgr         *core.Manager
+	switcher        *proxy.Switcher
+	server          *server.Server
+	grpcServer      *agentgrpc.Server
+	subParse        *subscribe.Parser    // Subscribe directory parser
+	capDet          *capability.Detector // Capability detector
 
-	batchApplier      *configcenter.AgentBatchApplier
-	inventoryScanner  *configcenter.AgentInventoryScanner
-	applyRevision     atomic.Int64
-	syncInFlight      atomic.Bool
-	batchSyncInFlight atomic.Bool
+	cdnManager *cdn.Manager // CDN / Caddy manager
+
+	batchApplier              applyBatchRunner
+	inventoryScanner          *configcenter.AgentInventoryScanner
+	applyRevision             atomic.Int64
+	syncInFlight              atomic.Bool
+	batchSyncInFlight         atomic.Bool
+	coreOperationSyncInFlight atomic.Bool
 
 	configETag     string
 	usersETag      string
@@ -67,6 +78,10 @@ type Agent struct {
 	currentSyncInterval   atomic.Int32
 	currentReportInterval atomic.Int32
 	updateTickerCh        chan struct{}
+}
+
+type applyBatchRunner interface {
+	SyncOnce(ctx context.Context, currentRevision int64) (int64, error)
 }
 
 func New(cfg *config.Config) (*Agent, error) {
@@ -174,6 +189,14 @@ func New(cfg *config.Config) (*Agent, error) {
 		srv = server.NewServer(srvCfg, protoMgr)
 	}
 
+	agentUpdater, err := newAgentUpdater(cfg.Update)
+	if err != nil {
+		return nil, err
+	}
+	if err := agentUpdater.RecordStartup(); err != nil {
+		slog.Warn("agent updater startup recovery failed", "error", err)
+	}
+
 	agent := &Agent{
 		cfg:      cfg,
 		syncer:   syncer.New(cfg.Core),
@@ -186,6 +209,7 @@ func New(cfg *config.Config) (*Agent, error) {
 		server:   srv,
 		subParse: subscribe.NewParser(cfg.Protocol.SubscribeDir),
 		capDet:   capDet,
+		updater:  agentUpdater,
 
 		userIDByEmail:  make(map[string]int64),
 		updateTickerCh: make(chan struct{}, 1),
@@ -234,6 +258,24 @@ func New(cfg *config.Config) (*Agent, error) {
 		return nil, err
 	}
 	agent.grpc = grpcClient
+	agent.coreOperations = grpcClient
+	agent.operationEvents = grpcClient
+	agent.agentCommands = grpcClient
+	commandQueue, err := newAgentCommandQueue(grpcClient)
+	if err != nil {
+		return nil, err
+	}
+	agent.commandQueue = commandQueue
+	if err := agent.registerAgentUpdateHandlers(); err != nil {
+		return nil, err
+	}
+	if cfg.CDN.Enabled {
+		agent.cdnManager = cdn.NewManagerFromConfig(cfg.CDN)
+		if err := agent.registerCDNHandlers(); err != nil {
+			return nil, err
+		}
+		slog.Info("CDN management enabled", "bin_path", cfg.CDN.BinPath, "config_dir", cfg.CDN.ConfigDir)
+	}
 	agent.conn = transport.NewConnectionManager(grpcClient, slog.Default())
 	agent.conn.SetOnStateChange(func(state transport.ConnectionState) {
 		slog.Info("grpc connection state changed", "state", state.String())
@@ -320,6 +362,17 @@ func (a *Agent) Run(ctx context.Context) {
 		a.access.Start()
 	}
 
+	// Start CDN if enabled
+	if a.cdnManager != nil {
+		if err := a.cdnManager.Start(ctx); err != nil {
+			slog.Warn("failed to start caddy", "error", err)
+		}
+	}
+
+	if a.commandQueue != nil {
+		a.commandQueue.Start(ctx)
+	}
+
 	// Initial sync
 	a.sync(ctx)
 
@@ -339,11 +392,19 @@ func (a *Agent) Run(ctx context.Context) {
 				cancel()
 			}
 			// passive gRPC server retired
+			if a.commandQueue != nil {
+				a.commandQueue.Stop()
+			}
 			if a.grpc != nil {
 				a.grpc.Close()
 			}
 			if a.access != nil {
 				a.access.Stop()
+			}
+			if a.cdnManager != nil {
+				shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				a.cdnManager.Stop(shutdownCtx)
+				cancel()
 			}
 			if a.switcher != nil {
 				shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -372,6 +433,7 @@ func (a *Agent) sync(ctx context.Context) {
 	}
 	defer a.endSync()
 
+	a.rollbackExpiredUpdateIfNeeded()
 	if a.conn != nil {
 		state := a.conn.CheckConnection(ctx)
 		if state != transport.StateConnected {
@@ -385,6 +447,7 @@ func (a *Agent) sync(ctx context.Context) {
 func (a *Agent) syncGRPC(ctx context.Context) {
 	a.syncApplyBatch(ctx)
 	a.syncCoreOperations(ctx)
+	a.syncAgentCommands(ctx)
 
 	// NodeID kept for compatibility; gRPC identifies agent host by token
 	nodeID := int32(a.cfg.Panel.NodeID)
@@ -431,6 +494,8 @@ func (a *Agent) syncGRPC(ctx context.Context) {
 }
 
 func (a *Agent) report(ctx context.Context) {
+	a.rollbackExpiredUpdateIfNeeded()
+
 	// 1. Collect node-level traffic delta first
 	var trafficUpload, trafficDownload uint64
 	if a.netio != nil {
@@ -501,6 +566,8 @@ func (a *Agent) reportGRPC(ctx context.Context, stat api.StatusPayload) {
 			UploadDelta:   stat.TrafficUpload,
 			DownloadDelta: stat.TrafficDownload,
 		},
+		CommandQueue: a.commandQueueStatsProto(),
+		UpdateStatus: a.updateStatusProto(),
 	}
 
 	// Add core instances
@@ -673,6 +740,15 @@ func (a *Agent) reportGRPC(ctx context.Context, stat api.StatusPayload) {
 	if resp, err := a.grpc.ReportStatus(ctx, statusReport); err != nil {
 		slog.Error("Failed to report status via gRPC", "error", err)
 	} else {
+		if resp == nil || !resp.GetSuccess() {
+			message := "empty status response"
+			if resp != nil {
+				message = resp.GetMessage()
+			}
+			slog.Warn("Panel rejected status report", "message", message)
+			return
+		}
+		a.confirmUpdaterHealthy()
 		slog.Debug("Reported status via gRPC",
 			"traffic_up", stat.TrafficUpload,
 			"traffic_down", stat.TrafficDownload,
@@ -705,22 +781,50 @@ func (a *Agent) syncApplyBatch(ctx context.Context) {
 	if a.batchApplier == nil {
 		return
 	}
+	if a.commandQueue == nil {
+		a.syncApplyBatchDirect(ctx)
+		return
+	}
+	if !a.beginBatchSync() {
+		slog.Debug("apply batch sync already in flight, skip re-entry")
+		return
+	}
+
+	currentRevision := a.getApplyRevision()
+	task := command.Task{ID: fmt.Sprintf("config-apply-%d", currentRevision), OperationType: agentCommandActionConfigApply}
+	err := a.commandQueue.SubmitWithHandler(ctx, task, func(ctx context.Context, task command.Task, reporter command.Reporter) command.Result {
+		defer a.endBatchSync()
+		_ = reporter.Report(ctx, command.Event{EventType: command.EventTypeProgress, Status: command.StatusInProgress, Phase: "applying", Level: command.LevelInfo, Message: "config apply sync started"})
+		return a.runApplyBatch(ctx, currentRevision)
+	})
+	if err != nil {
+		a.endBatchSync()
+		slog.Warn("config apply rejected by command queue", "current_revision", currentRevision, "error", err)
+	}
+}
+
+func (a *Agent) syncApplyBatchDirect(ctx context.Context) {
 	if !a.beginBatchSync() {
 		slog.Debug("apply batch sync already in flight, skip re-entry")
 		return
 	}
 	defer a.endBatchSync()
+	_ = a.runApplyBatch(ctx, a.getApplyRevision())
+}
 
-	currentRevision := a.getApplyRevision()
+func (a *Agent) runApplyBatch(ctx context.Context, currentRevision int64) command.Result {
 	nextRevision, err := a.batchApplier.SyncOnce(ctx, currentRevision)
 	if err != nil {
 		slog.Error("Failed to sync apply batch", "current_revision", currentRevision, "error", err)
-		return
+		return command.Result{Status: command.StatusFailed, Phase: "failed", Level: command.LevelError, Message: "config apply sync failed", ErrorMessage: err.Error()}
 	}
+	payload, _ := json.Marshal(map[string]any{"previous_revision": currentRevision, "revision": nextRevision})
 	if nextRevision != currentRevision {
 		a.setApplyRevision(nextRevision)
 		slog.Info("Apply batch synced", "revision", nextRevision)
+		return command.Result{Status: command.StatusSuccess, Phase: "completed", Level: command.LevelInfo, Message: "config apply synced", Payload: payload}
 	}
+	return command.Result{Status: command.StatusSuccess, Phase: "not_modified", Level: command.LevelInfo, Message: "config apply not modified", Payload: payload}
 }
 
 func (a *Agent) beginSync() bool {
@@ -737,6 +841,14 @@ func (a *Agent) beginBatchSync() bool {
 
 func (a *Agent) endBatchSync() {
 	a.batchSyncInFlight.Store(false)
+}
+
+func (a *Agent) beginCoreOperationSync() bool {
+	return a.coreOperationSyncInFlight.CompareAndSwap(false, true)
+}
+
+func (a *Agent) endCoreOperationSync() {
+	a.coreOperationSyncInFlight.Store(false)
 }
 
 func (a *Agent) getApplyRevision() int64 {
@@ -869,6 +981,16 @@ func buildCoreInstanceReport(instances []*core.CoreInstance) []*agentv1.CoreInst
 		})
 	}
 	return pbInstances
+}
+
+// determineListenPort returns the appropriate Xray listen port based on CDN status.
+// When CDN is enabled, Xray should listen on internal port 10000 (behind Caddy).
+// When CDN is disabled, Xray should listen on external port 443 directly.
+func (a *Agent) determineListenPort() []int {
+	if a.cfg.CDN.Enabled {
+		return []int{10000}
+	}
+	return []int{443}
 }
 
 // getCapabilities returns cached or fresh capabilities

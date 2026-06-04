@@ -2,6 +2,7 @@ import { adminApi } from "./client";
 import type {
   AgentHost,
   CreateAgentHostRequest,
+  CreateAgentHostResponse,
   UpdateAgentHostRequest,
   PaginatedResponse,
   PaginationParams,
@@ -30,8 +31,8 @@ export async function getAgentHost(id: number): Promise<AgentHost> {
 /**
  * Create a new agent host
  */
-export async function createAgentHost(data: CreateAgentHostRequest): Promise<AgentHost> {
-  const response = await adminApi.post<{ data: AgentHost }>("/agent-hosts", data);
+export async function createAgentHost(data: CreateAgentHostRequest): Promise<CreateAgentHostResponse> {
+  const response = await adminApi.post<{ data: CreateAgentHostResponse }>("/agent-hosts", data);
   return response.data.data;
 }
 

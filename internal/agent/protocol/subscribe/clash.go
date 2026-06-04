@@ -4,6 +4,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/creamcroissant/xboard/internal/template"
 )
 
 // ParseClash parses Clash YAML format proxies file.
@@ -49,7 +51,7 @@ func parseClashProxyLine(line string) ClientConfig {
 	case "vless", "vmess":
 		config.UUID = extractClashField(line, "uuid")
 		config.Flow = extractClashField(line, "flow")
-		config.Network = normalizeXHTTPNetwork(extractClashField(line, "network"))
+		config.Network = template.NormalizeXHTTPNetwork(extractClashField(line, "network"))
 
 		// Reality
 		if strings.Contains(line, "reality-opts") {
@@ -75,10 +77,38 @@ func parseClashProxyLine(line string) ClientConfig {
 		if config.Network == "xhttp" {
 			config.Path = extractNestedField(line, "xhttp-opts", "path")
 			config.Host = extractNestedField(line, "xhttp-opts", "host")
-			config.Mode = normalizeXHTTPMode(extractNestedField(line, "xhttp-opts", "mode"))
+			config.Mode = template.NormalizeXHTTPMode(extractNestedField(line, "xhttp-opts", "mode"))
 			config.Headers = extractNestedStringMap(line, "xhttp-opts", "headers")
+			// Use extractInlineBlock for nested brace fields (extra/xmux/download-settings)
+			xhttpBlock := extractInlineBlock(line, "xhttp-opts")
+			if rawExtra := extractInlineBlock(xhttpBlock, "extra"); rawExtra != "" {
+				if parsed := parseInlineStringMap(rawExtra); len(parsed) > 0 {
+					extra := make(map[string]any, len(parsed))
+					for k, v := range parsed {
+						extra[k] = v
+					}
+					config.Extra = extra
+				}
+			}
+			if rawXMux := extractInlineBlock(xhttpBlock, "xmux"); rawXMux != "" {
+				if parsed := parseInlineStringMap(rawXMux); len(parsed) > 0 {
+					xmux := make(map[string]any, len(parsed))
+					for k, v := range parsed {
+						xmux[k] = v
+					}
+					config.XMux = xmux
+				}
+			}
+			if rawDS := extractInlineBlock(xhttpBlock, "download-settings"); rawDS != "" {
+				if parsed := parseInlineStringMap(rawDS); len(parsed) > 0 {
+					ds := make(map[string]any, len(parsed))
+					for k, v := range parsed {
+						ds[k] = v
+					}
+					config.DownloadSettings = ds
+				}
+			}
 		}
-
 		// Multiplex
 		if strings.Contains(line, "smux") {
 			if extractNestedField(line, "smux", "enabled") == "true" {
@@ -253,16 +283,35 @@ func splitInlineMap(content string) []string {
 	var parts []string
 	start := 0
 	depth := 0
+	inDoubleQuote := false
+	inSingleQuote := false
 	for i := 0; i < len(content); i++ {
+		// Handle escape sequences
+		if content[i] == '\\' {
+			i++ // skip the escaped character
+			continue
+		}
 		switch content[i] {
+		case '"':
+			if !inSingleQuote {
+				inDoubleQuote = !inDoubleQuote
+			}
+		case '\'':
+			if !inDoubleQuote {
+				inSingleQuote = !inSingleQuote
+			}
 		case '{':
-			depth++
+			if !inDoubleQuote && !inSingleQuote {
+				depth++
+			}
 		case '}':
-			if depth > 0 {
-				depth--
+			if !inDoubleQuote && !inSingleQuote {
+				if depth > 0 {
+					depth--
+				}
 			}
 		case ',':
-			if depth == 0 {
+			if depth == 0 && !inDoubleQuote && !inSingleQuote {
 				parts = append(parts, content[start:i])
 				start = i + 1
 			}

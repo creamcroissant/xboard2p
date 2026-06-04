@@ -70,7 +70,7 @@ export default function Knowledge() {
 
       <div className="grid gap-4 md:grid-cols-2">
         {articles.map((article) => (
-          <Card key={article.id} className="transition-shadow hover:shadow-md">
+          <Card key={article.id} className="transition-colors hover:border-primary/30">
             <CardHeader className="flex items-start gap-3 pb-2">
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
                 <FileText size={18} />

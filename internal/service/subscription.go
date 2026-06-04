@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/creamcroissant/xboard/internal/async"
 	"github.com/creamcroissant/xboard/internal/api/requestctx"
+	"github.com/creamcroissant/xboard/internal/async"
 	"github.com/creamcroissant/xboard/internal/protocol"
 	"github.com/creamcroissant/xboard/internal/repository"
 	"github.com/creamcroissant/xboard/internal/support/i18n"
@@ -55,6 +55,8 @@ type subscriptionService struct {
 	settings  repository.SettingRepository
 	plans     repository.PlanRepository
 	templates repository.SubscriptionTemplateRepository
+	sources   SubscriptionSourceService
+	filter    SubscriptionFilterService
 	protocols *protocol.Manager
 	telemetry ServerTelemetryService
 	subLogs   *async.SubscriptionLogQueue
@@ -73,8 +75,12 @@ type protocolSettings struct {
 }
 
 // NewSubscriptionService 组装订阅服务依赖。
-func NewSubscriptionService(users repository.UserRepository, servers repository.ServerRepository, settings repository.SettingRepository, plans repository.PlanRepository, templates repository.SubscriptionTemplateRepository, manager *protocol.Manager, telemetry ServerTelemetryService, subLogs *async.SubscriptionLogQueue, obfuscate bool, selection UserServerSelectionService, i18nMgr *i18n.Manager) SubscriptionService {
-	return &subscriptionService{users: users, servers: servers, settings: settings, plans: plans, templates: templates, protocols: manager, telemetry: telemetry, subLogs: subLogs, obfuscate: obfuscate, selection: selection, i18n: i18nMgr}
+func NewSubscriptionService(users repository.UserRepository, servers repository.ServerRepository, settings repository.SettingRepository, plans repository.PlanRepository, templates repository.SubscriptionTemplateRepository, sources SubscriptionSourceService, manager *protocol.Manager, telemetry ServerTelemetryService, subLogs *async.SubscriptionLogQueue, obfuscate bool, selection UserServerSelectionService, i18nMgr *i18n.Manager, filters ...SubscriptionFilterService) SubscriptionService {
+	var filter SubscriptionFilterService
+	if len(filters) > 0 {
+		filter = filters[0]
+	}
+	return &subscriptionService{users: users, servers: servers, settings: settings, plans: plans, templates: templates, sources: sources, filter: filter, protocols: manager, telemetry: telemetry, subLogs: subLogs, obfuscate: obfuscate, selection: selection, i18n: i18nMgr}
 }
 
 // queryServers 根据用户显式选择、用户分组与套餐分组决定可用节点。
@@ -132,6 +138,46 @@ func (s *subscriptionService) queryServers(ctx context.Context, user *repository
 	return s.servers.FindAllVisible(ctx)
 }
 
+func (s *subscriptionService) filterForSubscription(ctx context.Context, user *repository.User, allowedTypes map[string]struct{}, keywords []string, tagsFilter []string, lang string) ([]*repository.Server, []protocol.Node, error) {
+	if s.filter != nil {
+		result, err := s.filter.Filter(ctx, SubscriptionFilterRequest{User: user, AllowedTypes: allowedTypes, Keywords: keywords, Tags: tagsFilter, PersistReasons: true})
+		if err == nil && result != nil {
+			return result.Servers, result.SourceNodes, nil
+		}
+		if err != nil && err != ErrNotImplemented {
+			return nil, nil, err
+		}
+	}
+
+	servers, err := s.queryServers(ctx, user, lang)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(tagsFilter) > 0 {
+		servers = filterServersByTags(servers, tagsFilter)
+	}
+	filtered, _ := filterSubscriptionServers(servers, allowedTypes, keywords)
+	if s.telemetry != nil {
+		online := make([]*repository.Server, 0, len(filtered))
+		for _, server := range filtered {
+			if s.telemetry.IsNodeOnline(ctx, server) {
+				online = append(online, server)
+			}
+		}
+		filtered = online
+	}
+
+	sourceNodes := []protocol.Node{}
+	if s.sources != nil {
+		nodes, err := s.sources.BuildEnabledNodes(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		sourceNodes = filterSubscriptionNodes(nodes, allowedTypes, keywords, tagsFilter)
+	}
+	return filtered, sourceNodes, nil
+}
+
 // Subscribe 生成用户订阅内容，按类型/关键词/标签过滤并套用协议模板。
 func (s *subscriptionService) Subscribe(ctx context.Context, userID string, params SubscriptionParams) (*SubscriptionResult, error) {
 	lang := strings.TrimSpace(params.Lang)
@@ -149,35 +195,15 @@ func (s *subscriptionService) Subscribe(ctx context.Context, userID string, para
 	if !isServerAccessAllowed(user) {
 		return nil, ErrUserNotEligible
 	}
-	servers, err := s.queryServers(ctx, user, lang)
+	allowedTypes := parseRequestedTypes(params.Types)
+	keywords := parseFilterKeywords(params.Filter)
+	tagsFilter := parseTagsFilter(params.Tags)
+	servers, sourceNodes, err := s.filterForSubscription(ctx, user, allowedTypes, keywords, tagsFilter, lang)
 	if err != nil {
 		return nil, err
 	}
 
-	// 按标签过滤节点
-	tagsFilter := parseTagsFilter(params.Tags)
-	if len(tagsFilter) > 0 {
-		servers = filterServersByTags(servers, tagsFilter)
-	}
-
-	// 按类型与关键词过滤
-	allowedTypes := parseRequestedTypes(params.Types)
-	keywords := parseFilterKeywords(params.Filter)
-	filtered, _ := filterSubscriptionServers(servers, allowedTypes, keywords)
-
-	// 若开启遥测，剔除离线节点
-	var online []*repository.Server
-	if s.telemetry != nil {
-		for _, server := range filtered {
-			if s.telemetry.IsNodeOnline(ctx, server) {
-				online = append(online, server)
-			}
-		}
-	} else {
-		online = filtered
-	}
-
-	hooked := applyProtocolServerHooks(ctx, online, user)
+	hooked := applyProtocolServerHooks(ctx, servers, user)
 	clientInfo := detectClientInfo(params.Flag, params.UserAgent, s.protocols.Flags())
 	if s.obfuscate && clientInfo.Name == "" {
 		return nil, ErrNotFound
@@ -200,6 +226,7 @@ func (s *subscriptionService) Subscribe(ctx context.Context, userID string, para
 
 	// 构建节点列表并应用个性化显示
 	nodes := buildProtocolNodes(hooked, user)
+	nodes = append(nodes, sourceNodes...)
 	nodes = personalizeNodeNames(nodes, user, params.ShowUserInfo, lang, s.i18n)
 
 	request := protocol.BuildRequest{
@@ -233,11 +260,11 @@ func (s *subscriptionService) Subscribe(ctx context.Context, userID string, para
 	// 异步记录订阅访问日志
 	if s.subLogs != nil {
 		s.subLogs.Enqueue(&repository.SubscriptionLog{
-			UserID:       user.ID,
-			IP:           "127.0.0.1", // TODO: Get real IP from context or params if available
-			UserAgent:    params.UserAgent,
-			Type:         clientInfo.Name,
-			URL:          params.URL,
+			UserID:    user.ID,
+			IP:        "127.0.0.1", // TODO: Get real IP from context or params if available
+			UserAgent: params.UserAgent,
+			Type:      clientInfo.Name,
+			URL:       params.URL,
 		})
 	}
 
@@ -252,8 +279,8 @@ func (s *subscriptionService) Subscribe(ctx context.Context, userID string, para
 // loadProtocolSettings 读取订阅相关的系统配置。
 func (s *subscriptionService) loadProtocolSettings(ctx context.Context) protocolSettings {
 	return protocolSettings{
-		AppName:       s.settingString(ctx, "app_name", "XBoard"),
-		AppURL:        s.settingString(ctx, "app_url", ""),
+		AppName:         s.settingString(ctx, "app_name", "XBoard"),
+		AppURL:          s.settingString(ctx, "app_url", ""),
 		ClashTemplate:   s.settingString(ctx, "subscribe_template_clash", ""),
 		SurgeTemplate:   s.settingString(ctx, "subscribe_template_surge", ""),
 		SingboxTemplate: s.settingString(ctx, "subscribe_template_singbox", ""),

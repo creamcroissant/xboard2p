@@ -117,7 +117,7 @@ export default function Install() {
 
       <Card className="w-full max-w-md border border-border/80 shadow-sm">
         <CardHeader className="items-center space-y-2 pt-8 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary font-semibold">
+          <div className="flex h-12 w-12 items-center justify-center rounded-md bg-primary/10 text-primary font-semibold">
             X
           </div>
           <div className="space-y-1">
@@ -172,7 +172,15 @@ export default function Install() {
               </div>
             </div>
 
-            <p className="-mt-2 text-xs text-muted-foreground">{t("install.hint")}</p>
+            <div className="-mt-2 space-y-1 text-xs leading-5 text-muted-foreground">
+              <p>{t("install.hint")}</p>
+              <p>{t("install.agentDeployHint")}</p>
+            </div>
+
+            <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs leading-5 text-muted-foreground">
+              <p className="font-medium text-foreground">{t("install.agentDiagnosticsTitle")}</p>
+              <p className="mt-1">{t("install.agentDiagnosticsHint")}</p>
+            </div>
 
             <div className="space-y-2">
               <label

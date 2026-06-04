@@ -10,6 +10,13 @@ import (
 	"github.com/creamcroissant/xboard/internal/support/i18n"
 )
 
+// CDNConfig carries CDN domain replacement parameters for xhttp subscription export.
+type CDNConfig struct {
+	Domain string // CDN 域名，替换 node.Host
+	Path   string // CDN 回源路径，替换 network_settings.path
+	Host   string // CDN Host 头
+}
+
 // Node represents a normalized server entry usable by protocol builders.
 type Node struct {
 	ID          int64
@@ -43,6 +50,7 @@ type BuildRequest struct {
 	UserTraffic   *UserTrafficInfo // 用户流量配额和使用信息
 	Lang          string
 	I18n          *i18n.Manager
+	CDN           *CDNConfig // CDN 域名替换配置，仅对 xhttp VLESS 节点生效
 }
 
 // UserTrafficInfo contains user traffic quota and usage for subscription headers.

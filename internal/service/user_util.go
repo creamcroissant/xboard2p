@@ -21,8 +21,8 @@ func newUserToken() string {
 }
 
 func hasLetterAndNumber(password string) bool {
-	var hasLetter bool
-	var hasNumber bool
+	hasLetter := false
+	hasNumber := false
 	for _, r := range password {
 		switch {
 		case unicode.IsLetter(r):

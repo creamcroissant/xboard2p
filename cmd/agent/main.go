@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/creamcroissant/xboard/internal/agent/config"
@@ -14,6 +15,10 @@ import (
 )
 
 var (
+	Version   = "dev"
+	Commit    = "unknown"
+	BuildTime = "unknown"
+
 	configFile string
 	version    bool
 )
@@ -26,7 +31,7 @@ func init() {
 
 func main() {
 	if version {
-		fmt.Println("XBoard Agent v0.1.0")
+		fmt.Printf("XBoard Agent %s\n", Version)
 		return
 	}
 
@@ -42,6 +47,9 @@ func main() {
 	if err != nil {
 		slog.Error("Failed to load config", "path", configFile, "error", err)
 		os.Exit(1)
+	}
+	if strings.TrimSpace(cfg.Update.CurrentVersion) == "" {
+		cfg.Update.CurrentVersion = Version
 	}
 
 	// Initialize Agent

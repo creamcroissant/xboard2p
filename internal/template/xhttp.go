@@ -51,6 +51,31 @@ func MergeXHTTPConfig(settings *XHTTPConfig, host, path, mode string, headers ma
 		result.Extra = cloneXHTTPMap(settings.Extra)
 		result.XMux = cloneXHTTPMap(settings.XMux)
 		result.DownloadSettings = cloneXHTTPMap(settings.DownloadSettings)
+		// Deep-clone pointer fields to avoid shared state
+		if settings.NoGRPCHeader != nil {
+			v := *settings.NoGRPCHeader
+			result.NoGRPCHeader = &v
+		}
+		if settings.NoSSEHeader != nil {
+			v := *settings.NoSSEHeader
+			result.NoSSEHeader = &v
+		}
+		if settings.SCMaxBufferedPosts != nil {
+			v := *settings.SCMaxBufferedPosts
+			result.SCMaxBufferedPosts = &v
+		}
+		if settings.SCMaxEachPostBytes != nil {
+			v := *settings.SCMaxEachPostBytes
+			result.SCMaxEachPostBytes = &v
+		}
+		if settings.SCMinPostsInterval != nil {
+			v := *settings.SCMinPostsInterval
+			result.SCMinPostsInterval = &v
+		}
+		if settings.SCStreamUpServerSec != nil {
+			v := *settings.SCStreamUpServerSec
+			result.SCStreamUpServerSec = &v
+		}
 	}
 	if strings.TrimSpace(result.Host) == "" {
 		result.Host = strings.TrimSpace(host)
@@ -94,8 +119,8 @@ func BuildXHTTPSettingsMap(settings XHTTPConfig) map[string]any {
 	if path := strings.TrimSpace(settings.Path); path != "" {
 		result["path"] = path
 	}
-	if strings.TrimSpace(settings.Mode) != "" {
-		result["mode"] = NormalizeXHTTPMode(settings.Mode)
+	if mode := NormalizeXHTTPMode(settings.Mode); mode != "" && mode != XHTTPModeAuto {
+		result["mode"] = mode
 	}
 	if headers := cloneXHTTPHeaders(settings.Headers); len(headers) > 0 {
 		result["headers"] = headers
@@ -170,7 +195,7 @@ func cloneXHTTPHeaders(headers map[string]string) map[string]string {
 	result := make(map[string]string, len(headers))
 	for key, value := range headers {
 		key = strings.TrimSpace(key)
-		if key == "" || strings.EqualFold(key, "host") {
+		if key == "" {
 			continue
 		}
 		result[key] = strings.TrimSpace(value)

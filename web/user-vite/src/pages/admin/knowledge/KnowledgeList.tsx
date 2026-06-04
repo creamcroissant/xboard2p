@@ -146,7 +146,7 @@ export default function KnowledgeList() {
     });
   };
 
-  const knowledgeList = listQuery.data ?? [];
+  const knowledgeList = useMemo(() => listQuery.data ?? [], [listQuery.data]);
 
   const sortedKnowledge = useMemo(() => {
     const items = [...knowledgeList];

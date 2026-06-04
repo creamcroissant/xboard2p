@@ -1,5 +1,5 @@
 import axios, { type AxiosInstance, type InternalAxiosRequestConfig } from "axios";
-import { getToken, clearToken } from "@/lib/auth";
+import { getToken, clearToken, isSamePath, redirectToLogin } from "@/lib/auth";
 import { API_VERSION, ROUTES } from "@/lib/constants";
 
 // Get base URL from runtime settings or environment
@@ -42,8 +42,8 @@ api.interceptors.response.use(
     // Needs bootstrap/installation
     if (status === 428 || error?.response?.data?.needs_bootstrap) {
       // Avoid redirect loop if already on install page
-      if (!window.location.pathname.startsWith("/install")) {
-        window.location.href = "/install";
+      if (!isSamePath(window.location.pathname, ROUTES.INSTALL)) {
+        window.location.href = ROUTES.INSTALL;
       }
       return Promise.reject(error);
     }
@@ -51,11 +51,7 @@ api.interceptors.response.use(
     // Unauthorized, clear token and redirect to login
     if (status === 401) {
       clearToken();
-      const returnUrl = encodeURIComponent(window.location.pathname + window.location.search);
-      const loginPath = ROUTES.LOGIN;
-      if (!window.location.pathname.startsWith(loginPath)) {
-        window.location.href = `${loginPath}?next=${returnUrl}`;
-      }
+      redirectToLogin(ROUTES.LOGIN);
       return Promise.reject(error);
     }
 

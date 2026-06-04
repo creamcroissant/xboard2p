@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/creamcroissant/xboard/internal/repository"
@@ -16,6 +17,9 @@ type InboundSpecService interface {
 	ListSpecs(ctx context.Context, filter ListInboundSpecFilter) ([]*repository.InboundSpec, int64, error)
 	GetSpecHistory(ctx context.Context, specID int64, limit, offset int) ([]*repository.InboundSpecRevision, error)
 	ImportFromApplied(ctx context.Context, req ImportInboundSpecRequest) (createdCount int64, err error)
+
+	// SetCDNService 注入 CDN 服务引用，保存 xhttp spec 后自动触发加速部署。
+	SetCDNService(cdn CDNService)
 }
 
 // UpsertInboundSpecRequest carries create/update fields for one inbound spec.
@@ -59,6 +63,7 @@ type inboundSpecService struct {
 	revisions      repository.InboundSpecRevisionRepository
 	inboundIndexes repository.InboundIndexRepository
 	compiler       ArtifactCompilerService
+	cdn            CDNService
 }
 
 // NewInboundSpecService creates InboundSpecService.
@@ -78,6 +83,11 @@ func NewInboundSpecService(
 		inboundIndexes: inboundIndexes,
 		compiler:       compiler,
 	}
+}
+
+// SetCDNService 设置 CDN 服务引用，用于保存 xhttp spec 时自动触发加速部署。
+func (s *inboundSpecService) SetCDNService(cdn CDNService) {
+	s.cdn = cdn
 }
 
 func (s *inboundSpecService) UpsertSpec(ctx context.Context, req UpsertInboundSpecRequest) (int64, int64, error) {
@@ -155,6 +165,10 @@ func (s *inboundSpecService) createSpec(ctx context.Context, req UpsertInboundSp
 	if err := s.revisions.Create(ctx, revision); err != nil {
 		return 0, 0, cleanup(err)
 	}
+
+	// 保存成功后，检查是否有关联的 CDN 加速配置
+	s.triggerCDNAccelerateDeploy(ctx, spec.ID)
+
 	return spec.ID, spec.DesiredRevision, nil
 }
 
@@ -258,6 +272,9 @@ func (s *inboundSpecService) updateSpec(ctx context.Context, req UpsertInboundSp
 	if err := s.revisions.Create(ctx, revision); err != nil {
 		return 0, 0, cleanup(err)
 	}
+
+	// 保存成功后，检查是否有关联的 CDN 加速配置
+	s.triggerCDNAccelerateDeploy(ctx, existing.ID)
 
 	return existing.ID, nextRevision, nil
 }
@@ -559,6 +576,29 @@ func (s *inboundSpecService) deleteDesiredArtifacts(ctx context.Context, agentHo
 		return nil
 	}
 	return s.compiler.DeleteArtifacts(ctx, agentHostID, coreType, desiredRevision)
+}
+
+// triggerCDNAccelerateDeploy 在保存 xhttp 类型的 inbound spec 后，
+// 检查是否有相关联的 CDN 加速配置，如有则触发一键部署。
+func (s *inboundSpecService) triggerCDNAccelerateDeploy(ctx context.Context, specID int64) {
+	if s == nil || s.cdn == nil {
+		return
+	}
+	accel, err := s.cdn.GetAccelerationByInboundSpec(ctx, specID)
+	if err != nil {
+		// 没有关联的加速配置是正常情况，不报错
+		return
+	}
+	if accel == nil || !accel.Enabled {
+		return
+	}
+	if err := s.cdn.DeployAcceleration(ctx, accel.ID); err != nil {
+		slog.Warn("trigger CDN accelerate deploy",
+			"spec_id", specID,
+			"acceleration_id", accel.ID,
+			"error", err,
+		)
+	}
 }
 
 func buildInboundSpecSnapshot(spec *repository.InboundSpec) ([]byte, error) {

@@ -78,6 +78,26 @@ import {
   Textarea,
 } from "@/components/ui";
 import { isAdminApiError } from "@/api/admin/client";
+import { XHTTPSettingsEditor } from "./XHTTPSettingsEditor";
+import {
+  applyXHTTPJSONDraftToCoreSpecific,
+  defaultXHTTPJSONDraftState,
+  ensureObjectField,
+  hasHostHeader,
+  hasJSONDraftKeys,
+  isRecord,
+  parseJSONDraftRecord,
+  parseJSONRecord,
+  parseXHTTPJSONDraftState,
+  pickCoreSpecificScope,
+  prettyJSON,
+  prettyXHTTPJSONDraftState,
+  safeParseJSON,
+  xhttpJSONDraftFromCoreSpecific,
+  xhttpSettingsFromStreamSettings,
+  xrayStreamSettingsFromCoreSpecific,
+  type XHTTPJSONDraftState,
+} from "./xhttpDraft";
 
 type CoreTypeOption = ConfigCenterCoreType;
 
@@ -89,13 +109,6 @@ type SpecFormState = {
   semantic_spec: string;
   core_specific: string;
   change_note: string;
-};
-
-type XHTTPJSONDraftState = {
-  headers: string;
-  extra: string;
-  xmux: string;
-  downloadSettings: string;
 };
 
 type ImportFormState = {
@@ -115,13 +128,6 @@ type ApplyFormState = {
 const CORE_OPTIONS: CoreTypeOption[] = ["sing-box", "xray"];
 const XRAY_TRANSPORT_OPTIONS: ConfigCenterXrayTransport[] = ["tcp", "ws", "grpc", "http", "xhttp"];
 const XHTTP_MODE_OPTIONS: ConfigCenterXHTTPMode[] = ["auto", "packet-up", "stream-up", "stream-one"];
-
-const defaultXHTTPJSONDraftState: XHTTPJSONDraftState = {
-  headers: "{}",
-  extra: "{}",
-  xmux: "{}",
-  downloadSettings: "{}",
-};
 
 const defaultSpecFormState: SpecFormState = {
   agent_host_id: 0,
@@ -147,29 +153,11 @@ const defaultApplyFormState: ApplyFormState = {
   previous_revision: "",
 };
 
-function safeParseJSON(input: string, fallback: unknown = {}): unknown {
-  const text = input.trim();
-  if (!text) return fallback;
-  return JSON.parse(text);
-}
-
-function prettyJSON(input: unknown): string {
-  try {
-    return JSON.stringify(input ?? {}, null, 2);
-  } catch {
-    return "{}";
-  }
-}
-
 function formatCoreType(coreType: ConfigCenterCoreType): CoreTypeOption {
   if (coreType === "xray") {
     return "xray";
   }
   return "sing-box";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function generateCompactUUID(): string {
@@ -228,46 +216,6 @@ async function generateRealityKeyPair(): Promise<{ privateKey: string; publicKey
   };
 }
 
-function ensureObjectField(target: Record<string, unknown>, key: string): Record<string, unknown> {
-  const current = target[key];
-  if (isRecord(current)) {
-    return current;
-  }
-  const next: Record<string, unknown> = {};
-  target[key] = next;
-  return next;
-}
-
-function pickCoreSpecificScope(
-  coreSpecific: Record<string, unknown>,
-  coreType: ConfigCenterCoreType
-): Record<string, unknown> {
-  if (coreType === "xray") {
-    if (isRecord(coreSpecific.xray)) {
-      return coreSpecific.xray;
-    }
-    return coreSpecific;
-  }
-
-  const singBoxScoped = coreSpecific["sing-box"];
-  if (isRecord(singBoxScoped)) {
-    return singBoxScoped;
-  }
-  if (isRecord(coreSpecific.singbox)) {
-    return coreSpecific.singbox;
-  }
-  return coreSpecific;
-}
-
-function parseJSONRecord(input: string): Record<string, unknown> | null {
-  try {
-    const parsed = safeParseJSON(input, {});
-    return isRecord(parsed) ? parsed : {};
-  } catch {
-    return null;
-  }
-}
-
 function normalizeXrayTransport(value: unknown): ConfigCenterXrayTransport {
   const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
   if (normalized === "splithttp") {
@@ -287,45 +235,6 @@ function normalizeXHTTPModeValue(value: unknown): ConfigCenterXHTTPMode {
   return "auto";
 }
 
-function stringValue(value: unknown): string {
-  return typeof value === "string" ? value : "";
-}
-
-function xrayStreamSettingsFromCoreSpecific(
-  coreSpecific: Record<string, unknown> | null,
-  coreType: ConfigCenterCoreType
-): Record<string, unknown> | null {
-  if (!coreSpecific || coreType !== "xray") {
-    return null;
-  }
-  const scope = pickCoreSpecificScope(coreSpecific, coreType);
-  return isRecord(scope.streamSettings) ? scope.streamSettings : {};
-}
-
-function xhttpSettingsFromStreamSettings(streamSettings: Record<string, unknown> | null): Record<string, unknown> {
-  if (!streamSettings || !isRecord(streamSettings.xhttpSettings)) {
-    return {};
-  }
-  return streamSettings.xhttpSettings;
-}
-
-function xhttpJSONDraftFromCoreSpecific(
-  coreSpecific: Record<string, unknown> | null,
-  coreType: ConfigCenterCoreType
-): XHTTPJSONDraftState {
-  const xhttpSettings = xhttpSettingsFromStreamSettings(
-    xrayStreamSettingsFromCoreSpecific(coreSpecific, coreType)
-  );
-  return {
-    headers: prettyJSON(isRecord(xhttpSettings.headers) ? xhttpSettings.headers : {}),
-    extra: prettyJSON(isRecord(xhttpSettings.extra) ? xhttpSettings.extra : {}),
-    xmux: prettyJSON(isRecord(xhttpSettings.xmux) ? xhttpSettings.xmux : {}),
-    downloadSettings: prettyJSON(
-      isRecord(xhttpSettings.downloadSettings) ? xhttpSettings.downloadSettings : {}
-    ),
-  };
-}
-
 function setOptionalString(target: Record<string, unknown>, key: string, value: string) {
   const next = value.trim();
   if (next) {
@@ -333,24 +242,6 @@ function setOptionalString(target: Record<string, unknown>, key: string, value: 
   } else {
     delete target[key];
   }
-}
-
-function parseJSONDraftRecord(input: string): Record<string, unknown> | null {
-  const parsed = parseJSONRecord(input);
-  if (!parsed) {
-    return null;
-  }
-  return { ...parsed };
-}
-
-function hasJSONDraftKeys(input: string): boolean {
-  const parsed = parseJSONDraftRecord(input);
-  return Boolean(parsed && Object.keys(parsed).length > 0);
-}
-
-function hasHostHeader(input: string): boolean {
-  const parsed = parseJSONDraftRecord(input);
-  return Boolean(parsed && Object.keys(parsed).some((key) => key.trim().toLowerCase() === "host"));
 }
 
 function hasMeaningfulValue(value: unknown): boolean {
@@ -976,15 +867,36 @@ export default function ConfigCenterPage() {
         return;
       }
 
+      const semanticSpec = safeParseJSON(specForm.semantic_spec, {});
+      let coreSpecific = safeParseJSON(specForm.core_specific, {});
+      let nextXHTTPJsonDraft: XHTTPJSONDraftState | null = null;
+
+      if (isXHTTPSelected) {
+        const parsedDraft = parseXHTTPJSONDraftState(xhttpJsonDraft);
+        if (!parsedDraft) {
+          toast.error(t("admin.configCenter.messages.invalidJson"));
+          return;
+        }
+        const coreSpecificRecord = isRecord(coreSpecific) ? coreSpecific : {};
+        applyXHTTPJSONDraftToCoreSpecific(coreSpecificRecord, specForm.core_type, parsedDraft);
+        coreSpecific = coreSpecificRecord;
+        nextXHTTPJsonDraft = prettyXHTTPJSONDraftState(parsedDraft);
+      }
+
       const payload: UpsertConfigCenterSpecRequest = {
         agent_host_id: specForm.agent_host_id,
         core_type: specForm.core_type,
         tag: specForm.tag.trim(),
         enabled: specForm.enabled,
-        semantic_spec: safeParseJSON(specForm.semantic_spec, {}),
-        core_specific: safeParseJSON(specForm.core_specific, {}),
+        semantic_spec: semanticSpec,
+        core_specific: coreSpecific,
         change_note: specForm.change_note.trim() || undefined,
       };
+
+      if (nextXHTTPJsonDraft) {
+        setXHTTPJsonDraft(nextXHTTPJsonDraft);
+        setSpecForm((prev) => ({ ...prev, core_specific: prettyJSON(coreSpecific) }));
+      }
 
       if (selectedSpec) {
         updateSpecMutation.mutate({ specId: selectedSpec.id, payload });
@@ -1918,155 +1830,24 @@ export default function ConfigCenterPage() {
             </div>
 
             {specForm.core_type === "xray" && (
-              <div className="space-y-4 rounded-md border bg-muted/20 p-4" data-testid="config-center-xhttp-editor">
-                <div className="space-y-1">
-                  <h3 className="text-sm font-semibold">{t("admin.configCenter.xhttp.title")}</h3>
-                  <p className="text-xs text-muted-foreground">{t("admin.configCenter.xhttp.description")}</p>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">{t("admin.configCenter.xhttp.fields.transport")}</label>
-                    <Select value={xrayTransport} onValueChange={handleXrayTransportChange}>
-                      <SelectTrigger data-testid="config-center-xray-transport">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {XRAY_TRANSPORT_OPTIONS.map((item) => (
-                          <SelectItem key={item} value={item}>
-                            {t(`admin.configCenter.xhttp.transportOptions.${item}`)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">{t("admin.configCenter.xhttp.fields.host")}</label>
-                    <Input
-                      data-testid="config-center-xhttp-host"
-                      value={stringValue(xhttpSettings.host)}
-                      onChange={(event) => handleXHTTPStringChange("host", event.target.value)}
-                      placeholder={t("admin.configCenter.xhttp.placeholders.host")}
-                      disabled={!isXHTTPSelected}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">{t("admin.configCenter.xhttp.fields.path")}</label>
-                    <Input
-                      data-testid="config-center-xhttp-path"
-                      value={stringValue(xhttpSettings.path)}
-                      onChange={(event) => handleXHTTPStringChange("path", event.target.value)}
-                      placeholder={t("admin.configCenter.xhttp.placeholders.path")}
-                      disabled={!isXHTTPSelected}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">{t("admin.configCenter.xhttp.fields.mode")}</label>
-                    <Select value={xhttpMode} onValueChange={handleXHTTPModeChange} disabled={!isXHTTPSelected}>
-                      <SelectTrigger data-testid="config-center-xhttp-mode">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {XHTTP_MODE_OPTIONS.map((item) => (
-                          <SelectItem key={item} value={item}>
-                            {t(`admin.configCenter.xhttp.modeOptions.${item}`)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                {!isXHTTPSelected && (
-                  <p className="rounded-md border bg-background px-3 py-2 text-xs text-muted-foreground">
-                    {t("admin.configCenter.xhttp.disabledHint")}
-                  </p>
-                )}
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">{t("admin.configCenter.xhttp.fields.headers")}</label>
-                  <Textarea
-                    data-testid="config-center-xhttp-headers"
-                    className="min-h-[84px] font-mono text-xs"
-                    value={xhttpJsonDraft.headers}
-                    onChange={(event) =>
-                      setXHTTPJsonDraft((prev) => ({ ...prev, headers: event.target.value }))
-                    }
-                    onBlur={() => handleXHTTPJSONDraftBlur("headers")}
-                    placeholder={t("admin.configCenter.xhttp.placeholders.json")}
-                    disabled={!isXHTTPSelected}
-                  />
-                  <p className="text-xs text-muted-foreground">{t("admin.configCenter.xhttp.headersHint")}</p>
-                  {xhttpHasHostHeader && (
-                    <p className="text-xs text-destructive">{t("admin.configCenter.xhttp.hostHeaderWarning")}</p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <div>
-                    <p className="text-sm font-medium">{t("admin.configCenter.xhttp.advancedTitle")}</p>
-                    <p className="text-xs text-muted-foreground">{t("admin.configCenter.xhttp.advancedDescription")}</p>
-                  </div>
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                    <div className="space-y-2">
-                      <label className="text-xs font-medium text-muted-foreground">
-                        {t("admin.configCenter.xhttp.fields.extra")}
-                      </label>
-                      <Textarea
-                        data-testid="config-center-xhttp-extra"
-                        className="min-h-[96px] font-mono text-xs"
-                        value={xhttpJsonDraft.extra}
-                        onChange={(event) =>
-                          setXHTTPJsonDraft((prev) => ({ ...prev, extra: event.target.value }))
-                        }
-                        onBlur={() => handleXHTTPJSONDraftBlur("extra")}
-                        placeholder={t("admin.configCenter.xhttp.placeholders.json")}
-                        disabled={!isXHTTPSelected}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-xs font-medium text-muted-foreground">
-                        {t("admin.configCenter.xhttp.fields.xmux")}
-                      </label>
-                      <Textarea
-                        data-testid="config-center-xhttp-xmux"
-                        className="min-h-[96px] font-mono text-xs"
-                        value={xhttpJsonDraft.xmux}
-                        onChange={(event) =>
-                          setXHTTPJsonDraft((prev) => ({ ...prev, xmux: event.target.value }))
-                        }
-                        onBlur={() => handleXHTTPJSONDraftBlur("xmux")}
-                        placeholder={t("admin.configCenter.xhttp.placeholders.json")}
-                        disabled={!isXHTTPSelected}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-xs font-medium text-muted-foreground">
-                        {t("admin.configCenter.xhttp.fields.downloadSettings")}
-                      </label>
-                      <Textarea
-                        data-testid="config-center-xhttp-download-settings"
-                        className="min-h-[96px] font-mono text-xs"
-                        value={xhttpJsonDraft.downloadSettings}
-                        onChange={(event) =>
-                          setXHTTPJsonDraft((prev) => ({
-                            ...prev,
-                            downloadSettings: event.target.value,
-                          }))
-                        }
-                        onBlur={() => handleXHTTPJSONDraftBlur("downloadSettings")}
-                        placeholder={t("admin.configCenter.xhttp.placeholders.json")}
-                        disabled={!isXHTTPSelected}
-                      />
-                    </div>
-                  </div>
-                  {xhttpHasDownloadSettingsConflict && (
-                    <p className="text-xs text-destructive">
-                      {t("admin.configCenter.xhttp.streamOneDownloadWarning")}
-                    </p>
-                  )}
-                </div>
-              </div>
+              <XHTTPSettingsEditor
+                transportOptions={XRAY_TRANSPORT_OPTIONS}
+                modeOptions={XHTTP_MODE_OPTIONS}
+                xrayTransport={xrayTransport}
+                xhttpMode={xhttpMode}
+                xhttpSettings={xhttpSettings}
+                xhttpJsonDraft={xhttpJsonDraft}
+                isXHTTPSelected={isXHTTPSelected}
+                hasHostHeader={xhttpHasHostHeader}
+                hasDownloadSettingsConflict={xhttpHasDownloadSettingsConflict}
+                onTransportChange={handleXrayTransportChange}
+                onStringChange={handleXHTTPStringChange}
+                onModeChange={handleXHTTPModeChange}
+                onDraftChange={(field, value) =>
+                  setXHTTPJsonDraft((prev) => ({ ...prev, [field]: value }))
+                }
+                onDraftBlur={handleXHTTPJSONDraftBlur}
+              />
             )}
 
             <div className="space-y-2">

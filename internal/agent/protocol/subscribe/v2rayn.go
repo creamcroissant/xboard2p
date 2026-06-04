@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/creamcroissant/xboard/internal/template"
 )
 
 // ParseV2RayN parses V2RayN URL format (base64 encoded or plain URLs).
@@ -76,7 +78,7 @@ func parseVLESSURL(urlStr string) ClientConfig {
 
 	params := u.Query()
 	config.Flow = params.Get("flow")
-	config.Network = normalizeXHTTPNetwork(params.Get("type"))
+	config.Network = template.NormalizeXHTTPNetwork(params.Get("type"))
 	if config.Network == "" {
 		config.Network = "tcp"
 	}
@@ -104,25 +106,13 @@ func parseVLESSURL(urlStr string) ClientConfig {
 	} else if config.Network == "xhttp" {
 		config.Path = params.Get("path")
 		config.Host = params.Get("host")
-		config.Mode = normalizeXHTTPMode(params.Get("mode"))
+		config.Mode = template.NormalizeXHTTPMode(params.Get("mode"))
 		config.Extra = parseJSONMapParam(params.Get("extra"))
 		config.XMux = parseJSONMapParam(params.Get("xmux"))
 		config.DownloadSettings = parseJSONMapParam(params.Get("downloadSettings"))
 	}
 
 	return config
-}
-
-func normalizeXHTTPNetwork(network string) string {
-	normalized := strings.ToLower(strings.TrimSpace(network))
-	if normalized == "splithttp" {
-		return "xhttp"
-	}
-	return normalized
-}
-
-func normalizeXHTTPMode(mode string) string {
-	return strings.ToLower(strings.TrimSpace(mode))
 }
 
 func parseJSONMapParam(raw string) map[string]any {

@@ -376,6 +376,36 @@ func (c *GRPCClient) ReportCoreOperation(ctx context.Context, report *agentv1.Re
 	})
 }
 
+// ReportOperationEvent reports operation progress events.
+func (c *GRPCClient) ReportOperationEvent(ctx context.Context, events []*agentv1.OperationEvent) (*agentv1.ReportOperationEventResponse, error) {
+	if len(events) == 0 {
+		return &agentv1.ReportOperationEventResponse{Success: true}, nil
+	}
+	return callUnary(ctx, c, CallConfig{}, func(ctx context.Context) (*agentv1.ReportOperationEventResponse, error) {
+		return c.client.ReportOperationEvent(ctx, &agentv1.ReportOperationEventRequest{Events: events})
+	})
+}
+
+// GetAgentCommands fetches queued lifecycle commands for this agent.
+func (c *GRPCClient) GetAgentCommands(ctx context.Context, req *agentv1.GetAgentCommandsRequest) (*agentv1.GetAgentCommandsResponse, error) {
+	if req == nil {
+		req = &agentv1.GetAgentCommandsRequest{}
+	}
+	return callUnary(ctx, c, CallConfig{}, func(ctx context.Context) (*agentv1.GetAgentCommandsResponse, error) {
+		return c.client.GetAgentCommands(ctx, req)
+	})
+}
+
+// ReportAgentCommand reports lifecycle command events.
+func (c *GRPCClient) ReportAgentCommand(ctx context.Context, report *agentv1.ReportAgentCommandRequest) (*agentv1.ReportAgentCommandResponse, error) {
+	if report == nil {
+		report = &agentv1.ReportAgentCommandRequest{}
+	}
+	return callUnary(ctx, c, CallConfig{}, func(ctx context.Context) (*agentv1.ReportAgentCommandResponse, error) {
+		return c.client.ReportAgentCommand(ctx, report)
+	})
+}
+
 // ReportAccessLogs reports access logs
 func (c *GRPCClient) ReportAccessLogs(ctx context.Context, report *agentv1.AccessLogReport) (*agentv1.AccessLogResponse, error) {
 	return callUnary(ctx, c, CallConfig{}, func(ctx context.Context) (*agentv1.AccessLogResponse, error) {

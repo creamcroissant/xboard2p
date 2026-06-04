@@ -25,9 +25,10 @@ type AdminSystemSettingsService interface {
 	SaveSettings(ctx context.Context, category string, settings map[string]string) error
 	Get(ctx context.Context, key string) (string, error)
 	TestSMTP(ctx context.Context, config SMTPConfig) error
-	ResetCommunicationKey(ctx context.Context) (string, error)
-	GetMaskedCommunicationKey(ctx context.Context) (string, error)
-	GetCommunicationKey(ctx context.Context) (string, error)
+	ResetCommunicationKey(ctx context.Context, req CommunicationKeyActionRequest) (CommunicationKeyResult, error)
+	GetMaskedCommunicationKey(ctx context.Context) (CommunicationKeyResult, error)
+	GetCommunicationKey(ctx context.Context, req CommunicationKeyActionRequest) (CommunicationKeyResult, error)
+	AuditCommunicationKeyAction(ctx context.Context, req CommunicationKeyAuditRequest)
 }
 
 // SMTPConfig 描述 SMTP 测试所需字段。
@@ -39,6 +40,30 @@ type SMTPConfig struct {
 	Password    string
 	FromAddress string
 	ToAddress   string
+}
+
+type CommunicationKeyActionRequest struct {
+	ActorID   string
+	IP        string
+	UserAgent string
+}
+
+type CommunicationKeyAuditRequest struct {
+	Action    string
+	ActorID   string
+	IP        string
+	UserAgent string
+	Result    string
+	Reason    string
+}
+
+type CommunicationKeyResult struct {
+	Key          string `json:"key"`
+	Masked       bool   `json:"masked"`
+	HasValue     bool   `json:"has_value"`
+	Impact       string `json:"impact,omitempty"`
+	Generated    bool   `json:"generated,omitempty"`
+	LastModified int64  `json:"last_modified,omitempty"`
 }
 
 // AdminSystemSettingsOptions 注入系统设置服务依赖。
@@ -60,6 +85,8 @@ const communicationKeySettingKey = "communication_key" // Used for first-time ag
 const communicationKeyLength = 32
 const communicationKeyMaskRune = '*'
 const communicationKeyVisibleSuffix = 4
+const communicationKeyMaskedPlaceholder = "__XB_COMMUNICATION_KEY_MASKED__"
+const communicationKeyResetImpact = "Reset affects only future first registrations; existing agent host tokens remain valid."
 
 const nodeSettingsCategory = "node"
 const nodeAgentGRPCAddressCanonicalKey = "agent_grpc_address"
@@ -160,7 +187,10 @@ func (s *adminSystemSettingsService) SaveSettings(ctx context.Context, category 
 	if len(settings) == 0 {
 		return nil
 	}
-	normalizedSettings := prepareCategorySettingsForSave(trimmedCategory, settings)
+	normalizedSettings, err := s.prepareCategorySettingsForSave(ctx, trimmedCategory, settings)
+	if err != nil {
+		return err
+	}
 	if err := validateCategorySettings(trimmedCategory, normalizedSettings); err != nil {
 		return err
 	}
@@ -231,13 +261,14 @@ func (s *adminSystemSettingsService) TestSMTP(ctx context.Context, config SMTPCo
 }
 
 // ResetCommunicationKey 生成新的通讯密钥并写入 node 分类。
-func (s *adminSystemSettingsService) ResetCommunicationKey(ctx context.Context) (string, error) {
+func (s *adminSystemSettingsService) ResetCommunicationKey(ctx context.Context, req CommunicationKeyActionRequest) (CommunicationKeyResult, error) {
 	if s == nil || s.settings == nil {
-		return "", fmt.Errorf("admin system settings service not configured / 系统设置服务未配置")
+		return CommunicationKeyResult{}, fmt.Errorf("admin system settings service not configured / 系统设置服务未配置")
 	}
 	newKey, err := generateCommunicationKey()
 	if err != nil {
-		return "", err
+		s.auditCommunicationKeyEvent(ctx, CommunicationKeyAuditRequest{Action: "reset", ActorID: req.ActorID, IP: req.IP, UserAgent: req.UserAgent, Result: "failure", Reason: "generate_failed"})
+		return CommunicationKeyResult{}, err
 	}
 	now := s.now().Unix()
 	entry := &repository.Setting{
@@ -247,52 +278,68 @@ func (s *adminSystemSettingsService) ResetCommunicationKey(ctx context.Context) 
 		UpdatedAt: now,
 	}
 	if err := s.settings.Upsert(ctx, entry); err != nil {
-		return "", err
+		s.auditCommunicationKeyEvent(ctx, CommunicationKeyAuditRequest{Action: "reset", ActorID: req.ActorID, IP: req.IP, UserAgent: req.UserAgent, Result: "failure", Reason: "save_failed"})
+		return CommunicationKeyResult{}, err
 	}
-	return newKey, nil
+	s.auditCommunicationKeyEvent(ctx, CommunicationKeyAuditRequest{Action: "reset", ActorID: req.ActorID, IP: req.IP, UserAgent: req.UserAgent, Result: "success"})
+	return CommunicationKeyResult{Key: newKey, Masked: false, HasValue: true, Impact: communicationKeyResetImpact, Generated: true, LastModified: now}, nil
 }
 
 // GetMaskedCommunicationKey 返回掩码后的通讯密钥。
-func (s *adminSystemSettingsService) GetMaskedCommunicationKey(ctx context.Context) (string, error) {
-	key, err := s.loadCommunicationKey(ctx)
+func (s *adminSystemSettingsService) GetMaskedCommunicationKey(ctx context.Context) (CommunicationKeyResult, error) {
+	entry, generated, err := s.loadCommunicationKey(ctx)
 	if err != nil {
-		return "", err
+		return CommunicationKeyResult{}, err
 	}
-	return maskSecret(key, communicationKeyMaskRune, communicationKeyVisibleSuffix), nil
+	key := strings.TrimSpace(entry.Value)
+	return CommunicationKeyResult{Key: maskSecret(key, communicationKeyMaskRune, communicationKeyVisibleSuffix), Masked: true, HasValue: key != "", Generated: generated, LastModified: entry.UpdatedAt}, nil
 }
 
 // GetCommunicationKey 返回明文密钥，并记录审计事件。
-func (s *adminSystemSettingsService) GetCommunicationKey(ctx context.Context) (string, error) {
-	key, err := s.loadCommunicationKey(ctx)
+func (s *adminSystemSettingsService) GetCommunicationKey(ctx context.Context, req CommunicationKeyActionRequest) (CommunicationKeyResult, error) {
+	entry, _, err := s.loadCommunicationKey(ctx)
 	if err != nil {
-		return "", err
+		s.auditCommunicationKeyEvent(ctx, CommunicationKeyAuditRequest{Action: "reveal", ActorID: req.ActorID, IP: req.IP, UserAgent: req.UserAgent, Result: "failure", Reason: "load_failed"})
+		return CommunicationKeyResult{}, err
 	}
-	if s.audit != nil {
-		s.audit.Record(ctx, security.Event{
-			Kind:     "admin.system.communication_key.reveal",
-			ActorID:  "admin",
-			Metadata: map[string]any{"setting": communicationKeySettingKey},
-		})
-	}
-	return key, nil
+	s.auditCommunicationKeyEvent(ctx, CommunicationKeyAuditRequest{Action: "reveal", ActorID: req.ActorID, IP: req.IP, UserAgent: req.UserAgent, Result: "success"})
+	key := strings.TrimSpace(entry.Value)
+	return CommunicationKeyResult{Key: key, Masked: false, HasValue: key != "", LastModified: entry.UpdatedAt}, nil
+}
+
+func (s *adminSystemSettingsService) AuditCommunicationKeyAction(ctx context.Context, req CommunicationKeyAuditRequest) {
+	s.auditCommunicationKeyEvent(ctx, req)
 }
 
 // loadCommunicationKey 读取通讯密钥，不存在或为空则生成。
-func (s *adminSystemSettingsService) loadCommunicationKey(ctx context.Context) (string, error) {
+func (s *adminSystemSettingsService) loadCommunicationKey(ctx context.Context) (*repository.Setting, bool, error) {
 	if s == nil || s.settings == nil {
-		return "", fmt.Errorf("admin system settings service not configured / 系统设置服务未配置")
+		return nil, false, fmt.Errorf("admin system settings service not configured / 系统设置服务未配置")
 	}
 	entry, err := s.settings.Get(ctx, communicationKeySettingKey)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
-			return s.ResetCommunicationKey(ctx)
+			return s.resetCommunicationKeyWithoutAudit(ctx)
 		}
-		return "", err
+		return nil, false, err
 	}
 	if entry == nil || strings.TrimSpace(entry.Value) == "" {
-		return s.ResetCommunicationKey(ctx)
+		return s.resetCommunicationKeyWithoutAudit(ctx)
 	}
-	return entry.Value, nil
+	return entry, false, nil
+}
+
+func (s *adminSystemSettingsService) resetCommunicationKeyWithoutAudit(ctx context.Context) (*repository.Setting, bool, error) {
+	newKey, err := generateCommunicationKey()
+	if err != nil {
+		return nil, false, err
+	}
+	now := s.now().Unix()
+	entry := &repository.Setting{Key: communicationKeySettingKey, Value: newKey, Category: nodeSettingsCategory, UpdatedAt: now}
+	if err := s.settings.Upsert(ctx, entry); err != nil {
+		return nil, false, err
+	}
+	return entry, true, nil
 }
 
 // maskSecret 仅保留尾部可见字符，其余使用掩码符。
@@ -333,6 +380,13 @@ func normalizeCategorySettingsForResponse(category string, settings map[string]s
 	}
 	result := make(map[string]string, len(settings)+1)
 	for key, value := range settings {
+		if key == communicationKeySettingKey {
+			trimmed := strings.TrimSpace(value)
+			result[key] = maskSecret(trimmed, communicationKeyMaskRune, communicationKeyVisibleSuffix)
+			result["communication_key_has_value"] = strconv.FormatBool(trimmed != "")
+			result["communication_key_masked"] = "true"
+			continue
+		}
 		result[key] = value
 	}
 	address := firstNonEmptySettingValue(settings, nodeAgentGRPCAddressKeyPriority)
@@ -342,12 +396,25 @@ func normalizeCategorySettingsForResponse(category string, settings map[string]s
 	return result
 }
 
-func prepareCategorySettingsForSave(category string, settings map[string]string) map[string]string {
+func (s *adminSystemSettingsService) prepareCategorySettingsForSave(ctx context.Context, category string, settings map[string]string) (map[string]string, error) {
 	if strings.TrimSpace(category) != nodeSettingsCategory {
-		return settings
+		return settings, nil
 	}
 	result := make(map[string]string, len(settings)+1)
 	for key, value := range settings {
+		if key == communicationKeySettingKey && isCommunicationKeyMaskedPlaceholder(value) {
+			entry, err := s.settings.Get(ctx, communicationKeySettingKey)
+			if err != nil {
+				if errors.Is(err, repository.ErrNotFound) {
+					continue
+				}
+				return nil, err
+			}
+			if entry != nil {
+				result[key] = entry.Value
+			}
+			continue
+		}
 		result[key] = value
 	}
 	address := firstNonEmptySettingValue(settings, nodeAgentGRPCAddressKeyPriority)
@@ -359,13 +426,35 @@ func prepareCategorySettingsForSave(category string, settings map[string]string)
 		for _, legacyKey := range nodeAgentGRPCAddressLegacyKeys {
 			delete(result, legacyKey)
 		}
-		return result
+		return result, nil
 	}
 	result[nodeAgentGRPCAddressCanonicalKey] = address
 	for _, legacyKey := range nodeAgentGRPCAddressLegacyKeys {
 		delete(result, legacyKey)
 	}
-	return result
+	return result, nil
+}
+
+func isCommunicationKeyMaskedPlaceholder(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	return trimmed == communicationKeyMaskedPlaceholder || (strings.Trim(trimmed, string(communicationKeyMaskRune)) == "" && trimmed != "")
+}
+
+func (s *adminSystemSettingsService) auditCommunicationKeyEvent(ctx context.Context, req CommunicationKeyAuditRequest) {
+	if s == nil || s.audit == nil {
+		return
+	}
+	metadata := map[string]any{"setting": communicationKeySettingKey, "action": req.Action, "result": req.Result}
+	if strings.TrimSpace(req.Reason) != "" {
+		metadata["reason"] = strings.TrimSpace(req.Reason)
+	}
+	s.audit.Record(ctx, security.Event{
+		Kind:      "admin.system.communication_key." + strings.TrimSpace(req.Action),
+		ActorID:   strings.TrimSpace(req.ActorID),
+		IP:        strings.TrimSpace(req.IP),
+		UserAgent: strings.TrimSpace(req.UserAgent),
+		Metadata:  metadata,
+	})
 }
 
 func firstNonEmptySettingValue(settings map[string]string, keys []string) string {

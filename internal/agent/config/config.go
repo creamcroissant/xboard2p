@@ -14,25 +14,30 @@ import (
 	"time"
 
 	"github.com/creamcroissant/xboard/internal/agent/protocol"
+	"github.com/creamcroissant/xboard/internal/agent/updater"
 	"gopkg.in/yaml.v3"
 )
 
 const (
-	defaultProxyPortRangeStart = 30000
-	defaultProxyPortRangeEnd   = 40000
-	defaultProxyMaxRetries     = 10
-	defaultProxyHealthTimeout  = 10 * time.Second
-	defaultProxyHealthInterval = 500 * time.Millisecond
-	defaultProxyDrainTimeout   = 5 * time.Second
-	defaultProxyNftBin         = "/usr/sbin/nft"
-	defaultProxyConntrackBin   = "conntrack"
-	defaultProxyNftTableName   = "xboard_proxy"
-	defaultProxyPIDDir         = "/var/run/xboard/cores"
-	defaultProxyCgroupBasePath = "/sys/fs/cgroup/xboard"
-	defaultPanelHTTPPort       = "8080"
-	defaultInstallScriptPath   = "/opt/xboard/deploy/agent.sh"
-	defaultSingBoxBinaryPath   = "/opt/xboard/bin/sing-box"
-	defaultXrayBinaryPath      = "/opt/xboard/bin/xray"
+	defaultProxyPortRangeStart    = 30000
+	defaultProxyPortRangeEnd      = 40000
+	defaultProxyMaxRetries        = 10
+	defaultProxyHealthTimeout     = 10 * time.Second
+	defaultProxyHealthInterval    = 500 * time.Millisecond
+	defaultProxyDrainTimeout      = 5 * time.Second
+	defaultProxyNftBin            = "/usr/sbin/nft"
+	defaultProxyConntrackBin      = "conntrack"
+	defaultProxyNftTableName      = "xboard_proxy"
+	defaultProxyPIDDir            = "/var/run/xboard/cores"
+	defaultProxyCgroupBasePath    = "/sys/fs/cgroup/xboard"
+	defaultPanelHTTPPort          = "8080"
+	defaultInstallScriptPath      = "/opt/xboard/deploy/agent.sh"
+	defaultSingBoxBinaryPath      = "/opt/xboard/bin/sing-box"
+	defaultXrayBinaryPath         = "/opt/xboard/bin/xray"
+	defaultUpdateHealthTimeout    = 2 * time.Minute
+	defaultUpdateMaxCrashCount    = 3
+	defaultUpdateJitterMax        = 30 * time.Second
+	defaultUpdateMaxDownloadBytes = 200 * 1024 * 1024
 )
 
 type Config struct {
@@ -46,6 +51,8 @@ type Config struct {
 	Protocol   ProtocolConfig   `yaml:"protocol"`
 	Forwarding ForwardingConfig `yaml:"forwarding"`
 	Proxy      ProxyConfig      `yaml:"proxy"`
+	Update     UpdateConfig     `yaml:"update"`
+	CDN        CDNConfig        `yaml:"cdn"`
 }
 
 // GRPCConfig holds gRPC client configuration for connecting to Panel
@@ -238,6 +245,21 @@ type IntervalConfig struct {
 	Report int `yaml:"report"` // Seconds
 }
 
+// CDNConfig holds Caddy CDN configuration.
+type CDNConfig struct {
+	// Enabled controls whether CDN management is active.
+	Enabled bool `yaml:"enabled"`
+
+	// BinPath is the path to the caddy binary.
+	BinPath string `yaml:"bin_path"`
+
+	// ConfigDir is the directory containing the Caddyfile.
+	ConfigDir string `yaml:"config_dir"`
+
+	// AdminAddr is the Caddy admin API address (e.g., "localhost:2019").
+	AdminAddr string `yaml:"admin_addr"`
+}
+
 type CoreConfig struct {
 	TemplatePath      string `yaml:"template_path"`
 	OutputPath        string `yaml:"output_path"`
@@ -251,6 +273,22 @@ type TrafficConfig struct {
 	Type      string `yaml:"type"`      // "netio", "none", "dummy", "xray_api"
 	Interface string `yaml:"interface"` // Network interface name, e.g., "eth0"; empty for all
 	Address   string `yaml:"address"`   // API address for xray_api type, e.g., "127.0.0.1:10085"
+}
+
+type UpdateConfig struct {
+	AutoEnabled      bool          `yaml:"auto_enabled"`
+	CurrentVersion   string        `yaml:"current_version"`
+	BinaryPath       string        `yaml:"binary_path"`
+	StatePath        string        `yaml:"state_path"`
+	BackupDir        string        `yaml:"backup_dir"`
+	ReleaseBaseURL   string        `yaml:"release_base_url"`
+	ReleaseRepo      string        `yaml:"release_repo"`
+	ReleaseTag       string        `yaml:"release_tag"`
+	HealthTimeout    time.Duration `yaml:"health_timeout"`
+	MaxCrashCount    int           `yaml:"max_crash_count"`
+	JitterMin        time.Duration `yaml:"jitter_min"`
+	JitterMax        time.Duration `yaml:"jitter_max"`
+	MaxDownloadBytes int64         `yaml:"max_download_bytes"`
 }
 
 // Load reads configuration from file
@@ -349,6 +387,29 @@ func applyDefaults(cfg *Config) error {
 	if strings.TrimSpace(cfg.Core.XrayBinaryPath) == "" {
 		cfg.Core.XrayBinaryPath = defaultXrayBinaryPath
 	}
+
+	if strings.TrimSpace(cfg.Update.ReleaseBaseURL) == "" {
+		cfg.Update.ReleaseBaseURL = updater.DefaultReleaseBaseURL
+	}
+	if strings.TrimSpace(cfg.Update.ReleaseRepo) == "" {
+		cfg.Update.ReleaseRepo = updater.DefaultReleaseRepo
+	}
+	if strings.TrimSpace(cfg.Update.ReleaseTag) == "" {
+		cfg.Update.ReleaseTag = updater.DefaultReleaseTag
+	}
+	if cfg.Update.HealthTimeout == 0 {
+		cfg.Update.HealthTimeout = defaultUpdateHealthTimeout
+	}
+	if cfg.Update.MaxCrashCount == 0 {
+		cfg.Update.MaxCrashCount = defaultUpdateMaxCrashCount
+	}
+	if cfg.Update.JitterMax == 0 {
+		cfg.Update.JitterMax = defaultUpdateJitterMax
+	}
+	if cfg.Update.MaxDownloadBytes == 0 {
+		cfg.Update.MaxDownloadBytes = defaultUpdateMaxDownloadBytes
+	}
+
 	// gRPC defaults
 	if cfg.GRPC.Keepalive.Time == 0 {
 		cfg.GRPC.Keepalive.Time = 30 * time.Second
@@ -431,6 +492,18 @@ func applyDefaults(cfg *Config) error {
 		if cfg.Proxy.CgroupBasePath == "" {
 			cfg.Proxy.CgroupBasePath = defaultProxyCgroupBasePath
 		}
+
+	}
+
+	// CDN defaults
+	if strings.TrimSpace(cfg.CDN.BinPath) == "" {
+		cfg.CDN.BinPath = "/opt/xboard/caddy/caddy"
+	}
+	if strings.TrimSpace(cfg.CDN.ConfigDir) == "" {
+		cfg.CDN.ConfigDir = "/opt/xboard/caddy"
+	}
+	if strings.TrimSpace(cfg.CDN.AdminAddr) == "" {
+		cfg.CDN.AdminAddr = "localhost:2019"
 	}
 
 	return nil
@@ -632,6 +705,9 @@ func (cfg *Config) Validate() error {
 	if _, err := protocol.NormalizeServiceAction(cfg.Protocol.ServiceAction, cfg.Protocol.AutoRestart); err != nil {
 		return err
 	}
+	if err := cfg.validateUpdateConfig(); err != nil {
+		return err
+	}
 	if cfg.Proxy.Enabled {
 		if cfg.Proxy.PortRangeStart <= 0 || cfg.Proxy.PortRangeEnd <= 0 || cfg.Proxy.PortRangeEnd < cfg.Proxy.PortRangeStart {
 			return fmt.Errorf("proxy port range is invalid")
@@ -641,6 +717,30 @@ func (cfg *Config) Validate() error {
 		}
 		if cfg.Proxy.HealthTimeout <= 0 || cfg.Proxy.HealthInterval <= 0 || cfg.Proxy.DrainTimeout <= 0 {
 			return fmt.Errorf("proxy timeouts must be positive")
+		}
+	}
+	return nil
+}
+
+func (cfg *Config) validateUpdateConfig() error {
+	if cfg.Update.HealthTimeout < 0 {
+		return fmt.Errorf("update.health_timeout must be non-negative")
+	}
+	if cfg.Update.MaxCrashCount < 0 {
+		return fmt.Errorf("update.max_crash_count must be non-negative")
+	}
+	if cfg.Update.JitterMin < 0 || cfg.Update.JitterMax < 0 {
+		return fmt.Errorf("update jitter must be non-negative")
+	}
+	if cfg.Update.JitterMax > 0 && cfg.Update.JitterMax < cfg.Update.JitterMin {
+		return fmt.Errorf("update.jitter_max must be greater than or equal to update.jitter_min")
+	}
+	if cfg.Update.MaxDownloadBytes < 0 {
+		return fmt.Errorf("update.max_download_bytes must be non-negative")
+	}
+	if strings.TrimSpace(cfg.Update.ReleaseBaseURL) != "" {
+		if _, err := updater.ParseBaseURL(cfg.Update.ReleaseBaseURL); err != nil {
+			return fmt.Errorf("update.release_base_url: %w", err)
 		}
 	}
 	return nil

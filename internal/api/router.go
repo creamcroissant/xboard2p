@@ -57,48 +57,55 @@ func resolveRateLimitConfig() (middleware.RateLimitConfig, bool) {
 }
 
 type Services struct {
-	Config              service.ConfigService
-	User                service.UserService
-	UserStat            service.UserStatService
-	UserKnowledge       service.UserKnowledgeService
-	UserNotice          service.UserNoticeService
-	Auth                service.AuthService
-	AdminPath           service.AdminPathService
-	Install             service.InstallService
-	AdminServer         service.AdminServerService
-	AdminNotice         service.AdminNoticeService
-	AdminKnowledge      service.AdminKnowledgeService
-	ServerAuth          service.ServerAuthService
-	ServerNode          service.ServerNodeService
-	Traffic             service.ServerTrafficService
-	Telemetry           service.ServerTelemetryService
-	Verify              service.VerificationService
-	Invite              service.InviteService
-	Password            service.PasswordService
-	Register            service.RegistrationService
-	MailLink            service.MailLinkService
-	Comm                service.CommService
-	AdminPlan           service.AdminPlanService
-	AdminUser           service.AdminUserService
-	AdminStat           service.AdminStatService
-	AdminNodeStat       service.AdminNodeStatService
-	AdminSystem         service.AdminSystemService
-	AdminSystemSettings service.AdminSystemSettingsService
-	AgentHost           service.AgentHostService
-	AgentCore           service.AgentCoreService
-	Forwarding          service.ForwardingService
-	AccessLog           service.AccessLogService
-	InboundSpec         service.InboundSpecService
-	DriftAndDiff        service.DriftAndDiffService
-	ApplyOrchestrator   service.ApplyOrchestratorService
-	Plan                service.PlanService
-	Server              service.ServerService
-	Subscription        service.SubscriptionService
-	UserSelection       service.UserServerSelectionService
-	ShortLink           service.ShortLinkService
-	TrafficQueue        *async.TrafficQueue
-	SubLogQueue         *async.SubscriptionLogQueue
-	I18n                *i18n.Manager
+	Config                  service.ConfigService
+	User                    service.UserService
+	UserStat                service.UserStatService
+	UserKnowledge           service.UserKnowledgeService
+	UserNotice              service.UserNoticeService
+	Auth                    service.AuthService
+	AdminPath               service.AdminPathService
+	Install                 service.InstallService
+	AdminServer             service.AdminServerService
+	AdminNotice             service.AdminNoticeService
+	AdminKnowledge          service.AdminKnowledgeService
+	ServerAuth              service.ServerAuthService
+	ServerNode              service.ServerNodeService
+	Traffic                 service.ServerTrafficService
+	Telemetry               service.ServerTelemetryService
+	Verify                  service.VerificationService
+	Invite                  service.InviteService
+	Password                service.PasswordService
+	Register                service.RegistrationService
+	MailLink                service.MailLinkService
+	Comm                    service.CommService
+	AdminPlan               service.AdminPlanService
+	AdminUser               service.AdminUserService
+	AdminStat               service.AdminStatService
+	AdminNodeStat           service.AdminNodeStatService
+	AdminSystem             service.AdminSystemService
+	AdminSystemSettings     service.AdminSystemSettingsService
+	AgentHost               service.AgentHostService
+	AgentCore               service.AgentCoreService
+	Forwarding              service.ForwardingService
+	AccessLog               service.AccessLogService
+	InboundSpec             service.InboundSpecService
+	DriftAndDiff            service.DriftAndDiffService
+	ApplyOrchestrator       service.ApplyOrchestratorService
+	OperationLog            service.OperationLogService
+	AgentLifecycleOperation service.AgentLifecycleOperationService
+	AgentTrafficLifecycle   service.AgentTrafficLifecycleService
+	BinaryVersion           service.BinaryVersionService
+	Plan                    service.PlanService
+	Server                  service.ServerService
+	Subscription            service.SubscriptionService
+	SubscriptionFilter      service.SubscriptionFilterService
+	SubscriptionSource      service.SubscriptionSourceService
+	UserSelection           service.UserServerSelectionService
+	ShortLink               service.ShortLinkService
+	CDN                     service.CDNService
+	TrafficQueue            *async.TrafficQueue
+	SubLogQueue             *async.SubscriptionLogQueue
+	I18n                    *i18n.Manager
 }
 
 // NewRouter wires minimal endpoints；其余 handler 会在后续逐步补齐。
@@ -353,7 +360,6 @@ func registerInstallRoutes(root chi.Router, logger *slog.Logger, install service
 	root.Handle("/install/*", http.HandlerFunc(page.serveAssets))
 }
 
-
 func registerAPIRoutes(root chi.Router, services Services) {
 	root.Route("/api", func(api chi.Router) {
 		// V1/V2 是历史遗留的版本号，两个同时保留，确保旧客户端还能访问。
@@ -364,7 +370,7 @@ func registerAPIRoutes(root chi.Router, services Services) {
 
 func registerV2Routes(api chi.Router, services Services) {
 	api.Route("/v2", func(v2 chi.Router) {
-		registerV2AdminRoutes(v2, services.Config, services.Auth, services.AdminPath, services.Plan, services.AdminPlan, services.AdminUser, services.AdminServer, services.AdminStat, services.AdminNodeStat, services.AdminSystem, services.AdminSystemSettings, services.AdminNotice, services.AdminKnowledge, services.Invite, services.AgentHost, services.AgentCore, services.Forwarding, services.AccessLog, services.InboundSpec, services.DriftAndDiff, services.ApplyOrchestrator, services.I18n)
+		registerV2AdminRoutes(v2, services.Config, services.Auth, services.AdminPath, services.Plan, services.AdminPlan, services.AdminUser, services.AdminServer, services.AdminStat, services.AdminNodeStat, services.AdminSystem, services.AdminSystemSettings, services.AdminNotice, services.AdminKnowledge, services.Invite, services.AgentHost, services.AgentCore, services.AgentLifecycleOperation, services.AgentTrafficLifecycle, services.BinaryVersion, services.Forwarding, services.CDN, services.AccessLog, services.InboundSpec, services.DriftAndDiff, services.ApplyOrchestrator, services.OperationLog, services.SubscriptionFilter, services.SubscriptionSource, services.I18n)
 		registerV2UserRoutes(v2, services.User, services.Auth, services.I18n)
 		registerV2PassportRoutes(v2, services.Auth, services.Verify, services.Invite, services.Password, services.Register, services.MailLink, services.Comm, services.I18n)
 		registerV2ServerRoutes(v2, services.ServerAuth, services.ServerNode, services.Telemetry, services.Traffic, services.TrafficQueue, services.I18n)
@@ -381,7 +387,7 @@ func registerV2GuestRoutes(v2 chi.Router, i18nManager *i18n.Manager) {
 	})
 }
 
-func registerV2AdminRoutes(v2 chi.Router, configService service.ConfigService, auth service.AuthService, adminPath service.AdminPathService, plan service.PlanService, adminPlan service.AdminPlanService, adminUser service.AdminUserService, adminServer service.AdminServerService, adminStat service.AdminStatService, adminNodeStat service.AdminNodeStatService, adminSystem service.AdminSystemService, adminSystemSettings service.AdminSystemSettingsService, adminNotice service.AdminNoticeService, adminKnowledge service.AdminKnowledgeService, inviteService service.InviteService, agentHost service.AgentHostService, agentCore service.AgentCoreService, forwarding service.ForwardingService, accessLog service.AccessLogService, inboundSpec service.InboundSpecService, driftAndDiff service.DriftAndDiffService, applyOrchestrator service.ApplyOrchestratorService, i18nManager *i18n.Manager) {
+func registerV2AdminRoutes(v2 chi.Router, configService service.ConfigService, auth service.AuthService, adminPath service.AdminPathService, plan service.PlanService, adminPlan service.AdminPlanService, adminUser service.AdminUserService, adminServer service.AdminServerService, adminStat service.AdminStatService, adminNodeStat service.AdminNodeStatService, adminSystem service.AdminSystemService, adminSystemSettings service.AdminSystemSettingsService, adminNotice service.AdminNoticeService, adminKnowledge service.AdminKnowledgeService, inviteService service.InviteService, agentHost service.AgentHostService, agentCore service.AgentCoreService, agentLifecycleOperation service.AgentLifecycleOperationService, agentTrafficLifecycle service.AgentTrafficLifecycleService, binaryVersion service.BinaryVersionService, forwarding service.ForwardingService, cdn service.CDNService, accessLog service.AccessLogService, inboundSpec service.InboundSpecService, driftAndDiff service.DriftAndDiffService, applyOrchestrator service.ApplyOrchestratorService, operationLog service.OperationLogService, subscriptionFilter service.SubscriptionFilterService, subscriptionSource service.SubscriptionSourceService, i18nManager *i18n.Manager) {
 	adminHandler := handler.NewAdminHandler(configService)
 	adminPlanHandler := handler.NewAdminPlanHandler(plan, adminPlan, i18nManager)
 	adminUserHandler := handler.NewAdminUserHandler(adminUser)
@@ -394,12 +400,18 @@ func registerV2AdminRoutes(v2 chi.Router, configService service.ConfigService, a
 	adminInviteHandler := handler.NewAdminInviteHandler(inviteService, i18nManager)
 	agentHostHandler := handler.NewAgentHostHandler(agentHost, i18nManager)
 	adminForwardingHandler := handler.NewAdminForwardingHandler(forwarding, i18nManager)
+	adminCDNHandler := handler.NewAdminCDNHandler(cdn, i18nManager)
 	adminAgentCoreHandler := handler.NewAdminAgentCoreHandler(agentCore, i18nManager)
+	adminAgentLifecycleHandler := handler.NewAdminAgentLifecycleHandler(agentLifecycleOperation, binaryVersion, i18nManager)
+	adminAgentTrafficHandler := handler.NewAdminAgentTrafficHandler(agentTrafficLifecycle, i18nManager)
+	adminAgentVersionHandler := handler.NewAdminAgentVersionHandler(binaryVersion, i18nManager)
+	adminSubscriptionHandler := handler.NewAdminSubscriptionHandler(subscriptionFilter, subscriptionSource, i18nManager)
 	adminAccessLogHandler := handler.NewAdminAccessLogHandler(accessLog)
 	adminConfigCenterSpecHandler := handler.NewAdminConfigCenterSpecHandler(inboundSpec, i18nManager)
 	adminConfigCenterDiffHandler := handler.NewAdminConfigCenterDiffHandler(driftAndDiff, i18nManager)
 	adminConfigCenterDriftHandler := handler.NewAdminConfigCenterDriftHandler(driftAndDiff, i18nManager)
 	adminConfigCenterApplyHandler := handler.NewAdminConfigCenterApplyHandler(applyOrchestrator, i18nManager)
+	operationLogHandler := handler.NewOperationLogHandler(operationLog, i18nManager)
 
 	v2.Route("/{securePath}", func(admin chi.Router) {
 		admin.Use(middleware.AdminGuard(auth, adminPath))
@@ -458,6 +470,57 @@ func registerV2AdminRoutes(v2 chi.Router, configService service.ConfigService, a
 		admin.Post("/agent-hosts/{id}/core-install", adminAgentCoreHandler.InstallCore)
 		admin.Post("/agent-hosts/{id}/core-convert", adminAgentCoreHandler.ConvertConfig)
 		admin.Get("/agent-hosts/{id}/core-switch-logs", adminAgentCoreHandler.ListSwitchLogs)
+		admin.Get("/agent-hosts/{id}/versions", adminAgentVersionHandler.ListVersions)
+		admin.Post("/agent-hosts/{id}/versions/{component}/refresh", adminAgentVersionHandler.RefreshVersion)
+		admin.Get("/agent-hosts/{id}/lifecycle-operations", adminAgentLifecycleHandler.ListOperations)
+		admin.Post("/agent-hosts/{id}/update-check", adminAgentLifecycleHandler.CreateUpdateCheck)
+		admin.Post("/agent-hosts/{id}/update", adminAgentLifecycleHandler.CreateUpdate)
+		admin.Post("/agent-hosts/{id}/traffic-reset", adminAgentLifecycleHandler.CreateTrafficReset)
+		admin.Get("/agent-hosts/{id}/traffic-policy", adminAgentTrafficHandler.GetPolicy)
+		admin.Put("/agent-hosts/{id}/traffic-policy", adminAgentTrafficHandler.UpdatePolicy)
+		admin.Get("/agent-hosts/{id}/traffic-status", adminAgentTrafficHandler.GetStatus)
+		admin.Post("/agent-hosts/{id}/traffic-cycle/reset", adminAgentTrafficHandler.ResetCycle)
+
+		// Subscription source and filter observability endpoints
+		admin.Get("/subscription/sources", adminSubscriptionHandler.ListSources)
+		admin.Post("/subscription/sources", adminSubscriptionHandler.CreateSource)
+		admin.Get("/subscription/sources/{id:[0-9]+}", adminSubscriptionHandler.GetSource)
+		admin.Put("/subscription/sources/{id:[0-9]+}", adminSubscriptionHandler.UpdateSource)
+		admin.Delete("/subscription/sources/{id:[0-9]+}", adminSubscriptionHandler.DeleteSource)
+		admin.Post("/subscription/sources/{id:[0-9]+}/sync", adminSubscriptionHandler.SyncSource)
+		admin.Get("/subscription/filter-reasons", adminSubscriptionHandler.ListFilterReasons)
+		admin.Get("/subscription/filter-summary", adminSubscriptionHandler.GetFilterSummary)
+
+		// CDN site management endpoints
+		admin.Route("/cdn", func(cdn chi.Router) {
+			cdn.Get("/sites", adminCDNHandler.ListSites)
+			cdn.Post("/sites", adminCDNHandler.CreateSite)
+			cdn.Put("/sites/{id}", adminCDNHandler.UpdateSite)
+			cdn.Delete("/sites/{id}", adminCDNHandler.DeleteSite)
+			cdn.Get("/sites/{id}/edges", adminCDNHandler.ListEdges)
+			cdn.Post("/sites/{id}/edges", adminCDNHandler.AssignEdge)
+			cdn.Delete("/sites/{id}/edges/{edge_id}", adminCDNHandler.RemoveEdge)
+			cdn.Get("/sites/{id}/rules", adminCDNHandler.ListCacheRules)
+			cdn.Post("/sites/{id}/rules", adminCDNHandler.CreateCacheRule)
+			cdn.Delete("/sites/{id}/rules/{rule_id}", adminCDNHandler.DeleteCacheRule)
+			cdn.Post("/sites/{id}/deploy", adminCDNHandler.DeploySite)
+			cdn.Post("/sites/{id}/undeploy", adminCDNHandler.UndeploySite)
+			cdn.Post("/sites/{id}/sync", adminCDNHandler.SyncToProvider)
+			cdn.Post("/sites/{id}/invalidate", adminCDNHandler.InvalidateCache)
+			cdn.Get("/sites/{id}/provider-status", adminCDNHandler.GetProviderStatus)
+
+			// Cloudflare integration
+			cdn.Post("/cloudflare/token", adminCDNHandler.SetCloudflareAPIToken)
+			cdn.Get("/cloudflare/zones", adminCDNHandler.ListCloudflareZones)
+			cdn.Post("/cloudflare/zones", adminCDNHandler.AddCloudflareZone)
+			cdn.Delete("/cloudflare/zones/{zone_id}", adminCDNHandler.RemoveCloudflareZone)
+			cdn.Get("/cloudflare/zones/{zone_id}/dns", adminCDNHandler.ListDNSRecords)
+
+			// CloudFront integration
+			cdn.Post("/cloudfront/credentials", adminCDNHandler.SetCloudFrontCredentials)
+			cdn.Get("/cloudfront/credentials", adminCDNHandler.GetCloudFrontCredentials)
+			cdn.Get("/cloudfront/distributions", adminCDNHandler.ListCloudFrontDistributions)
+		})
 
 		// Forwarding rules management endpoints
 		admin.Route("/forwarding", func(fwd chi.Router) {
@@ -499,6 +562,10 @@ func registerV2AdminRoutes(v2 chi.Router, configService service.ConfigService, a
 		admin.Post("/config-center/apply-runs", adminConfigCenterApplyHandler.CreateApplyRun)
 		admin.Get("/config-center/apply-runs", adminConfigCenterApplyHandler.ListApplyRuns)
 		admin.Get("/config-center/apply-runs/{run_id}", adminConfigCenterApplyHandler.GetApplyRunDetail)
+
+		// Operation log endpoints
+		admin.Get("/operation-logs", operationLogHandler.List)
+		admin.Get("/operation-logs/stream", operationLogHandler.Stream)
 
 		// 已移除的商业化/占位模块不再挂载，避免 404/501 噪声。
 		// mountHandler(admin, "/coupon", adminHandler)

@@ -242,65 +242,70 @@ func isVLESSXHTTPTransport(transport *UnifiedTransport) bool {
 	return transport != nil && IsXHTTPNetwork(transport.Type)
 }
 
-func buildXrayStreamSettings(transport *UnifiedTransport, tls *UnifiedTLS) map[string]any {
-	if transport == nil && (tls == nil || !tls.Enabled) {
-		return nil
+// buildXrayTransportStreamSettings 构建传输层 stream settings（不含 TLS）。
+// 返回 settings map 和是否包含传输配置（transport 非 nil）。
+func buildXrayTransportStreamSettings(transport *UnifiedTransport) (map[string]any, bool) {
+	if transport == nil {
+		return map[string]any{"network": "tcp"}, false
 	}
 
 	streamSettings := map[string]any{}
-	hasSettings := false
-
-	if transport != nil {
-		hasSettings = true
-		network := NormalizeXHTTPNetwork(transport.Type)
-		if network == "" {
-			network = "tcp"
-		}
-		streamSettings["network"] = network
-
-		switch network {
-		case "ws":
-			wsSettings := map[string]any{}
-			if transport.Path != "" {
-				wsSettings["path"] = transport.Path
-			}
-			if transport.Host != "" {
-				wsSettings["headers"] = map[string]string{"Host": transport.Host}
-			}
-			if len(transport.Headers) > 0 {
-				wsSettings["headers"] = transport.Headers
-			}
-			if len(wsSettings) > 0 {
-				streamSettings["wsSettings"] = wsSettings
-			}
-		case "grpc":
-			grpcSettings := map[string]any{}
-			if transport.ServiceName != "" {
-				grpcSettings["serviceName"] = transport.ServiceName
-			}
-			if len(grpcSettings) > 0 {
-				streamSettings["grpcSettings"] = grpcSettings
-			}
-		case "http":
-			httpSettings := map[string]any{}
-			if transport.Path != "" {
-				httpSettings["path"] = transport.Path
-			}
-			if transport.Host != "" {
-				httpSettings["host"] = []string{transport.Host}
-			}
-			if len(httpSettings) > 0 {
-				streamSettings["httpSettings"] = httpSettings
-			}
-		case XHTTPNetwork:
-			xhttpSettings := BuildXHTTPSettingsMap(MergeXHTTPConfig(transport.XHTTP, transport.Host, transport.Path, transport.Mode, transport.Headers))
-			if len(xhttpSettings) > 0 {
-				streamSettings["xhttpSettings"] = xhttpSettings
-			}
-		}
-	} else {
-		streamSettings["network"] = "tcp"
+	network := NormalizeXHTTPNetwork(transport.Type)
+	if network == "" {
+		network = "tcp"
 	}
+	streamSettings["network"] = network
+
+	switch network {
+	case "ws":
+		wsSettings := map[string]any{}
+		if transport.Path != "" {
+			wsSettings["path"] = transport.Path
+		}
+		if transport.Host != "" {
+			wsSettings["headers"] = map[string]string{"Host": transport.Host}
+		}
+		if len(transport.Headers) > 0 {
+			wsSettings["headers"] = transport.Headers
+		}
+		if len(wsSettings) > 0 {
+			streamSettings["wsSettings"] = wsSettings
+		}
+	case "grpc":
+		grpcSettings := map[string]any{}
+		if transport.ServiceName != "" {
+			grpcSettings["serviceName"] = transport.ServiceName
+		}
+		if len(grpcSettings) > 0 {
+			streamSettings["grpcSettings"] = grpcSettings
+		}
+	case "http":
+		httpSettings := map[string]any{}
+		if transport.Path != "" {
+			httpSettings["path"] = transport.Path
+		}
+		if transport.Host != "" {
+			httpSettings["host"] = []string{transport.Host}
+		}
+		if len(httpSettings) > 0 {
+			streamSettings["httpSettings"] = httpSettings
+		}
+	case XHTTPNetwork:
+		xhttpSettings := BuildXHTTPSettingsMap(MergeXHTTPConfig(transport.XHTTP, transport.Host, transport.Path, transport.Mode, transport.Headers))
+		if len(xhttpSettings) > 0 {
+			streamSettings["xhttpSettings"] = xhttpSettings
+		}
+	case "tcp":
+		// TCP is default, no additional settings needed
+	}
+
+	return streamSettings, true
+}
+
+func buildXrayStreamSettings(transport *UnifiedTransport, tls *UnifiedTLS) map[string]any {
+	transportSS, hasTransport := buildXrayTransportStreamSettings(transport)
+	streamSettings := transportSS
+	hasSettings := hasTransport
 
 	if tls != nil && tls.Enabled {
 		hasSettings = true

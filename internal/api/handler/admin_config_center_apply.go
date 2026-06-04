@@ -160,6 +160,10 @@ func (h *AdminConfigCenterApplyHandler) GetApplyRunDetail(w http.ResponseWriter,
 }
 
 func (h *AdminConfigCenterApplyHandler) respondApplyError(ctx context.Context, w http.ResponseWriter, action string, err error) {
+	if respondAgentOperationBusy(ctx, w, action, err, h.i18n) {
+		return
+	}
+
 	status := http.StatusInternalServerError
 	key := "error.internal_server_error"
 

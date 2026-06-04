@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -6,8 +6,8 @@ import { Plus, RefreshCw, Server } from "lucide-react";
 import { QUERY_KEYS } from "@/lib/constants";
 import { getAgentHosts, refreshAgentHosts, updateAgentHost } from "@/api/admin";
 import { fetchSettings, revealKey } from "@/api/admin/settings";
-import { AgentStatusCard } from "@/components/admin";
-import { EmptyState, Loading } from "@/components/ui";
+import { AdminPageShell, AgentStatusCard } from "@/components/admin";
+import { EmptyState, Loading, Card, CardContent, ResponsiveGrid, Input } from "@/components/ui";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -17,8 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Card, CardContent, CardHeader, ResponsiveGrid, Input } from "@/components/ui";
-import type { AgentHost, UpdateAgentHostRequest } from "@/types";
+import { AgentStatus, type AgentHost, type UpdateAgentHostRequest } from "@/types";
 import AgentCorePanel from "./AgentCorePanel";
 
 const DEFAULT_DEPLOY_SCRIPT_URL =
@@ -30,7 +29,7 @@ function sanitizeShellArgument(value: string): string {
 
 function shellEscapeSingleQuoted(value: string): string {
   const sanitized = sanitizeShellArgument(value);
-  return `'${sanitized.replace(/'/g, `'"'"'`)}'`;
+  return `'${sanitized.replace(/'/g, `"'"'`)}'`;
 }
 
 function resolveDeployScriptURL(): string {
@@ -116,11 +115,7 @@ export default function AgentList() {
       const hasGrpcAddress = grpcAddress.length > 0;
       const hasCommunicationKey = communicationKey.length > 0;
       setDeployMissingAddress(!hasGrpcAddress);
-      setDeployCommand(
-        hasGrpcAddress && hasCommunicationKey
-          ? buildDeployCommand(communicationKey, grpcAddress)
-          : ""
-      );
+      setDeployCommand(hasGrpcAddress && hasCommunicationKey ? buildDeployCommand(communicationKey, grpcAddress) : "");
       setIsDeployDialogOpen(true);
     },
     onError: (err: Error) => {
@@ -226,7 +221,15 @@ export default function AgentList() {
     });
   };
 
-  const agents: AgentHost[] = data?.data || [];
+  const agents = useMemo<AgentHost[]>(() => data?.data ?? [], [data?.data]);
+  const agentStats = useMemo(() => {
+    const total = agents.length;
+    const online = agents.filter((agent) => agent.status === AgentStatus.Online).length;
+    const warning = agents.filter((agent) => agent.status === AgentStatus.Warning).length;
+    const offline = total - online - warning;
+    const realtime = agents.filter((agent) => agent.last_realtime_report_at && agent.last_realtime_report_at > 0).length;
+    return { total, online, warning, offline, realtime };
+  }, [agents]);
 
   if (isLoading) return <Loading />;
 
@@ -239,74 +242,110 @@ export default function AgentList() {
     );
   }
 
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
+  const actions = (
+    <>
+      <Button variant="outline" onClick={() => refreshMutation.mutate()} disabled={refreshMutation.isPending}>
+        <RefreshCw className="mr-2 h-4 w-4" />
+        {refreshMutation.isPending ? t("common.loading") : t("common.refresh")}
+      </Button>
+      <Button data-testid="admin-agents-add-button" onClick={() => setIsDialogOpen(true)} disabled={deployMutation.isPending}>
+        <Plus className="mr-2 h-4 w-4" />
+        {deployMutation.isPending ? t("common.loading") : t("admin.agents.add")}
+      </Button>
+    </>
+  );
+
+  const stats = (
+    <ResponsiveGrid minColWidth={200} gap={16}>
+      <Card className="shadow-none">
+        <CardContent className="p-5">
+          <p className="text-sm text-muted-foreground">{t("admin.agents.stats.total")}</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">{agentStats.total}</p>
+        </CardContent>
+      </Card>
+      <Card className="shadow-none">
+        <CardContent className="p-5">
+          <p className="text-sm text-muted-foreground">{t("admin.agents.status.online")}</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight text-emerald-600">{agentStats.online}</p>
+        </CardContent>
+      </Card>
+      <Card className="shadow-none">
+        <CardContent className="p-5">
+          <p className="text-sm text-muted-foreground">{t("admin.agents.status.warning")}</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight text-amber-600">{agentStats.warning}</p>
+        </CardContent>
+      </Card>
+      <Card className="shadow-none">
+        <CardContent className="p-5">
+          <p className="text-sm text-muted-foreground">{t("admin.agents.status.offline")}</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight text-muted-foreground">{agentStats.offline}</p>
+        </CardContent>
+      </Card>
+      <Card className="shadow-none">
+        <CardContent className="p-5">
+          <p className="text-sm text-muted-foreground">{t("admin.agents.stats.realtime")}</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight text-primary">{agentStats.realtime}</p>
+        </CardContent>
+      </Card>
+    </ResponsiveGrid>
+  );
+
+  const deployDiagnosticsItems = [
+    t("admin.agents.deploy.diagnosticsPlatform"),
+    t("admin.agents.deploy.diagnosticsConnectivity"),
+    t("admin.agents.deploy.diagnosticsRelease"),
+    t("admin.agents.deploy.diagnosticsFailure"),
+    t("admin.agents.deploy.diagnosticsToken"),
+  ];
+
+  const renderDeployDiagnosticsPanel = () => (
+    <Card className="border-border bg-muted/30 shadow-none">
+      <CardContent className="space-y-3 p-4">
         <div>
-          <h1 className="text-2xl font-semibold">{t("admin.agents.title")}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t("admin.agents.description", { count: agents.length })}
+          <p className="text-sm font-medium text-foreground">{t("admin.agents.deploy.diagnosticsTitle")}</p>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+            {t("admin.agents.deploy.diagnosticsDescription")}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            onClick={() => refreshMutation.mutate()}
-            disabled={refreshMutation.isPending}
-          >
-            <RefreshCw className="mr-2 h-4 w-4" />
-            {refreshMutation.isPending ? t("common.loading") : t("common.refresh")}
-          </Button>
-          <Button
-            data-testid="admin-agents-add-button"
-            onClick={() => setIsDialogOpen(true)}
-            disabled={deployMutation.isPending}
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            {deployMutation.isPending ? t("common.loading") : t("admin.agents.add")}
-          </Button>
-        </div>
-      </div>
-
-      {agents.length === 0 ? (
-        <EmptyState
-          icon={<Server className="h-full w-full" />}
-          title={t("admin.agents.empty")}
-          description={
-            t("admin.agents.emptyDescription") ||
-            "Add your first agent to start monitoring your nodes"
-          }
-          action={
-            <Button
-              data-testid="admin-agents-add-button-empty"
-              onClick={() => setIsDialogOpen(true)}
-              disabled={deployMutation.isPending}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              {deployMutation.isPending ? t("common.loading") : t("admin.agents.add")}
-            </Button>
-          }
-          size="lg"
-        />
-      ) : (
-        <ResponsiveGrid minColWidth={280} gap={16}>
-          {agents.map((agent) => (
-            <AgentStatusCard
-              key={agent.id}
-              agent={agent}
-              onClick={() => handleOpenCorePanel(agent)}
-              onEdit={() => handleOpenEditDialog(agent)}
-            />
+        <ul className="grid gap-2 text-sm leading-6 text-muted-foreground">
+          {deployDiagnosticsItems.map((item) => (
+            <li key={item} className="flex gap-2">
+              <span className="mt-2.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary/70" />
+              <span>{item}</span>
+            </li>
           ))}
-        </ResponsiveGrid>
-      )}
+        </ul>
+      </CardContent>
+    </Card>
+  );
+
+  return (
+    <>
+      <AdminPageShell title={t("admin.agents.title")} description={t("admin.agents.description", { count: agents.length })} actions={actions} stats={stats}>
+        {agents.length === 0 ? (
+          <EmptyState
+            icon={<Server className="h-full w-full" />}
+            title={t("admin.agents.empty")}
+            description={t("admin.agents.emptyDescription") || "Add your first agent to start monitoring your nodes"}
+            action={
+              <Button data-testid="admin-agents-add-button-empty" onClick={() => setIsDialogOpen(true)} disabled={deployMutation.isPending}>
+                <Plus className="mr-2 h-4 w-4" />
+                {deployMutation.isPending ? t("common.loading") : t("admin.agents.add")}
+              </Button>
+            }
+            size="lg"
+          />
+        ) : (
+          <ResponsiveGrid minColWidth={300} gap={18}>
+            {agents.map((agent) => (
+              <AgentStatusCard key={agent.id} agent={agent} onClick={() => handleOpenCorePanel(agent)} onEdit={() => handleOpenEditDialog(agent)} />
+            ))}
+          </ResponsiveGrid>
+        )}
+      </AdminPageShell>
 
       <Dialog open={isCorePanelOpen} onOpenChange={handleCorePanelChange}>
-        <DialogContent className="sm:max-w-6xl">
-          {selectedAgent && (
-            <AgentCorePanel agentHostId={selectedAgent.id} agentName={selectedAgent.name} />
-          )}
-        </DialogContent>
+        <DialogContent className="sm:max-w-6xl">{selectedAgent && <AgentCorePanel agentHostId={selectedAgent.id} agentName={selectedAgent.name} />}</DialogContent>
       </Dialog>
 
       <Dialog open={isEditDialogOpen} onOpenChange={handleEditDialogChange}>
@@ -315,41 +354,34 @@ export default function AgentList() {
             <DialogTitle>{t("admin.agents.addTitle")}</DialogTitle>
             <DialogDescription>{t("admin.agents.description", { count: agents.length })}</DialogDescription>
           </DialogHeader>
-          <Card className="border-none shadow-none">
-            <CardHeader className="px-0 pb-2 text-sm font-medium text-muted-foreground">
-              {t("admin.agents.addTitle")}
-            </CardHeader>
-            <CardContent className="space-y-4 px-0">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">{t("admin.agents.name")}</label>
-                <Input
-                  value={editForm.name}
-                  onChange={(event) =>
-                    setEditForm((prev) => ({
-                      ...prev,
-                      name: event.target.value,
-                    }))
-                  }
-                  placeholder={t("admin.agents.namePlaceholder")}
-                  className="h-10"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">{t("admin.agents.host")}</label>
-                <Input
-                  value={editForm.host}
-                  onChange={(event) =>
-                    setEditForm((prev) => ({
-                      ...prev,
-                      host: event.target.value,
-                    }))
-                  }
-                  placeholder={t("admin.agents.hostPlaceholder")}
-                  className="h-10"
-                />
-              </div>
-            </CardContent>
-          </Card>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t("admin.agents.name")}</label>
+              <Input
+                value={editForm.name}
+                onChange={(event) =>
+                  setEditForm((prev) => ({
+                    ...prev,
+                    name: event.target.value,
+                  }))
+                }
+                placeholder={t("admin.agents.namePlaceholder")}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t("admin.agents.host")}</label>
+              <Input
+                value={editForm.host}
+                onChange={(event) =>
+                  setEditForm((prev) => ({
+                    ...prev,
+                    host: event.target.value,
+                  }))
+                }
+                placeholder={t("admin.agents.hostPlaceholder")}
+              />
+            </div>
+          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => handleEditDialogChange(false)}>
               {t("common.cancel")}
@@ -367,14 +399,13 @@ export default function AgentList() {
             <DialogTitle>{t("admin.agents.deploy.title")}</DialogTitle>
             <DialogDescription>{t("admin.agents.deploy.description")}</DialogDescription>
           </DialogHeader>
-          <Card className="border-none shadow-none">
-            <CardHeader className="px-0 pb-2 text-sm font-medium text-muted-foreground">
-              {t("admin.agents.deploy.title")}
-            </CardHeader>
-            <CardContent className="space-y-4 px-0">
-              <p className="text-sm text-muted-foreground">{t("admin.agents.deploy.description")}</p>
+          <Card className="bg-muted/40 shadow-none">
+            <CardContent className="space-y-3 p-5">
+              <p className="text-sm leading-6 text-muted-foreground">{t("admin.agents.deploy.description")}</p>
+              <p className="text-sm leading-6 text-muted-foreground">{t("admin.agents.deploy.tokenModel")}</p>
             </CardContent>
           </Card>
+          {renderDeployDiagnosticsPanel()}
           <DialogFooter>
             <Button variant="outline" onClick={() => handleDialogChange(false)}>
               {t("common.cancel")}
@@ -393,17 +424,19 @@ export default function AgentList() {
             <DialogDescription>{t("admin.agents.deploy.description")}</DialogDescription>
           </DialogHeader>
           {deployCommand ? (
-            <div className="space-y-2">
+            <div className="space-y-3">
+              <div className="rounded-md border border-border bg-muted/30 p-3 text-sm leading-6 text-muted-foreground">
+                {t("admin.agents.deploy.tokenModel")}
+              </div>
+              {renderDeployDiagnosticsPanel()}
               <label className="text-sm font-medium">{t("admin.agents.deploy.command")}</label>
-              <pre className="max-h-72 overflow-x-auto whitespace-pre-wrap break-all rounded-md border border-border bg-muted p-3 text-xs font-mono">
+              <pre className="max-h-72 overflow-x-auto whitespace-pre-wrap break-all rounded-md border bg-muted/40 p-4 text-xs font-mono leading-6">
                 {deployCommand}
               </pre>
             </div>
           ) : (
             <p className="text-sm text-amber-600">
-              {deployMissingAddress
-                ? t("admin.agents.deploy.missingAddress")
-                : t("admin.agents.deploy.missingCommunicationKey")}
+              {deployMissingAddress ? t("admin.agents.deploy.missingAddress") : t("admin.agents.deploy.missingCommunicationKey")}
             </p>
           )}
           <DialogFooter>
@@ -418,6 +451,6 @@ export default function AgentList() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }

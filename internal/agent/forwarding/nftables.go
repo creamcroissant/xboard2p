@@ -13,10 +13,9 @@ import (
 	agentv1 "github.com/creamcroissant/xboard/pkg/pb/agent/v1"
 )
 
-const (
-	defaultNFTTableName = "xboard_forwarding"
-	defaultNFTBin       = "/usr/sbin/nft"
-)
+const defaultNFTBin = "/usr/sbin/nft"
+
+const defaultNFTTableName = "xboard_forwarding"
 
 // NFTablesExecutor 使用 nftables 应用转发规则。
 type NFTablesExecutor struct {

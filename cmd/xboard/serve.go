@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -58,10 +57,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	runtimeVersion := strings.TrimSpace(Version)
-	if runtimeVersion == "" || runtimeVersion == "unknown" {
-		runtimeVersion = "go-dev"
-	}
+	runtimeVersion := resolveRuntimeVersion()
 
 	resolvedDBPath, err := bootstrap.ResolveSQLitePath(cfg.DB.Path)
 	if err != nil {
@@ -103,45 +99,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 		logger.Info("jwt signing key loaded", "source", "unknown")
 	}
 
-	// Migrate legacy config to bootstrap config structure for compatibility
-	// TODO: Fully replace bootstrap.Config with config.Config throughout the app
-	legacyCfg := &bootstrap.Config{
-		HTTP: bootstrap.HTTPConfig{
-			Addr:            cfg.HTTP.Addr,
-			ShutdownTimeout: cfg.HTTP.ShutdownTimeout,
-		},
-		Log: bootstrap.LogConfig{
-			Level:       cfg.Log.SlogLevel(),
-			Format:      cfg.Log.Format,
-			AddSource:   cfg.Log.AddSource,
-			Environment: cfg.Log.Environment,
-		},
-		DB: bootstrap.DBConfig{
-			SQLitePath: cfg.DB.Path,
-		},
-		Auth: bootstrap.AuthConfig{
-			SigningKey: cfg.Auth.SigningKey,
-			TokenTTL:   cfg.Auth.TokenTTL,
-			Issuer:     cfg.Auth.Issuer,
-			Audience:   cfg.Auth.Audience,
-			Leeway:     cfg.Auth.Leeway,
-			BcryptCost: cfg.Auth.BcryptCost,
-		},
-		UI: bootstrap.UIConfig{
-			Admin: bootstrap.AdminUIConfig{
-				Enabled:       cfg.UI.Admin.Enabled,
-				Dir:           cfg.UI.Admin.Dir,
-				Title:         cfg.UI.Admin.Title,
-				Version:       runtimeVersion,
-				BaseURL:       cfg.UI.Admin.BaseURL,
-				HiddenModules: cfg.UI.Admin.HiddenModules,
-			},
-			Install: bootstrap.InstallUIConfig{
-				Enabled: cfg.UI.Install.Enabled,
-				Dir:     cfg.UI.Install.Dir,
-			},
-		},
-	}
+	signingKey := cfg.Auth.SigningKey // 显式读取（已在 L89 被 ResolveJWTSigningKey 变异）
+	legacyCfg := buildBootstrapConfig(cfg, runtimeVersion, signingKey)
 
 	infra, err := bootstrap.BuildInfrastructure(legacyCfg, logger)
 	if err != nil {
@@ -227,6 +186,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	agentService := service.NewAgentService(store.Servers(), store.Users())
 	forwardingService := service.NewForwardingServiceWithLogger(store.ForwardingRules(), store.ForwardingRuleLogs(), store.AgentHosts(), logger)
 	converterRegistry := template.NewConverterRegistry(&template.SingBoxConverter{}, &template.XrayConverter{})
+	agentOperationGuard := service.NewAgentOperationGuard(store.CoreOperations(), store.ApplyRuns(), infra.Audit, store.AgentLifecycleOperations())
 	agentCoreService := service.NewAgentCoreServiceWithOptions(
 		store.AgentHosts(),
 		store.AgentCoreInstances(),
@@ -234,16 +194,39 @@ func runServe(cmd *cobra.Command, args []string) error {
 		store.ConfigTemplates(),
 		converterRegistry,
 		logger,
-		service.AgentCoreServiceOptions{Operations: store.CoreOperations()},
+		service.AgentCoreServiceOptions{Operations: store.CoreOperations(), OperationGuard: agentOperationGuard},
 	)
 	accessLogService := service.NewAccessLogService(store)
 	artifactCompilerService := service.NewArtifactCompilerService(store.InboundSpecs(), store.DesiredArtifacts())
 	inboundSpecService := service.NewInboundSpecService(store.InboundSpecs(), store.InboundSpecRevisions(), store.InboundIndexes(), artifactCompilerService)
 	driftAndDiffService := service.NewDriftAndDiffService(store.DesiredArtifacts(), store.AgentConfigInventories(), store.InboundIndexes(), store.DriftStates())
 	inventoryIngestService := service.NewInventoryIngestService(store.AgentConfigInventories(), store.InboundIndexes())
-	applyOrchestratorService := service.NewApplyOrchestratorService(store.DesiredArtifacts(), store.ApplyRuns(), driftAndDiffService)
+	applyOrchestratorService := service.NewApplyOrchestratorServiceWithGuard(store.DesiredArtifacts(), store.ApplyRuns(), driftAndDiffService, agentOperationGuard)
+	operationLogService := service.NewOperationLogService(store.OperationLogs(), logger)
+	agentLifecycleOperationService := service.NewAgentLifecycleOperationService(store.AgentLifecycleOperations(), agentOperationGuard, operationLogService, infra.Audit)
+
+	cdnService := service.NewCDNService(
+		store.CDNSites(), store.CDNEdges(), store.CDNCacheRules(),
+		store.Settings(),
+		store.CloudflareZones(), store.CloudflareDNSRecords(), store.CloudFrontDistributions(),
+		cfg.Auth.SigningKey,
+		store.AgentHosts(), agentLifecycleOperationService,
+	)
+
+	inboundSpecService.SetCDNService(cdnService)
+	agentTrafficLifecycleService := service.NewAgentTrafficLifecycleService(store.AgentTrafficStates(), operationLogService, service.AgentTrafficLifecycleOptions{
+		Policies:            store.AgentTrafficPolicies(),
+		AgentHosts:          store.AgentHosts(),
+		Servers:             store.Servers(),
+		SubscriptionReasons: store.SubscriptionFilterReasons(),
+		LifecycleOperations: agentLifecycleOperationService,
+		Logger:              logger,
+	})
+	binaryVersionService := service.NewBinaryVersionService(store.BinaryVersionStates(), store.AgentHosts(), nil)
 	shortLinkService := service.NewShortLinkService(store.ShortLinks(), store.Users(), store.Settings())
-	coreOperationService := service.NewCoreOperationService(store.CoreOperations())
+	subscriptionSourceService := service.NewSubscriptionSourceService(store.SubscriptionSources(), service.SubscriptionSourceServiceOptions{})
+	subscriptionFilterService := service.NewSubscriptionFilterService(store.Servers(), store.SubscriptionSources(), store.SubscriptionFilterReasons(), store.Plans(), userServerSelectionService, serverTelemetryService)
+	coreOperationService := service.NewCoreOperationService(store.CoreOperations(), agentOperationGuard)
 	coreSnapshotService := service.NewCoreSnapshotService(store.AgentHosts(), store.AgentCoreInstances())
 
 	scheduler := job.NewScheduler(logger)
@@ -285,6 +268,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 	if _, err := scheduler.Register("0 0 0 * * *", trafficPeriodResetJob); err != nil {
 		return err
 	}
+	agentTrafficResetJob := job.NewAgentTrafficResetJob(agentTrafficLifecycleService, logger)
+	if _, err := scheduler.Register("@every 5m", agentTrafficResetJob); err != nil {
+		return err
+	}
 	accessLogCleanupJob := job.NewAccessLogCleanupJob(accessLogService, logger)
 	if _, err := scheduler.Register("@every 1h", accessLogCleanupJob); err != nil {
 		return err
@@ -296,48 +283,55 @@ func runServe(cmd *cobra.Command, args []string) error {
 	scheduler.Start()
 
 	services := api.Services{
-		Config:              service.NewConfigService(store.Settings(), i18nManager),
-		User:                service.NewUserService(store.Users(), store.Settings(), infra.Hasher),
-		UserStat:            userStatService,
-		Auth:                service.NewAuthService(store.Users(), store.Settings(), store.LoginLogs(), store.Tokens(), infra.Hasher, infra.Token, infra.RateLimiter, infra.Audit, infra.Cache),
-		AdminPath:           service.NewAdminPathService(store.Settings()),
-		Install:             installService,
-		AdminPlan:           adminPlanService,
-		AdminUser:           adminUserService,
-		AdminServer:         adminServerService,
-		AdminStat:           adminStatService,
-		AdminNodeStat:       adminNodeStatService,
-		AdminSystem:         adminSystemService,
-		AdminSystemSettings: adminSystemSettingsService,
-		AdminNotice:         adminNoticeService,
-		AdminKnowledge:      adminKnowledgeService,
-		UserKnowledge:       userKnowledgeService,
-		UserNotice:          userNoticeService,
-		ServerAuth:          serverAuthService,
-		ServerNode:          serverNodeService,
-		Traffic:             serverTrafficService,
-		Telemetry:           serverTelemetryService,
-		Verify:              verifyService,
-		Invite:              inviteService,
-		Password:            passwordService,
-		Register:            registrationService,
-		MailLink:            mailLinkService,
-		Comm:                commService,
-		Plan:                planService,
-		Server:              service.NewServerService(store.Users(), store.Servers(), store.Plans()),
-		Subscription:        service.NewSubscriptionService(store.Users(), store.Servers(), store.Settings(), store.Plans(), store.SubscriptionTemplates(), protocolManager, serverTelemetryService, subLogQueue, cfg.Security.SubscribeObfuscation, userServerSelectionService, i18nManager),
-		AgentHost:           agentHostService,
-		AgentCore:           agentCoreService,
-		Forwarding:          forwardingService,
-		AccessLog:           accessLogService,
-		InboundSpec:         inboundSpecService,
-		DriftAndDiff:        driftAndDiffService,
-		ApplyOrchestrator:   applyOrchestratorService,
-		UserSelection:       userServerSelectionService,
-		ShortLink:           shortLinkService,
-		TrafficQueue:        trafficQueue,
-		SubLogQueue:         subLogQueue,
-		I18n:                i18nManager,
+		Config:                  service.NewConfigService(store.Settings(), i18nManager),
+		User:                    service.NewUserService(store.Users(), store.Settings(), infra.Hasher),
+		UserStat:                userStatService,
+		Auth:                    service.NewAuthService(store.Users(), store.Settings(), store.LoginLogs(), store.Tokens(), infra.Hasher, infra.Token, infra.RateLimiter, infra.Audit, infra.Cache),
+		AdminPath:               service.NewAdminPathService(store.Settings()),
+		Install:                 installService,
+		AdminPlan:               adminPlanService,
+		AdminUser:               adminUserService,
+		AdminServer:             adminServerService,
+		AdminStat:               adminStatService,
+		AdminNodeStat:           adminNodeStatService,
+		AdminSystem:             adminSystemService,
+		AdminSystemSettings:     adminSystemSettingsService,
+		AdminNotice:             adminNoticeService,
+		AdminKnowledge:          adminKnowledgeService,
+		UserKnowledge:           userKnowledgeService,
+		UserNotice:              userNoticeService,
+		ServerAuth:              serverAuthService,
+		ServerNode:              serverNodeService,
+		Traffic:                 serverTrafficService,
+		Telemetry:               serverTelemetryService,
+		Verify:                  verifyService,
+		Invite:                  inviteService,
+		Password:                passwordService,
+		Register:                registrationService,
+		MailLink:                mailLinkService,
+		Comm:                    commService,
+		Plan:                    planService,
+		Server:                  service.NewServerService(store.Users(), store.Servers(), store.Plans()),
+		Subscription:            service.NewSubscriptionService(store.Users(), store.Servers(), store.Settings(), store.Plans(), store.SubscriptionTemplates(), subscriptionSourceService, protocolManager, serverTelemetryService, subLogQueue, cfg.Security.SubscribeObfuscation, userServerSelectionService, i18nManager, subscriptionFilterService),
+		SubscriptionFilter:      subscriptionFilterService,
+		SubscriptionSource:      subscriptionSourceService,
+		AgentHost:               agentHostService,
+		AgentCore:               agentCoreService,
+		Forwarding:              forwardingService,
+		AccessLog:               accessLogService,
+		InboundSpec:             inboundSpecService,
+		DriftAndDiff:            driftAndDiffService,
+		ApplyOrchestrator:       applyOrchestratorService,
+		OperationLog:            operationLogService,
+		AgentLifecycleOperation: agentLifecycleOperationService,
+		AgentTrafficLifecycle:   agentTrafficLifecycleService,
+		BinaryVersion:           binaryVersionService,
+		UserSelection:           userServerSelectionService,
+		ShortLink:               shortLinkService,
+		CDN:                     cdnService,
+		TrafficQueue:            trafficQueue,
+		SubLogQueue:             subLogQueue,
+		I18n:                    i18nManager,
 	}
 
 	router := api.NewRouter(
@@ -386,6 +380,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 			applyOrchestratorService,
 			coreOperationService,
 			coreSnapshotService,
+			operationLogService,
+			agentLifecycleOperationService,
+			agentTrafficLifecycleService,
+			binaryVersionService,
 			logger,
 		)
 

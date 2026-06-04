@@ -3,11 +3,33 @@ import { getToken, clearToken, redirectToLogin } from "@/lib/auth";
 import { ADMIN_API_VERSION, ADMIN_AUTH_ROUTES, ROUTES } from "@/lib/constants";
 
 // Get base URL for admin API
-const getAdminBaseURL = (): string => {
+export const getAdminBaseURL = (): string => {
   const settings = window?.settings;
   const baseURL = settings?.base_url || import.meta.env.VITE_API_BASE_URL || "";
   return baseURL.replace(/\/$/, "") + ADMIN_API_VERSION;
 };
+
+export function getAdminAuthorizationHeader(): string | undefined {
+  const token = getToken();
+  if (!token) {
+    return undefined;
+  }
+  return token.startsWith("Bearer") ? token : `Bearer ${token}`;
+}
+
+export function getAdminFetchHeaders(init?: HeadersInit): Headers {
+  const headers = new Headers(init);
+  const authorization = getAdminAuthorizationHeader();
+  if (authorization) {
+    headers.set("Authorization", authorization);
+  }
+  return headers;
+}
+
+export function getAdminApiURL(path: string): string {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${getAdminBaseURL()}${normalizedPath}`;
+}
 
 type AdminApiErrorPayload = {
   error?: string;

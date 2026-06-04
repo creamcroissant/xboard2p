@@ -353,6 +353,10 @@ func (h *AdminAgentCoreHandler) ListSwitchLogs(w http.ResponseWriter, r *http.Re
 }
 
 func (h *AdminAgentCoreHandler) respondServiceError(ctx context.Context, w http.ResponseWriter, code string, err error) {
+	if respondAgentOperationBusy(ctx, w, code, err, h.i18n) {
+		return
+	}
+
 	statusCode := http.StatusInternalServerError
 	key := "error.internal_server_error"
 	if errors.Is(err, service.ErrNotFound) {

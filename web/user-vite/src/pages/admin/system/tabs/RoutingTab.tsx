@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -54,7 +54,7 @@ function parseRules(value?: string): RoutingRule[] {
     return parsed
       .filter(Boolean)
       .map((item, index) => ({
-        id: item.id ?? `${Date.now()}-${index}`,
+        id: item.id ?? `rule-${index}`,
         priority: Number(item.priority ?? index + 1),
         group: String(item.group ?? ""),
         matchType: String(item.matchType ?? item.match_type ?? "domain"),
@@ -79,25 +79,19 @@ function serializeRules(rules: RoutingRule[]): string {
   );
 }
 
-export default function RoutingTab() {
+type RoutingTabContentProps = {
+  initialDefaultTemplate: string;
+  initialRules: RoutingRule[];
+};
+
+function RoutingTabContent({ initialDefaultTemplate, initialRules }: RoutingTabContentProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const [defaultTemplate, setDefaultTemplate] = useState("xray");
-  const [rules, setRules] = useState<RoutingRule[]>([]);
+  const [defaultTemplate, setDefaultTemplate] = useState(initialDefaultTemplate);
+  const [rules, setRules] = useState<RoutingRule[]>(initialRules);
   const [editingRule, setEditingRule] = useState<RoutingRule | null>(null);
 
   const queryKey = useMemo(() => [...QUERY_KEYS.ADMIN_SYSTEM, CATEGORY], []);
-
-  const { data, isLoading, error, refetch } = useQuery({
-    queryKey,
-    queryFn: () => fetchSettings(CATEGORY),
-  });
-
-  useEffect(() => {
-    if (!data) return;
-    setDefaultTemplate(data.default_template ?? "xray");
-    setRules(parseRules(data.custom_rules));
-  }, [data]);
 
   const saveMutation = useMutation({
     mutationFn: (payload: { template: string; rules: RoutingRule[] }) =>
@@ -157,6 +151,189 @@ export default function RoutingTab() {
     setEditingRule(null);
   };
 
+  const getMatchTypeLabel = (value: string) => {
+    if (value === "domain") return t("admin.system.settings.routing.domain");
+    if (value === "ip") return t("admin.system.settings.routing.ip");
+    return value;
+  };
+
+  const getActionLabel = (value: string) => {
+    if (value === "proxy") return t("admin.system.settings.routing.proxy");
+    if (value === "direct") return t("admin.system.settings.routing.direct");
+    if (value === "reject") return t("admin.system.settings.routing.reject");
+    return value;
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <label className="text-sm font-medium">
+          {t("admin.system.settings.fields.defaultTemplate")}
+        </label>
+        <Select value={defaultTemplate} onValueChange={setDefaultTemplate}>
+          <SelectTrigger>
+            <SelectValue placeholder={t("admin.system.settings.fields.defaultTemplate")} />
+          </SelectTrigger>
+          <SelectContent>
+            {templateOptions.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold">
+            {t("admin.system.settings.fields.customRules")}
+          </h3>
+          <Button variant="outline" onClick={handleAddRule}>
+            {t("common.create")}
+          </Button>
+        </div>
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t("admin.system.settings.routing.priority")}</TableHead>
+                <TableHead>{t("admin.system.settings.routing.group")}</TableHead>
+                <TableHead>{t("admin.system.settings.routing.match")}</TableHead>
+                <TableHead>{t("admin.system.settings.routing.action")}</TableHead>
+                <TableHead>{t("common.actions")}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rules.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center text-muted-foreground">
+                    {t("common.noData")}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                rules.map((rule) => (
+                  <TableRow key={rule.id}>
+                    <TableCell>{rule.priority}</TableCell>
+                    <TableCell>{rule.group}</TableCell>
+                    <TableCell>
+                      {getMatchTypeLabel(rule.matchType)}: {rule.matchValue}
+                    </TableCell>
+                    <TableCell>{getActionLabel(rule.action)}</TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-2">
+                        <Button size="sm" variant="outline" onClick={() => handleEditRule(rule)}>
+                          {t("common.edit")}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => handleDeleteRule(rule.id)}
+                        >
+                          {t("common.delete")}
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+
+        {editingRule && (
+          <div className="rounded-md border border-border p-4 space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">{t("admin.system.settings.routing.priority")}</label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={String(editingRule.priority)}
+                  onChange={(e) => handleRuleChange("priority", e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">{t("admin.system.settings.routing.group")}</label>
+                <Input
+                  value={editingRule.group}
+                  onChange={(e) => handleRuleChange("group", e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">{t("admin.system.settings.routing.matchType")}</label>
+                <Select
+                  value={editingRule.matchType}
+                  onValueChange={(value) => handleRuleChange("matchType", value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={t("admin.system.settings.routing.select")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="domain">{t("admin.system.settings.routing.domain")}</SelectItem>
+                    <SelectItem value="ip">{t("admin.system.settings.routing.ip")}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">{t("admin.system.settings.routing.matchValue")}</label>
+                <Input
+                  value={editingRule.matchValue}
+                  onChange={(e) => handleRuleChange("matchValue", e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t("admin.system.settings.routing.action")}</label>
+              <Select
+                value={editingRule.action}
+                onValueChange={(value) => handleRuleChange("action", value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={t("admin.system.settings.routing.select")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="proxy">{t("admin.system.settings.routing.proxy")}</SelectItem>
+                  <SelectItem value="direct">{t("admin.system.settings.routing.direct")}</SelectItem>
+                  <SelectItem value="reject">{t("admin.system.settings.routing.reject")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={handleRuleSave}>{t("common.save")}</Button>
+              <Button variant="outline" onClick={() => setEditingRule(null)}>
+                {t("common.cancel")}
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <Button onClick={handleSave} disabled={saveMutation.isPending}>
+        {saveMutation.isPending ? t("common.loading") : t("admin.system.settings.actions.save")}
+      </Button>
+    </div>
+  );
+}
+
+export default function RoutingTab() {
+  const { t } = useTranslation();
+
+  const queryKey = useMemo(() => [...QUERY_KEYS.ADMIN_SYSTEM, CATEGORY], []);
+
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey,
+    queryFn: () => fetchSettings(CATEGORY),
+  });
+
+  const initialDefaultTemplate = data?.default_template ?? "xray";
+  const initialRules = useMemo(() => parseRules(data?.custom_rules), [data?.custom_rules]);
+
   if (isLoading) return <Loading />;
 
   if (error) {
@@ -175,159 +352,10 @@ export default function RoutingTab() {
         <CardDescription>{t("admin.system.settings.description")}</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="space-y-6">
-          <div className="space-y-2">
-            <label className="text-sm font-medium">
-              {t("admin.system.settings.fields.defaultTemplate")}
-            </label>
-            <Select value={defaultTemplate} onValueChange={setDefaultTemplate}>
-              <SelectTrigger>
-                <SelectValue placeholder={t("admin.system.settings.fields.defaultTemplate")} />
-              </SelectTrigger>
-              <SelectContent>
-                {templateOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold">
-                {t("admin.system.settings.fields.customRules")}
-              </h3>
-              <Button variant="outline" onClick={handleAddRule}>
-                {t("common.create")}
-              </Button>
-            </div>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Priority</TableHead>
-                    <TableHead>Group</TableHead>
-                    <TableHead>Match</TableHead>
-                    <TableHead>Action</TableHead>
-                    <TableHead>{t("common.actions")}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rules.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center text-muted-foreground">
-                        {t("common.noData")}
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    rules.map((rule) => (
-                      <TableRow key={rule.id}>
-                        <TableCell>{rule.priority}</TableCell>
-                        <TableCell>{rule.group}</TableCell>
-                        <TableCell>
-                          {rule.matchType}: {rule.matchValue}
-                        </TableCell>
-                        <TableCell>{rule.action}</TableCell>
-                        <TableCell>
-                          <div className="flex flex-wrap gap-2">
-                            <Button size="sm" variant="outline" onClick={() => handleEditRule(rule)}>
-                              {t("common.edit")}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={() => handleDeleteRule(rule.id)}
-                            >
-                              {t("common.delete")}
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-
-            {editingRule && (
-              <div className="rounded-md border border-border p-4 space-y-4">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Priority</label>
-                    <Input
-                      type="number"
-                      min={1}
-                      value={String(editingRule.priority)}
-                      onChange={(e) => handleRuleChange("priority", e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Group</label>
-                    <Input
-                      value={editingRule.group}
-                      onChange={(e) => handleRuleChange("group", e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Match Type</label>
-                    <Select
-                      value={editingRule.matchType}
-                      onValueChange={(value) => handleRuleChange("matchType", value)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="domain">Domain</SelectItem>
-                        <SelectItem value="ip">IP</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Match Value</label>
-                    <Input
-                      value={editingRule.matchValue}
-                      onChange={(e) => handleRuleChange("matchValue", e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Action</label>
-                  <Select
-                    value={editingRule.action}
-                    onValueChange={(value) => handleRuleChange("action", value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="proxy">Proxy</SelectItem>
-                      <SelectItem value="direct">Direct</SelectItem>
-                      <SelectItem value="reject">Reject</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <Button onClick={handleRuleSave}>{t("common.save")}</Button>
-                  <Button variant="outline" onClick={() => setEditingRule(null)}>
-                    {t("common.cancel")}
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <Button onClick={handleSave} disabled={saveMutation.isPending}>
-            {saveMutation.isPending ? t("common.loading") : t("admin.system.settings.actions.save")}
-          </Button>
-        </div>
+        <RoutingTabContent
+          initialDefaultTemplate={initialDefaultTemplate}
+          initialRules={initialRules}
+        />
       </CardContent>
     </Card>
   );

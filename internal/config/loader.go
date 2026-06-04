@@ -42,10 +42,8 @@ func LoadWithOptions(opts LoadOptions) (*Config, error) {
 			return nil, fmt.Errorf("read config: %w", err)
 		}
 	}
-	if strings.TrimSpace(v.GetString("grpc.addr")) == "" {
-		if legacyAddr := strings.TrimSpace(v.GetString("grpc.address")); legacyAddr != "" {
-			v.Set("grpc.addr", legacyAddr)
-		}
+	if legacyAddr := strings.TrimSpace(v.GetString("grpc.address")); legacyAddr != "" {
+		v.Set("grpc.addr", legacyAddr)
 	}
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
@@ -220,6 +218,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("ui.install.enabled", true)
 	v.SetDefault("ui.install.dir", "web/install")
 	v.SetDefault("grpc.reuse_http_port", true)
+	v.SetDefault("grpc.addr", "0.0.0.0:8080")
 	v.SetDefault("scheduler.stat_user_hourly", "@every 5m")
 	v.SetDefault("scheduler.traffic_fetch", "@every 1m")
 	v.SetDefault("scheduler.email_notify", "@every 1m")

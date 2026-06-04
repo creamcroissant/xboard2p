@@ -28,6 +28,7 @@ const AdminSystem = lazy(() => import("@/pages/admin/system"));
 const AdminForwarding = lazy(() => import("@/pages/admin/forwarding"));
 const AdminAccessLogs = lazy(() => import("@/pages/admin/access-logs"));
 const AdminConfigCenter = lazy(() => import("@/pages/admin/config-center"));
+const AdminCDN = lazy(() => import("@/pages/admin/cdn"));
 
 const adminAuthAliases = [
   { adminPath: ADMIN_AUTH_ROUTES.LOGIN, defaultPath: ROUTES.LOGIN, component: Login },
@@ -149,6 +150,7 @@ export default function App() {
         <Route path={ADMIN_ROUTES.SYSTEM} element={<AdminSystem />} />
         <Route path={ADMIN_ROUTES.FORWARDING} element={<AdminForwarding />} />
         <Route path={ADMIN_ROUTES.ACCESS_LOGS} element={<AdminAccessLogs />} />
+        <Route path={ADMIN_ROUTES.CDN} element={<AdminCDN />} />
         <Route path={ADMIN_ROUTES.CONFIG_CENTER} element={<AdminConfigCenter />} />
       </Route>
 

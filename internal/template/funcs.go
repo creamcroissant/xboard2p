@@ -530,65 +530,20 @@ func DefaultFuncMap() template.FuncMap {
 			}
 			result["settings"] = settings
 
-			// 生成 streamSettings
-			streamSettings := map[string]interface{}{}
-			hasStreamSettings := false
-
-			// 传输/网络
+			// 传输/网络 — 复用 converter 的公共函数
+			var unifiedTransport *UnifiedTransport
 			if inbound.Transport != nil {
-				hasStreamSettings = true
-				network := NormalizeXHTTPNetwork(inbound.Transport.Type)
-				if network == "" {
-					network = "tcp"
+				unifiedTransport = &UnifiedTransport{
+					Type:        inbound.Transport.Type,
+					Path:        inbound.Transport.Path,
+					Host:        inbound.Transport.Host,
+					ServiceName: inbound.Transport.ServiceName,
+					Headers:     inbound.Transport.Headers,
+					Mode:        inbound.Transport.Mode,
+					XHTTP:       inbound.Transport.XHTTP,
 				}
-				streamSettings["network"] = network
-
-				switch network {
-				case "ws":
-					wsSettings := map[string]interface{}{}
-					if inbound.Transport.Path != "" {
-						wsSettings["path"] = inbound.Transport.Path
-					}
-					if inbound.Transport.Host != "" {
-						wsSettings["headers"] = map[string]string{"Host": inbound.Transport.Host}
-					}
-					if len(wsSettings) > 0 {
-						streamSettings["wsSettings"] = wsSettings
-					}
-
-				case "grpc":
-					grpcSettings := map[string]interface{}{}
-					if inbound.Transport.ServiceName != "" {
-						grpcSettings["serviceName"] = inbound.Transport.ServiceName
-					}
-					if len(grpcSettings) > 0 {
-						streamSettings["grpcSettings"] = grpcSettings
-					}
-
-				case "http":
-					httpSettings := map[string]interface{}{}
-					if inbound.Transport.Path != "" {
-						httpSettings["path"] = inbound.Transport.Path
-					}
-					if inbound.Transport.Host != "" {
-						httpSettings["host"] = []string{inbound.Transport.Host}
-					}
-					if len(httpSettings) > 0 {
-						streamSettings["httpSettings"] = httpSettings
-					}
-
-				case XHTTPNetwork:
-					xhttpSettings := BuildXHTTPSettingsMap(MergeXHTTPConfig(inbound.Transport.XHTTP, inbound.Transport.Host, inbound.Transport.Path, inbound.Transport.Mode, inbound.Transport.Headers))
-					if len(xhttpSettings) > 0 {
-						streamSettings["xhttpSettings"] = xhttpSettings
-					}
-
-				case "tcp":
-					// TCP is default, no additional settings needed
-				}
-			} else {
-				streamSettings["network"] = "tcp"
 			}
+			streamSettings, hasStreamSettings := buildXrayTransportStreamSettings(unifiedTransport)
 
 			// TLS 配置
 			if inbound.TLS != nil && inbound.TLS.Enabled {

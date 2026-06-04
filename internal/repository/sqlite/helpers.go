@@ -5,6 +5,8 @@ package sqlite
 import (
 	"database/sql"
 	"encoding/json"
+
+	"github.com/creamcroissant/xboard/internal/repository"
 )
 
 func boolToInt(v bool) int {
@@ -66,4 +68,15 @@ func normalizePagination(limit, offset, defaultLimit int) (int, int) {
 		offset = 0
 	}
 	return limit, offset
+}
+
+func ensureRowsAffected(result sql.Result) error {
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return repository.ErrNotFound
+	}
+	return nil
 }

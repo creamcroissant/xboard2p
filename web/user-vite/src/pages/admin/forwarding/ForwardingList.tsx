@@ -284,10 +284,10 @@ export default function ForwardingList() {
     }
   };
 
-  const agentHosts: AgentHost[] = agentHostsQuery.data?.data || [];
-  const rules = rulesQuery.data?.rules || [];
+  const agentHosts = useMemo<AgentHost[]>(() => agentHostsQuery.data?.data ?? [], [agentHostsQuery.data?.data]);
+  const rules = useMemo(() => rulesQuery.data?.rules ?? [], [rulesQuery.data?.rules]);
   const rulesVersion = rulesQuery.data?.version ?? 0;
-  const logs = logsQuery.data?.logs || [];
+  const logs = useMemo(() => logsQuery.data?.logs ?? [], [logsQuery.data?.logs]);
   const logsTotal = logsQuery.data?.total || 0;
   const logsTotalPages = Math.ceil(logsTotal / 10);
 

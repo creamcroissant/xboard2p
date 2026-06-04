@@ -12,6 +12,13 @@ import (
 type Store struct {
 	db                     *sql.DB
 	coreOperations         repository.CoreOperationRepository
+	operationLogs          repository.OperationLogRepository
+	binaryVersionStates    repository.BinaryVersionStateRepository
+	agentLifecycleOps      repository.AgentLifecycleOperationRepository
+	agentTrafficPolicies   repository.AgentTrafficPolicyRepository
+	agentTrafficStates     repository.AgentTrafficStateRepository
+	subscriptionSources    repository.SubscriptionSourceRepository
+	subscriptionReasons    repository.SubscriptionFilterReasonRepository
 	users                  repository.UserRepository
 	settings               repository.SettingRepository
 	invites                repository.InviteCodeRepository
@@ -47,6 +54,12 @@ type Store struct {
 	agentConfigInventories repository.AgentConfigInventoryRepository
 	inboundIndexes         repository.InboundIndexRepository
 	driftStates            repository.DriftStateRepository
+	cdnSites               repository.CDNSiteRepository
+	cdnEdges               repository.CDNEdgeRepository
+	cdnCacheRules          repository.CDNCacheRuleRepository
+	cfZones                repository.CloudflareZoneRepository
+	cfDNSRecords           repository.CloudflareDNSRecordRepository
+	cfDists                repository.CloudFrontDistributionRepository
 }
 
 // NewStore constructs a SQLite-backed repository store.
@@ -54,6 +67,13 @@ func NewStore(db *sql.DB) *Store {
 	return &Store{
 		db:                     db,
 		coreOperations:         newCoreOperationRepo(db),
+		operationLogs:          newOperationLogRepo(db),
+		binaryVersionStates:    newBinaryVersionStateRepo(db),
+		agentLifecycleOps:      newAgentLifecycleOperationRepo(db),
+		agentTrafficPolicies:   newAgentTrafficPolicyRepo(db),
+		agentTrafficStates:     newAgentTrafficStateRepo(db),
+		subscriptionSources:    newSubscriptionSourceRepo(db),
+		subscriptionReasons:    newSubscriptionFilterReasonRepo(db),
 		users:                  &userRepo{db: db},
 		settings:               &settingRepo{db: db},
 		invites:                &inviteRepo{db: db},
@@ -89,11 +109,45 @@ func NewStore(db *sql.DB) *Store {
 		agentConfigInventories: newAgentConfigInventoryRepo(db),
 		inboundIndexes:         newInboundIndexRepo(db),
 		driftStates:            newDriftStateRepo(db),
+		cdnSites:               newCDNSiteRepo(db),
+		cdnEdges:               newCDNEdgeRepo(db),
+		cdnCacheRules:          newCDNCacheRuleRepo(db),
+		cfZones:                newCloudflareZoneRepo(db),
+		cfDNSRecords:           newCloudflareDNSRecordRepo(db),
+		cfDists:                newCloudfrontDistRepo(db),
 	}
 }
 
 func (s *Store) CoreOperations() repository.CoreOperationRepository {
 	return s.coreOperations
+}
+
+func (s *Store) OperationLogs() repository.OperationLogRepository {
+	return s.operationLogs
+}
+
+func (s *Store) BinaryVersionStates() repository.BinaryVersionStateRepository {
+	return s.binaryVersionStates
+}
+
+func (s *Store) AgentLifecycleOperations() repository.AgentLifecycleOperationRepository {
+	return s.agentLifecycleOps
+}
+
+func (s *Store) AgentTrafficPolicies() repository.AgentTrafficPolicyRepository {
+	return s.agentTrafficPolicies
+}
+
+func (s *Store) AgentTrafficStates() repository.AgentTrafficStateRepository {
+	return s.agentTrafficStates
+}
+
+func (s *Store) SubscriptionSources() repository.SubscriptionSourceRepository {
+	return s.subscriptionSources
+}
+
+func (s *Store) SubscriptionFilterReasons() repository.SubscriptionFilterReasonRepository {
+	return s.subscriptionReasons
 }
 
 func (s *Store) Users() repository.UserRepository {
@@ -234,4 +288,28 @@ func (s *Store) InboundIndexes() repository.InboundIndexRepository {
 
 func (s *Store) DriftStates() repository.DriftStateRepository {
 	return s.driftStates
+}
+
+func (s *Store) CDNSites() repository.CDNSiteRepository {
+	return s.cdnSites
+}
+
+func (s *Store) CDNEdges() repository.CDNEdgeRepository {
+	return s.cdnEdges
+}
+
+func (s *Store) CDNCacheRules() repository.CDNCacheRuleRepository {
+	return s.cdnCacheRules
+}
+
+func (s *Store) CloudflareZones() repository.CloudflareZoneRepository {
+	return s.cfZones
+}
+
+func (s *Store) CloudflareDNSRecords() repository.CloudflareDNSRecordRepository {
+	return s.cfDNSRecords
+}
+
+func (s *Store) CloudFrontDistributions() repository.CloudFrontDistributionRepository {
+	return s.cfDists
 }

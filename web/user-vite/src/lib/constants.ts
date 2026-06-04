@@ -6,6 +6,7 @@ import {
   Cog,
   CreditCard,
   GitCompare,
+  Globe,
   LayoutDashboard,
   ListChecks,
   MonitorDot,
@@ -67,6 +68,14 @@ export const QUERY_KEYS = {
   ADMIN_AGENT_CORE_INSTANCES: ["admin", "agents", "core-instances"],
   ADMIN_AGENT_CORE_SWITCH_LOGS: ["admin", "agents", "core-switch-logs"],
   ADMIN_AGENT_CORE_OPERATIONS: ["admin", "agents", "core-operations"],
+  ADMIN_OPERATION_LOGS: ["admin", "operation-logs"],
+  ADMIN_AGENT_BINARY_VERSIONS: ["admin", "agents", "binary-versions"],
+  ADMIN_AGENT_LIFECYCLE_OPERATIONS: ["admin", "agents", "lifecycle-operations"],
+  ADMIN_AGENT_TRAFFIC_POLICY: ["admin", "agents", "traffic-policy"],
+  ADMIN_AGENT_TRAFFIC_STATUS: ["admin", "agents", "traffic-status"],
+  ADMIN_SUBSCRIPTION_FILTER_REASONS: ["admin", "subscription", "filter-reasons"],
+  ADMIN_SUBSCRIPTION_FILTER_SUMMARY: ["admin", "subscription", "filter-summary"],
+  ADMIN_SUBSCRIPTION_SOURCES: ["admin", "subscription", "sources"],
   ADMIN_CONFIG_CENTER_SPECS: ["admin", "config-center", "specs"],
   ADMIN_CONFIG_CENTER_SPEC_HISTORY: ["admin", "config-center", "specs", "history"],
   ADMIN_CONFIG_CENTER_ARTIFACTS: ["admin", "config-center", "artifacts"],
@@ -76,6 +85,7 @@ export const QUERY_KEYS = {
   ADMIN_CONFIG_CENTER_SNAPSHOT: ["admin", "config-center", "snapshot"],
   ADMIN_CONFIG_CENTER_DRIFT: ["admin", "config-center", "drift"],
   ADMIN_CONFIG_CENTER_RECOVER: ["admin", "config-center", "recover"],
+  ADMIN_CDN_SITES: ["admin", "cdn", "sites"],
 } as const;
 
 export const ROUTES = {
@@ -103,6 +113,7 @@ export const ADMIN_ROUTES = {
   FORWARDING: adminRoute("/forwarding"),
   ACCESS_LOGS: adminRoute("/access-logs"),
   CONFIG_CENTER: adminRoute("/config-center"),
+  CDN: adminRoute("/cdn"),
 } as const;
 
 export const ADMIN_AUTH_ROUTES = {
@@ -135,6 +146,7 @@ export const ADMIN_NAV_ITEMS: NavigationItemMeta[] = [
   { to: ADMIN_ROUTES.KNOWLEDGE, labelKey: "admin.nav.knowledge", icon: BookOpen, sidebar: true },
   { to: ADMIN_ROUTES.ACCESS_LOGS, labelKey: "admin.nav.accessLogs", icon: ListChecks, sidebar: true },
   { to: ADMIN_ROUTES.FORWARDING, labelKey: "admin.nav.forwarding", icon: Shuffle, sidebar: true },
+  { to: ADMIN_ROUTES.CDN, labelKey: "admin.nav.cdn", icon: Globe, sidebar: true },
   { to: ADMIN_ROUTES.CONFIG_CENTER, labelKey: "admin.nav.configCenter", icon: GitCompare, sidebar: true },
   { to: ADMIN_ROUTES.SYSTEM, labelKey: "admin.nav.system", icon: Cog, sidebar: true },
 ];

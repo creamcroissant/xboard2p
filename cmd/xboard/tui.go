@@ -25,7 +25,7 @@ func init() {
 }
 
 func runTUI(cmd *cobra.Command, args []string) error {
-	cfg, err := config.Load()
+	cfg, err := config.LoadWithOptions(config.LoadOptions{ConfigPath: configPath})
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}

@@ -24,21 +24,25 @@ import (
 type AgentHandler struct {
 	agentv1.UnimplementedAgentServiceServer
 
-	agentHostService   service.AgentHostService
-	agentService       service.AgentService
-	telemetryService   service.ServerTelemetryService
-	serverNodeService  service.ServerNodeService
-	userTrafficService service.UserTrafficService
-	trafficDedupRepo   repository.TrafficReportDedupRepository
-	forwardingService  service.ForwardingService
-	accessLogService   service.AccessLogService
-	settingsService    service.AdminSystemSettingsService
-	inventoryIngest    service.InventoryIngestService
-	applyOrchestrator  service.ApplyOrchestratorService
-	coreOperations     service.CoreOperationService
-	coreSnapshots      service.CoreSnapshotService
-	logger             *slog.Logger
-	timeNow            func() time.Time
+	agentHostService    service.AgentHostService
+	agentService        service.AgentService
+	telemetryService    service.ServerTelemetryService
+	serverNodeService   service.ServerNodeService
+	userTrafficService  service.UserTrafficService
+	trafficDedupRepo    repository.TrafficReportDedupRepository
+	forwardingService   service.ForwardingService
+	accessLogService    service.AccessLogService
+	settingsService     service.AdminSystemSettingsService
+	inventoryIngest     service.InventoryIngestService
+	applyOrchestrator   service.ApplyOrchestratorService
+	coreOperations      service.CoreOperationService
+	coreSnapshots       service.CoreSnapshotService
+	operationLogs       service.OperationLogService
+	lifecycleOperations service.AgentLifecycleOperationService
+	trafficLifecycle    service.AgentTrafficLifecycleService
+	binaryVersions      service.BinaryVersionService
+	logger              *slog.Logger
+	timeNow             func() time.Time
 }
 
 // NewAgentHandler 创建 Agent gRPC 处理器。
@@ -70,6 +74,10 @@ func NewAgentHandler(
 		applyOrchestrator,
 		nil,
 		nil,
+		nil,
+		nil,
+		nil,
+		nil,
 		logger,
 	)
 }
@@ -89,24 +97,32 @@ func NewAgentHandlerWithCoreServices(
 	applyOrchestrator service.ApplyOrchestratorService,
 	coreOperations service.CoreOperationService,
 	coreSnapshots service.CoreSnapshotService,
+	operationLogs service.OperationLogService,
+	lifecycleOperations service.AgentLifecycleOperationService,
+	trafficLifecycle service.AgentTrafficLifecycleService,
+	binaryVersions service.BinaryVersionService,
 	logger *slog.Logger,
 ) *AgentHandler {
 	return &AgentHandler{
-		agentHostService:   agentHostService,
-		agentService:       agentService,
-		telemetryService:   telemetryService,
-		serverNodeService:  serverNodeService,
-		userTrafficService: userTrafficService,
-		trafficDedupRepo:   trafficDedupRepo,
-		forwardingService:  forwardingService,
-		accessLogService:   accessLogService,
-		settingsService:    settingsService,
-		inventoryIngest:    inventoryIngest,
-		applyOrchestrator:  applyOrchestrator,
-		coreOperations:     coreOperations,
-		coreSnapshots:      coreSnapshots,
-		logger:             logger,
-		timeNow:            time.Now,
+		agentHostService:    agentHostService,
+		agentService:        agentService,
+		telemetryService:    telemetryService,
+		serverNodeService:   serverNodeService,
+		userTrafficService:  userTrafficService,
+		trafficDedupRepo:    trafficDedupRepo,
+		forwardingService:   forwardingService,
+		accessLogService:    accessLogService,
+		settingsService:     settingsService,
+		inventoryIngest:     inventoryIngest,
+		applyOrchestrator:   applyOrchestrator,
+		coreOperations:      coreOperations,
+		coreSnapshots:       coreSnapshots,
+		operationLogs:       operationLogs,
+		lifecycleOperations: lifecycleOperations,
+		trafficLifecycle:    trafficLifecycle,
+		binaryVersions:      binaryVersions,
+		logger:              logger,
+		timeNow:             time.Now,
 	}
 }
 
@@ -130,25 +146,19 @@ func (h *AgentHandler) ReportStatus(ctx context.Context, req *agentv1.StatusRepo
 		return nil, status.Error(codes.Unauthenticated, "no agent host in context")
 	}
 
-	metrics := service.AgentHostMetricsReport{
-		CPUUsed:       req.System.GetCpuUsage(),
-		MemTotal:      int64(req.System.GetMemoryTotal()),
-		MemUsed:       int64(req.System.GetMemoryUsed()),
-		DiskTotal:     int64(req.System.GetDiskTotal()),
-		DiskUsed:      int64(req.System.GetDiskUsed()),
-		UploadTotal:   int64(req.Network.GetUploadBytes()),
-		DownloadTotal: int64(req.Network.GetDownloadBytes()),
-	}
+	metrics := buildAgentHostMetricsReport(req)
 	if err := h.agentHostService.UpdateMetrics(ctx, agentHost.Token, metrics); err != nil {
 		h.logger.Error("failed to update metrics", "agent_host_id", agentHost.ID, "error", err)
 		return nil, status.Error(codes.Internal, "failed to update metrics")
 	}
+	h.applyTrafficLifecycleReport(ctx, agentHost.ID, metrics, "unary")
 
 	if req.System != nil && (req.System.CoreVersion != "" || len(req.System.Capabilities) > 0 || len(req.System.BuildTags) > 0) {
 		if err := h.agentHostService.UpdateCapabilities(ctx, agentHost.Token, req.System.CoreVersion, req.System.Capabilities, req.System.BuildTags); err != nil {
 			h.logger.Error("failed to update capabilities", "agent_host_id", agentHost.ID, "error", err)
 		}
 	}
+	h.updateBinaryVersionState(ctx, agentHost.ID, req, "unary")
 
 	if len(req.Protocols) > 0 {
 		protocols := make([]service.ProtocolInfo, len(req.Protocols))
@@ -402,7 +412,145 @@ func (h *AgentHandler) ReportCoreOperation(ctx context.Context, req *agentv1.Rep
 	return &agentv1.ReportCoreOperationResponse{Success: true, Message: "core operation accepted"}, nil
 }
 
+func (h *AgentHandler) GetAgentCommands(ctx context.Context, req *agentv1.GetAgentCommandsRequest) (*agentv1.GetAgentCommandsResponse, error) {
+	agentHost, err := getAgentHost(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "missing request")
+	}
+	if h.lifecycleOperations == nil {
+		return nil, status.Error(codes.FailedPrecondition, "agent lifecycle operation service not available")
+	}
+	operations, err := h.lifecycleOperations.ClaimNext(ctx, service.ClaimAgentLifecycleOperationRequest{AgentHostID: agentHost.ID, ClaimedBy: normalizeAgentCommandWorkerID(req.GetWorkerId(), agentHost.ID), SupportedActions: append([]string(nil), req.GetSupportedActions()...), QueueStats: convertAgentCommandQueueStats(req.GetQueueStats()), Limit: int(req.GetLimit()), RequestedAt: req.GetRequestedAt()})
+	if err != nil {
+		if errors.Is(err, service.ErrAgentLifecycleOperationNotFound) {
+			return &agentv1.GetAgentCommandsResponse{Success: true, Commands: []*agentv1.AgentCommand{}, ServerTime: h.currentUnix()}, nil
+		}
+		return nil, mapAgentLifecycleOperationGRPCError(err)
+	}
+	commands := make([]*agentv1.AgentCommand, 0, len(operations))
+	for _, operation := range operations {
+		if command := convertAgentLifecycleOperationCommand(operation); command != nil {
+			commands = append(commands, command)
+		}
+	}
+	return &agentv1.GetAgentCommandsResponse{Success: true, Commands: commands, ServerTime: h.currentUnix()}, nil
+}
+
+func (h *AgentHandler) ReportAgentCommand(ctx context.Context, req *agentv1.ReportAgentCommandRequest) (*agentv1.ReportAgentCommandResponse, error) {
+	agentHost, err := getAgentHost(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if req == nil || len(req.GetEvents()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "missing agent command events")
+	}
+	if h.lifecycleOperations == nil {
+		return nil, status.Error(codes.FailedPrecondition, "agent lifecycle operation service not available")
+	}
+	workerID := normalizeAgentCommandWorkerID(req.GetWorkerId(), agentHost.ID)
+	var accepted int32
+	for _, event := range req.GetEvents() {
+		if event == nil {
+			continue
+		}
+		err := h.lifecycleOperations.Report(ctx, service.ReportAgentLifecycleOperationRequest{AgentHostID: agentHost.ID, OperationID: event.GetCommandId(), ClaimedBy: workerID, QueueStats: convertAgentCommandQueueStats(req.GetQueueStats()), EventType: event.GetEventType(), Status: event.GetStatus(), Phase: event.GetPhase(), Level: event.GetLevel(), Message: event.GetMessage(), Payload: append(json.RawMessage(nil), event.GetPayloadJson()...), ErrorMessage: event.GetErrorMessage(), OccurredAt: event.GetOccurredAt(), SourceEventID: event.GetSourceEventId(), Sequence: event.GetSequence(), Terminal: event.GetTerminal()})
+		if err != nil {
+			return nil, mapAgentLifecycleOperationGRPCError(err)
+		}
+		accepted++
+	}
+	if accepted == 0 {
+		return nil, status.Error(codes.InvalidArgument, "missing agent command events")
+	}
+	return &agentv1.ReportAgentCommandResponse{Success: true, Message: "agent command events accepted", Accepted: accepted, ServerTime: h.currentUnix()}, nil
+}
+
 // ReportAccessLogs reports access logs
+func (h *AgentHandler) ReportOperationEvent(ctx context.Context, req *agentv1.ReportOperationEventRequest) (*agentv1.ReportOperationEventResponse, error) {
+	agentHost, err := getAgentHost(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if req == nil || len(req.GetEvents()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "missing operation events")
+	}
+	if h.operationLogs == nil {
+		return nil, status.Error(codes.FailedPrecondition, "operation log service not available")
+	}
+
+	var accepted int32
+	var lastLogID int64
+	for _, event := range req.GetEvents() {
+		if event == nil {
+			continue
+		}
+		if err := h.validateOperationEventOwnership(ctx, agentHost.ID, event.GetScope(), event.GetTargetId()); err != nil {
+			return nil, err
+		}
+		entry, err := h.operationLogs.Append(ctx, service.AppendOperationLogRequest{Scope: event.GetScope(), TargetID: event.GetTargetId(), AgentHostID: agentHost.ID, Sequence: event.GetSequence(), Phase: event.GetPhase(), Level: event.GetLevel(), Message: event.GetMessage(), Payload: append(json.RawMessage(nil), event.GetPayloadJson()...), SourceEventID: event.GetSourceEventId(), ReportedAt: event.GetOccurredAt()})
+		if err != nil {
+			return nil, mapOperationLogGRPCError(err)
+		}
+		accepted++
+		if entry != nil {
+			lastLogID = entry.ID
+		}
+	}
+	if accepted == 0 {
+		return nil, status.Error(codes.InvalidArgument, "missing operation events")
+	}
+	return &agentv1.ReportOperationEventResponse{Success: true, Accepted: accepted, Message: "operation events accepted", LastLogId: lastLogID}, nil
+}
+
+func (h *AgentHandler) validateOperationEventOwnership(ctx context.Context, agentHostID int64, scope string, targetID string) error {
+	switch strings.TrimSpace(scope) {
+	case service.OperationLogScopeCoreOperation:
+		if h.coreOperations == nil {
+			return status.Error(codes.FailedPrecondition, "core operation service not available")
+		}
+		op, err := h.coreOperations.Get(ctx, targetID)
+		if err != nil {
+			return mapCoreOperationGRPCError(err)
+		}
+		if op == nil || op.AgentHostID != agentHostID {
+			return status.Error(codes.PermissionDenied, service.ErrCoreOperationForbidden.Error())
+		}
+		return nil
+	case service.OperationLogScopeApplyRun:
+		if h.applyOrchestrator == nil {
+			return status.Error(codes.FailedPrecondition, "apply orchestrator service not available")
+		}
+		result, err := h.applyOrchestrator.GetApplyRunDetail(ctx, service.GetApplyRunDetailRequest{RunID: targetID})
+		if err != nil {
+			return mapApplyOrchestratorGRPCError(err)
+		}
+		if result == nil || result.Run == nil || result.Run.AgentHostID != agentHostID {
+			return status.Error(codes.PermissionDenied, service.ErrApplyOrchestratorPermissionDenied.Error())
+		}
+		return nil
+	case service.OperationLogScopeAgentOperation, service.OperationLogScopeTrafficReset, service.OperationLogScopeThresholdAction:
+		if h.lifecycleOperations == nil {
+			return status.Error(codes.FailedPrecondition, "agent lifecycle operation service not available")
+		}
+		operation, err := h.lifecycleOperations.Get(ctx, targetID)
+		if err != nil {
+			return mapAgentLifecycleOperationGRPCError(err)
+		}
+		if operation == nil || operation.AgentHostID != agentHostID {
+			return status.Error(codes.PermissionDenied, service.ErrAgentLifecycleOperationForbidden.Error())
+		}
+		if service.AgentLifecycleOperationLogScope(operation.OperationType) != strings.TrimSpace(scope) {
+			return status.Error(codes.InvalidArgument, service.ErrOperationLogInvalidRequest.Error())
+		}
+		return nil
+	default:
+		return status.Error(codes.InvalidArgument, service.ErrOperationLogInvalidRequest.Error())
+	}
+}
+
 func (h *AgentHandler) ReportAccessLogs(ctx context.Context, req *agentv1.AccessLogReport) (*agentv1.AccessLogResponse, error) {
 	agentHost, err := getAgentHost(ctx)
 	if err != nil {
@@ -499,10 +647,17 @@ func (h *AgentHandler) StatusStream(stream grpc.BidiStreamingServer[agentv1.Stat
 		if err != nil {
 			return err
 		}
-		metrics := service.AgentHostMetricsReport{CPUUsed: report.System.GetCpuUsage(), MemTotal: int64(report.System.GetMemoryTotal()), MemUsed: int64(report.System.GetMemoryUsed()), DiskTotal: int64(report.System.GetDiskTotal()), DiskUsed: int64(report.System.GetDiskUsed()), UploadTotal: int64(report.Network.GetUploadBytes()), DownloadTotal: int64(report.Network.GetDownloadBytes())}
+		metrics := buildAgentHostMetricsReport(report)
 		if err := h.agentHostService.UpdateMetrics(ctx, agentHost.Token, metrics); err != nil {
 			h.logger.Error("failed to update metrics from stream", "agent_host_id", agentHost.ID, "error", err)
 		}
+		h.applyTrafficLifecycleReport(ctx, agentHost.ID, metrics, "stream")
+		if report.System != nil && (report.System.CoreVersion != "" || len(report.System.Capabilities) > 0 || len(report.System.BuildTags) > 0) {
+			if err := h.agentHostService.UpdateCapabilities(ctx, agentHost.Token, report.System.CoreVersion, report.System.Capabilities, report.System.BuildTags); err != nil {
+				h.logger.Error("failed to update capabilities from stream", "agent_host_id", agentHost.ID, "error", err)
+			}
+		}
+		h.updateBinaryVersionState(ctx, agentHost.ID, report, "stream")
 		if len(report.Protocols) > 0 {
 			protocols := make([]service.ProtocolInfo, len(report.Protocols))
 			for i, p := range report.Protocols {
@@ -529,6 +684,19 @@ func (h *AgentHandler) StatusStream(stream grpc.BidiStreamingServer[agentv1.Stat
 	}
 }
 
+func (h *AgentHandler) updateBinaryVersionState(ctx context.Context, agentHostID int64, report *agentv1.StatusReport, source string) {
+	if h.binaryVersions == nil || report == nil || report.System == nil {
+		return
+	}
+	system := report.System
+	if system.GetAgentVersion() == "" && system.GetCurrentCoreType() == "" && system.GetCoreVersion() == "" {
+		return
+	}
+	if err := h.binaryVersions.UpdateLocalVersions(ctx, service.UpdateLocalVersionsRequest{AgentHostID: agentHostID, AgentVersion: system.GetAgentVersion(), CurrentCoreType: system.GetCurrentCoreType(), CoreVersion: system.GetCoreVersion(), Capabilities: system.GetCapabilities(), BuildTags: system.GetBuildTags()}); err != nil {
+		h.logger.Warn("failed to update binary version state", "source", source, "agent_host_id", agentHostID, "error", err)
+	}
+}
+
 func (h *AgentHandler) ingestInventoryReport(ctx context.Context, agentHost *repository.AgentHost, reportedAt int64, inventory []*agentv1.ConfigInventoryEntry, inboundIndex []*agentv1.InboundIndexEntry, source string) {
 	if h.inventoryIngest == nil || (len(inventory) == 0 && len(inboundIndex) == 0) {
 		return
@@ -543,6 +711,20 @@ func (h *AgentHandler) ingestInventoryReport(ctx context.Context, agentHost *rep
 	}
 }
 
+func (h *AgentHandler) applyTrafficLifecycleReport(ctx context.Context, agentHostID int64, metrics service.AgentHostMetricsReport, source string) {
+	if h == nil || h.trafficLifecycle == nil {
+		return
+	}
+	result, err := h.trafficLifecycle.ApplyReport(ctx, agentHostID, service.AgentTrafficReportFromMetrics(metrics))
+	if err != nil {
+		h.logger.Error("failed to apply traffic lifecycle report", "source", source, "agent_host_id", agentHostID, "error", err)
+		return
+	}
+	if result != nil && result.Skipped && result.SkipReason != service.AgentTrafficSkipReasonMissingBootID && result.SkipReason != service.AgentTrafficSkipReasonMissingCounter {
+		h.logger.Warn("agent traffic lifecycle report skipped", "source", source, "agent_host_id", agentHostID, "reason", result.SkipReason)
+	}
+}
+
 // getAgentHost 是获取 Agent 上下文的辅助方法（兼容旧调用）。
 func getAgentHost(ctx context.Context) (*repository.AgentHost, error) {
 	agentHost, ok := interceptor.GetAgentHostFromContext(ctx)
@@ -550,6 +732,59 @@ func getAgentHost(ctx context.Context) (*repository.AgentHost, error) {
 		return nil, status.Error(codes.Unauthenticated, "no agent host in context")
 	}
 	return agentHost, nil
+}
+
+func buildAgentHostMetricsReport(report *agentv1.StatusReport) service.AgentHostMetricsReport {
+	metrics := service.AgentHostMetricsReport{
+		CPUUsed:       report.GetSystem().GetCpuUsage(),
+		MemTotal:      int64(report.GetSystem().GetMemoryTotal()),
+		MemUsed:       int64(report.GetSystem().GetMemoryUsed()),
+		DiskTotal:     int64(report.GetSystem().GetDiskTotal()),
+		DiskUsed:      int64(report.GetSystem().GetDiskUsed()),
+		UploadTotal:   int64(report.GetNetwork().GetUploadBytes()),
+		DownloadTotal: int64(report.GetNetwork().GetDownloadBytes()),
+		ReportedAt:    report.GetReportedAt(),
+	}
+	if metrics.ReportedAt == 0 {
+		metrics.ReportedAt = report.GetTimestamp()
+	}
+	if systemMetrics := report.GetSystem(); systemMetrics != nil {
+		metrics.BootID = systemMetrics.GetBootId()
+		metrics.AgentVersion = systemMetrics.GetAgentVersion()
+		metrics.CurrentCoreType = systemMetrics.GetCurrentCoreType()
+	}
+	if networkMetrics := report.GetNetwork(); networkMetrics != nil {
+		if uploadRate := networkMetrics.GetUploadRateBps(); uploadRate != nil {
+			value := uploadRate.GetValue()
+			metrics.UploadRateBps = &value
+		}
+		if downloadRate := networkMetrics.GetDownloadRateBps(); downloadRate != nil {
+			value := downloadRate.GetValue()
+			metrics.DownloadRateBps = &value
+		}
+		if rawUpload := networkMetrics.GetRawUploadTotalBytes(); rawUpload != nil {
+			value := int64(rawUpload.GetValue())
+			metrics.RawUploadTotalBytes = &value
+		}
+		if rawDownload := networkMetrics.GetRawDownloadTotalBytes(); rawDownload != nil {
+			value := int64(rawDownload.GetValue())
+			metrics.RawDownloadTotalBytes = &value
+		}
+	}
+	return metrics
+}
+
+func mapOperationLogGRPCError(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, service.ErrOperationLogInvalidRequest):
+		return status.Error(codes.InvalidArgument, err.Error())
+	case errors.Is(err, service.ErrOperationLogNotConfigured):
+		return status.Error(codes.FailedPrecondition, err.Error())
+	default:
+		return status.Error(codes.Internal, "operation log failed")
+	}
 }
 
 func mapApplyOrchestratorGRPCError(err error) error {
@@ -590,6 +825,45 @@ func mapCoreOperationGRPCError(err error) error {
 	}
 }
 
+func mapAgentLifecycleOperationGRPCError(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, service.ErrAgentLifecycleOperationInvalidRequest):
+		return status.Error(codes.InvalidArgument, err.Error())
+	case errors.Is(err, service.ErrAgentLifecycleOperationNotConfigured):
+		return status.Error(codes.FailedPrecondition, err.Error())
+	case errors.Is(err, service.ErrAgentLifecycleOperationForbidden):
+		return status.Error(codes.PermissionDenied, err.Error())
+	case errors.Is(err, service.ErrAgentLifecycleOperationNotFound):
+		return status.Error(codes.NotFound, err.Error())
+	default:
+		return status.Error(codes.Internal, "agent lifecycle operation failed")
+	}
+}
+
+func normalizeAgentCommandWorkerID(workerID string, agentHostID int64) string {
+	workerID = strings.TrimSpace(workerID)
+	if workerID != "" {
+		return workerID
+	}
+	return fmt.Sprintf("agent-%d", agentHostID)
+}
+
+func convertAgentCommandQueueStats(stats *agentv1.AgentCommandQueueStats) *service.AgentCommandQueueStats {
+	if stats == nil {
+		return nil
+	}
+	return &service.AgentCommandQueueStats{Capacity: stats.GetCapacity(), Queued: stats.GetQueued(), Inflight: stats.GetInflight(), Workers: stats.GetWorkers(), Available: stats.GetAvailable(), ActiveCommandIDs: append([]string(nil), stats.GetActiveCommandIds()...), UpdatedAt: stats.GetUpdatedAt()}
+}
+
+func (h *AgentHandler) currentUnix() int64 {
+	if h != nil && h.timeNow != nil {
+		return h.timeNow().Unix()
+	}
+	return time.Now().Unix()
+}
+
 func convertCoreOperation(op *repository.CoreOperation) *agentv1.CoreOperation {
 	if op == nil {
 		return nil
@@ -602,6 +876,13 @@ func convertCoreOperation(op *repository.CoreOperation) *agentv1.CoreOperation {
 		pb.FinishedAt = *op.FinishedAt
 	}
 	return pb
+}
+
+func convertAgentLifecycleOperationCommand(operation *repository.AgentLifecycleOperation) *agentv1.AgentCommand {
+	if operation == nil {
+		return nil
+	}
+	return &agentv1.AgentCommand{Id: operation.ID, AgentHostId: operation.AgentHostID, OperationType: operation.OperationType, RequestPayload: append([]byte(nil), operation.RequestPayload...), CreatedAt: operation.CreatedAt, UpdatedAt: operation.UpdatedAt, Source: operation.Source, CorrelationId: operation.ID}
 }
 
 func buildCoreSnapshotsFromStatus(report *agentv1.StatusReport) []*repository.CoreStatusSnapshot {

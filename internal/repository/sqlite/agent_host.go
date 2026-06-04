@@ -44,13 +44,17 @@ func (r *agentHostRepo) Create(ctx context.Context, host *repository.AgentHost) 
 			name, host, token, status, provision_status, template_id, core_version, capabilities, build_tags,
 			cpu_total, cpu_used, mem_total, mem_used,
 			disk_total, disk_used, upload_total, download_total,
+			upload_rate_bps, download_rate_bps, raw_upload_total_bytes, raw_download_total_bytes,
+			boot_id, last_realtime_report_at, last_restart_at, agent_version, current_core_type,
 			last_heartbeat_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		host.Name, host.Host, host.Token, host.Status, host.ProvisionStatus, host.TemplateID,
 		host.CoreVersion, string(capsJSON), string(tagsJSON),
 		host.CPUTotal, host.CPUUsed, host.MemTotal, host.MemUsed,
 		host.DiskTotal, host.DiskUsed, host.UploadTotal, host.DownloadTotal,
+		host.UploadRateBps, host.DownloadRateBps, host.RawUploadTotalBytes, host.RawDownloadTotalBytes,
+		host.BootID, host.LastRealtimeReportAt, host.LastRestartAt, host.AgentVersion, host.CurrentCoreType,
 		host.LastHeartbeatAt, host.CreatedAt, host.UpdatedAt,
 	)
 	if err != nil {
@@ -70,6 +74,8 @@ func (r *agentHostRepo) FindByID(ctx context.Context, id int64) (*repository.Age
 		SELECT id, name, host, token, status, provision_status, template_id, core_version, capabilities, build_tags,
 			cpu_total, cpu_used, mem_total, mem_used,
 			disk_total, disk_used, upload_total, download_total,
+			upload_rate_bps, download_rate_bps, raw_upload_total_bytes, raw_download_total_bytes,
+			boot_id, last_realtime_report_at, last_restart_at, agent_version, current_core_type,
 			last_heartbeat_at, created_at, updated_at
 		FROM agent_hosts WHERE id = ?
 	`, id)
@@ -82,6 +88,8 @@ func (r *agentHostRepo) FindByHost(ctx context.Context, host string) (*repositor
 		SELECT id, name, host, token, status, provision_status, template_id, core_version, capabilities, build_tags,
 			cpu_total, cpu_used, mem_total, mem_used,
 			disk_total, disk_used, upload_total, download_total,
+			upload_rate_bps, download_rate_bps, raw_upload_total_bytes, raw_download_total_bytes,
+			boot_id, last_realtime_report_at, last_restart_at, agent_version, current_core_type,
 			last_heartbeat_at, created_at, updated_at
 		FROM agent_hosts WHERE host = ?
 	`, host)
@@ -94,6 +102,8 @@ func (r *agentHostRepo) FindByToken(ctx context.Context, token string) (*reposit
 		SELECT id, name, host, token, status, provision_status, template_id, core_version, capabilities, build_tags,
 			cpu_total, cpu_used, mem_total, mem_used,
 			disk_total, disk_used, upload_total, download_total,
+			upload_rate_bps, download_rate_bps, raw_upload_total_bytes, raw_download_total_bytes,
+			boot_id, last_realtime_report_at, last_restart_at, agent_version, current_core_type,
 			last_heartbeat_at, created_at, updated_at
 		FROM agent_hosts WHERE token = ?
 	`, token)
@@ -147,6 +157,8 @@ func (r *agentHostRepo) ListAll(ctx context.Context) ([]*repository.AgentHost, e
 		SELECT id, name, host, token, status, provision_status, template_id, core_version, capabilities, build_tags,
 			cpu_total, cpu_used, mem_total, mem_used,
 			disk_total, disk_used, upload_total, download_total,
+			upload_rate_bps, download_rate_bps, raw_upload_total_bytes, raw_download_total_bytes,
+			boot_id, last_realtime_report_at, last_restart_at, agent_version, current_core_type,
 			last_heartbeat_at, created_at, updated_at
 		FROM agent_hosts ORDER BY name ASC
 	`)
@@ -181,12 +193,17 @@ func (r *agentHostRepo) UpdateStatus(ctx context.Context, id int64, status int, 
 
 func (r *agentHostRepo) UpdateMetrics(ctx context.Context, id int64, metrics repository.AgentHostMetrics) error {
 	return bootstrap.WithSQLiteBusyRetry(func() error {
+		updatedAt := time.Now().Unix()
 		_, err := r.db.ExecContext(ctx, `
 			UPDATE agent_hosts SET
 				cpu_total = ?, cpu_used = ?,
 				mem_total = ?, mem_used = ?,
 				disk_total = ?, disk_used = ?,
 				upload_total = ?, download_total = ?,
+				upload_rate_bps = ?, download_rate_bps = ?,
+				raw_upload_total_bytes = ?, raw_download_total_bytes = ?,
+				boot_id = ?, last_realtime_report_at = ?, last_restart_at = ?,
+				agent_version = ?, current_core_type = ?,
 				last_heartbeat_at = ?,
 				status = 1,
 				updated_at = ?
@@ -196,7 +213,11 @@ func (r *agentHostRepo) UpdateMetrics(ctx context.Context, id int64, metrics rep
 			metrics.MemTotal, metrics.MemUsed,
 			metrics.DiskTotal, metrics.DiskUsed,
 			metrics.UploadTotal, metrics.DownloadTotal,
-			time.Now().Unix(), time.Now().Unix(), id,
+			metrics.UploadRateBps, metrics.DownloadRateBps,
+			metrics.RawUploadTotalBytes, metrics.RawDownloadTotalBytes,
+			metrics.BootID, metrics.LastRealtimeReportAt, metrics.LastRestartAt,
+			metrics.AgentVersion, metrics.CurrentCoreType,
+			updatedAt, updatedAt, id,
 		)
 		return err
 	})
@@ -211,6 +232,8 @@ func (r *agentHostRepo) scanHost(row *sql.Row) (*repository.AgentHost, error) {
 		&h.CoreVersion, &capsJSON, &tagsJSON,
 		&h.CPUTotal, &h.CPUUsed, &h.MemTotal, &h.MemUsed,
 		&h.DiskTotal, &h.DiskUsed, &h.UploadTotal, &h.DownloadTotal,
+		&h.UploadRateBps, &h.DownloadRateBps, &h.RawUploadTotalBytes, &h.RawDownloadTotalBytes,
+		&h.BootID, &h.LastRealtimeReportAt, &h.LastRestartAt, &h.AgentVersion, &h.CurrentCoreType,
 		&h.LastHeartbeatAt, &h.CreatedAt, &h.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
@@ -250,6 +273,8 @@ func (r *agentHostRepo) scanHostFromRows(rows *sql.Rows) (*repository.AgentHost,
 		&h.CoreVersion, &capsJSON, &tagsJSON,
 		&h.CPUTotal, &h.CPUUsed, &h.MemTotal, &h.MemUsed,
 		&h.DiskTotal, &h.DiskUsed, &h.UploadTotal, &h.DownloadTotal,
+		&h.UploadRateBps, &h.DownloadRateBps, &h.RawUploadTotalBytes, &h.RawDownloadTotalBytes,
+		&h.BootID, &h.LastRealtimeReportAt, &h.LastRestartAt, &h.AgentVersion, &h.CurrentCoreType,
 		&h.LastHeartbeatAt, &h.CreatedAt, &h.UpdatedAt,
 	)
 	if err != nil {

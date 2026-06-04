@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/creamcroissant/xboard/internal/template"
 	"gopkg.in/yaml.v3"
 )
 
@@ -20,6 +21,7 @@ const (
 
 type ClashBuilder struct {
 	base *BaseBuilder
+	cdn  *CDNConfig
 }
 
 func NewClashBuilder() *ClashBuilder {
@@ -37,10 +39,11 @@ func (b *ClashBuilder) Build(req BuildRequest) (*Result, error) {
 	if b.base != nil {
 		nodes = b.base.FilterNodes(req)
 	}
+	b.cdn = req.CDN
 	proxies := make([]map[string]any, 0, len(nodes))
 	proxyNames := make([]string, 0, len(nodes))
 	for _, node := range nodes {
-		proxy := buildClashProxy(node)
+		proxy := buildClashProxy(node, b.cdn)
 		if proxy == nil {
 			continue
 		}
@@ -298,7 +301,7 @@ func defaultClashTemplate(profile string) map[string]any {
 	}
 }
 
-func buildClashProxy(node Node) map[string]any {
+func buildClashProxy(node Node, cdn *CDNConfig) map[string]any {
 	switch strings.ToLower(node.Type) {
 	case "shadowsocks":
 		return buildClashShadowsocks(node)
@@ -307,7 +310,7 @@ func buildClashProxy(node Node) map[string]any {
 	case "trojan":
 		return buildClashTrojan(node)
 	case "vless":
-		return buildClashVless(node)
+		return buildClashVless(node, cdn)
 	case "socks":
 		return buildClashSocks(node)
 	case "http":
@@ -473,12 +476,15 @@ func parsePluginOptions(raw string) map[string]string {
 }
 
 // buildClashVless builds a VLESS proxy config for Clash Meta (mihomo).
-func buildClashVless(node Node) map[string]any {
+func buildClashVless(node Node, cdn *CDNConfig) map[string]any {
+	host := node.Host
+	port := node.Port
+
 	proxy := map[string]any{
 		"name":   node.Name,
 		"type":   "vless",
-		"server": node.Host,
-		"port":   node.Port,
+		"server": host,
+		"port":   port,
 		"uuid":   node.Password,
 		"udp":    true,
 	}
@@ -509,7 +515,8 @@ func buildClashVless(node Node) map[string]any {
 	}
 
 	// Network/Transport settings
-	switch normalizeXHTTPNetwork(settingString(node.Settings, "network")) {
+	network := template.NormalizeXHTTPNetwork(settingString(node.Settings, "network"))
+	switch network {
 	case "ws":
 		proxy["network"] = "ws"
 		ws := map[string]any{}
@@ -543,6 +550,25 @@ func buildClashVless(node Node) map[string]any {
 		proxy["network"] = "xhttp"
 		if opts := buildXHTTPOpts(node.Settings); len(opts) > 0 {
 			proxy["xhttp-opts"] = opts
+		}
+		// CDN 域名替换：仅对 xhttp 协议生效
+		if cdn != nil {
+			proxy["server"] = cdn.Domain
+			proxy["port"] = 443
+			proxy["servername"] = cdn.Domain
+			xopts, _ := proxy["xhttp-opts"].(map[string]any)
+			if xopts == nil {
+				xopts = map[string]any{}
+				proxy["xhttp-opts"] = xopts
+			}
+			if cdn.Host != "" {
+				xopts["host"] = cdn.Host
+			} else {
+				xopts["host"] = cdn.Domain
+			}
+			if cdn.Path != "" {
+				xopts["path"] = cdn.Path
+			}
 		}
 	default:
 		proxy["network"] = "tcp"

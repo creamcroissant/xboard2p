@@ -4,24 +4,12 @@ import (
 	"encoding/json"
 	"net/url"
 	"strings"
+
+	"github.com/creamcroissant/xboard/internal/template"
 )
 
-func normalizeXHTTPNetwork(network string) string {
-	trimmed := strings.TrimSpace(network)
-	switch strings.ToLower(trimmed) {
-	case "xhttp", "splithttp":
-		return "xhttp"
-	default:
-		return trimmed
-	}
-}
-
-func normalizeXHTTPMode(mode string) string {
-	return strings.ToLower(strings.TrimSpace(mode))
-}
-
 func nodeUsesXHTTP(settings map[string]any) bool {
-	return normalizeXHTTPNetwork(settingString(settings, "network")) == "xhttp"
+	return template.NormalizeXHTTPNetwork(settingString(settings, "network")) == "xhttp"
 }
 
 func applyVLESSXHTTPQuery(q url.Values, settings map[string]any) {
@@ -31,7 +19,7 @@ func applyVLESSXHTTPQuery(q url.Values, settings map[string]any) {
 	if host := xhttpHost(settings); host != "" {
 		q.Set("host", host)
 	}
-	if mode := normalizeXHTTPMode(xhttpSettingString(settings, "mode")); mode != "" {
+	if mode := template.NormalizeXHTTPMode(xhttpSettingString(settings, "mode")); mode != "" {
 		q.Set("mode", mode)
 	}
 	if extra := encodedXHTTPExtra(settings); extra != "" {
@@ -47,7 +35,7 @@ func buildXHTTPOpts(settings map[string]any) map[string]any {
 	if host := xhttpHost(settings); host != "" {
 		opts["host"] = host
 	}
-	if mode := normalizeXHTTPMode(xhttpSettingString(settings, "mode")); mode != "" {
+	if mode := template.NormalizeXHTTPMode(xhttpSettingString(settings, "mode")); mode != "" {
 		opts["mode"] = mode
 	}
 	if headers := xhttpHeaders(settings); len(headers) > 0 {

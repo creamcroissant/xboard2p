@@ -27,6 +27,37 @@ message StatusReport {
   repeated CoreInstance instances = 6;    // Core instances on agent
   repeated ConfigInventoryEntry inventory = 7;    // Applied config file inventory
   repeated InboundIndexEntry inbound_index = 8;   // Parsed inbound semantic index
+  int64 reported_at = 9;
+  AgentCommandQueueStats command_queue = 10;
+  AgentUpdateStatus update_status = 11;
+}
+
+message AgentCommandQueueStats {
+  int32 capacity = 1;
+  int32 queued = 2;
+  int32 inflight = 3;
+  int32 workers = 4;
+  int32 available = 5;
+  repeated string active_command_ids = 6;
+  int64 updated_at = 7;
+}
+
+message AgentUpdateStatus {
+  string current_version = 1;
+  string target_version = 2;
+  string status = 3;
+  string phase = 4;
+  string previous_version = 5;
+  string error_message = 6;
+  int64 started_at = 7;
+  int64 finished_at = 8;
+  int64 last_checked_at = 9;
+  string last_check_error = 10;
+  bool rollback_available = 11;
+  bool rolled_back = 12;
+  string locked_bad_version = 13;
+  int32 crash_count = 14;
+  int64 health_deadline_at = 15;
 }
 
 message ProtocolState {
@@ -122,6 +153,17 @@ message SystemMetrics {
   string core_version = 20;            // Core version (e.g., "1.10.0")
   repeated string capabilities = 21;   // Detected capabilities (e.g., ["reality", "multiplex"])
   repeated string build_tags = 22;     // Build tags (e.g., ["with_v2ray_api"])
+  string boot_id = 23;
+  string agent_version = 24;
+  string current_core_type = 25;
+}
+
+message MetricInt64Value {
+  int64 value = 1;
+}
+
+message MetricUInt64Value {
+  uint64 value = 1;
 }
 
 // NetworkMetrics contains network traffic statistics
@@ -130,6 +172,11 @@ message NetworkMetrics {
   uint64 download_bytes = 2;
   uint64 upload_delta = 3;
   uint64 download_delta = 4;
+  MetricInt64Value upload_rate_bps = 5;
+  MetricInt64Value download_rate_bps = 6;
+  MetricUInt64Value raw_upload_total_bytes = 7;
+  MetricUInt64Value raw_download_total_bytes = 8;
+  bool raw_counters_present = 9;
 }
 
 // StatusResponse is returned after status report
