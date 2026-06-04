@@ -513,10 +513,16 @@ install_file() {
     src_path=$1
     dst_path=$2
 
+    # Remove destination first so running binaries can be replaced.
+    # Linux allows unlinking an in-use executable (the running process
+    # keeps the old inode); a fresh file can then be written at the same path.
+    rm -f "$dst_path" 2>/dev/null
+
     if cp "$src_path" "$dst_path" >/dev/null 2>&1; then
         return 0
     fi
 
+    run_privileged rm -f "$dst_path" 2>/dev/null
     run_privileged cp "$src_path" "$dst_path"
 }
 
@@ -665,9 +671,10 @@ render_install_service_file() {
     fi
 
     install_root=$(dirname "$INSTALL_DIR")
+    install_dir_placeholder="__XBOARD_INSTALL_DIR__"
     escaped_install_dir=$(printf '%s' "$INSTALL_DIR" | sed 's/[&#\\]/\\&/g')
     escaped_install_root=$(printf '%s' "$install_root" | sed 's/[&#\\]/\\&/g')
-    if ! sed -e "s#/opt/xboard/panel#${escaped_install_dir}#g" -e "s#/opt/xboard#${escaped_install_root}#g" "$source_path" > "$temp_service"; then
+    if ! sed -e "s#/opt/xboard/panel#${install_dir_placeholder}#g" -e "s#/opt/xboard#${escaped_install_root}#g" -e "s#${install_dir_placeholder}#${escaped_install_dir}#g" "$source_path" > "$temp_service"; then
         echo "Error: failed to render service file ${source_path}."
         rm -f "$temp_service"
         return 1
