@@ -1498,7 +1498,7 @@ export default function ConfigCenterPage() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {semanticDiffQuery.data.items.length === 0 ? (
+                          {!semanticDiffQuery.data.items || semanticDiffQuery.data.items.length === 0 ? (
                             <TableRow>
                               <TableCell colSpan={3} className="text-center text-muted-foreground">
                                 {t("admin.configCenter.empty.noSemanticDiff")}

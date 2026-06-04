@@ -659,6 +659,8 @@ func registerV1UserRoutes(v1 chi.Router, userService service.UserService, knowle
 		mountHandler(user, "/", userHandler)
 		mountHandler(user, "/invite", userHandler)
 		mountHandler(user, "/notice", userNoticeHandler)
+			// Explicitly register /notice/unread to avoid chi wildcard matching edge cases
+			user.Get("/notice/unread", userNoticeHandler.ServeHTTP)
 		mountHandler(user, "/server", userServerHandler)
 		mountHandler(user, "/telegram", userHandler)
 		mountHandler(user, "/comm", userHandler)
