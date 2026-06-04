@@ -12,6 +12,7 @@ import (
 
 	"github.com/creamcroissant/xboard/internal/agent/config"
 	"github.com/creamcroissant/xboard/internal/agent/service"
+	"github.com/creamcroissant/xboard/internal/support/logging"
 )
 
 var (
@@ -35,19 +36,22 @@ func main() {
 		return
 	}
 
-	// Setup Logger
-	opts := &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}
-	logger := slog.New(slog.NewTextHandler(os.Stdout, opts))
-	slog.SetDefault(logger)
-
-	// Load Config
+	// Load Config first (needed for log settings)
 	cfg, err := config.Load(configFile)
 	if err != nil {
 		slog.Error("Failed to load config", "path", configFile, "error", err)
 		os.Exit(1)
 	}
+
+	// Setup Logger (stdout + optional daily-rotated file)
+	logger := logging.New(logging.Options{
+		Level:     slog.LevelInfo,
+		Format:    "text",
+		AddSource: false,
+		LogDir:    cfg.Log.Dir,
+		MaxDays:   cfg.Log.MaxDays,
+	})
+	slog.SetDefault(logger)
 	if strings.TrimSpace(cfg.Update.CurrentVersion) == "" {
 		cfg.Update.CurrentVersion = Version
 	}

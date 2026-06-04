@@ -53,6 +53,16 @@ type Config struct {
 	Proxy      ProxyConfig      `yaml:"proxy"`
 	Update     UpdateConfig     `yaml:"update"`
 	CDN        CDNConfig        `yaml:"cdn"`
+	Log        LogConfig        `yaml:"log"`
+}
+
+// LogConfig holds agent log settings.
+type LogConfig struct {
+	// Dir is the directory for persisted daily logs (relative to working dir).
+	// Default "logs". Set empty to disable file output.
+	Dir string `yaml:"dir"`
+	// MaxDays controls how many days of log files to retain (default 7).
+	MaxDays int `yaml:"max_days"`
 }
 
 // GRPCConfig holds gRPC client configuration for connecting to Panel
@@ -504,6 +514,14 @@ func applyDefaults(cfg *Config) error {
 	}
 	if strings.TrimSpace(cfg.CDN.AdminAddr) == "" {
 		cfg.CDN.AdminAddr = "localhost:2019"
+	}
+
+	// Log defaults
+	if cfg.Log.Dir == "" {
+		cfg.Log.Dir = "logs"
+	}
+	if cfg.Log.MaxDays <= 0 {
+		cfg.Log.MaxDays = 7
 	}
 
 	return nil
