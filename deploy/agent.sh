@@ -2290,6 +2290,23 @@ if [ "$SKIP_SYSTEMD" = "1" ]; then
     echo "Skipping xboard-agent.service installation (XBOARD_INSTALL_SKIP_SYSTEMD=1)."
 elif is_systemd_available; then
     SERVICE_FILE=$(resolve_service_file "agent.service")
+    if [ -z "$SERVICE_FILE" ]; then
+        # Fall back to downloading from GitHub (covers pipe-mode installs where
+        # the local template is not available).
+        SERVICE_URL="${XBOARD_AGENT_SERVICE_URL:-}"
+        if [ -z "$SERVICE_URL" ]; then
+            SERVICE_URL="https://raw.githubusercontent.com/${XBOARD_RELEASE_REPO}/main/deploy/agent.service"
+        fi
+        DOWNLOADED_SERVICE=$(mktemp)
+        if [ -n "$DOWNLOADED_SERVICE" ]; then
+            if curl --fail --silent --show-error --location --retry 3 --retry-delay 1 --output "$DOWNLOADED_SERVICE" "$SERVICE_URL"; then
+                SERVICE_FILE="$DOWNLOADED_SERVICE"
+            else
+                rm -f "$DOWNLOADED_SERVICE"
+                echo "Warning: failed to download agent.service from ${SERVICE_URL}."
+            fi
+        fi
+    fi
     if [ -n "$SERVICE_FILE" ]; then
         if ! render_install_service_file "$SERVICE_FILE" /etc/systemd/system/xboard-agent.service; then
             echo "Error: failed to install xboard-agent.service."
