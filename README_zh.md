@@ -103,41 +103,33 @@ docker run --rm -it \
 
 ```bash
 # 安装 panel（需要 root）
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/panel.sh)
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/panel.sh | sudo bash
 
 # 安装 agent（需要 root）
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh) \
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh | sudo bash -s -- \
   -k 'your-agent-communication-key' -g '10.0.0.2:9090'
 
 # 安装 agent + sing-box core
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh) \
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh | sudo bash -s -- \
   -k 'your-agent-communication-key' -g '10.0.0.2:9090' -c sing-box
 
 # 单命令 bootstrap 入口（bootstrap 逻辑已并入 agent.sh）
-sudo INSTALL_DIR=/opt/xboard/agent bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh) \
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh | sudo INSTALL_DIR=/opt/xboard/agent bash -s -- \
   --bootstrap --ref latest -- -k 'your-agent-communication-key' -g '10.0.0.2:9090'
 
 # 指定 tag 的 bootstrap（脚本/service/二进制版本强绑定）
-sudo INSTALL_DIR=/opt/xboard/agent bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh) \
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh | sudo INSTALL_DIR=/opt/xboard/agent bash -s -- \
   --bootstrap --ref v1.2.3 -- -k 'your-agent-communication-key' -g '10.0.0.2:9090'
 
 # 卸载 panel 脚本管理产物
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/panel.sh) --uninstall
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/panel.sh | sudo bash -s -- --uninstall
 
 # 卸载 agent 脚本管理产物
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh) --uninstall
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh | sudo bash -s -- --uninstall
 
-# 若系统不支持 Bash 进程替换（<(...))，可使用以下方式：
-
-# panel 安装（curl 管道）
-curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/panel.sh | sudo bash -s --
-
-# panel 安装（wget 管道）
-wget -qO- https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/panel.sh | sudo bash -s --
-
-# panel 卸载（wget 下载后执行）
+# 备用方案：先下载再执行（所有系统通用，不依赖 /dev/fd）
 wget -qO /tmp/panel.sh https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/panel.sh
-sudo bash /tmp/panel.sh --uninstall
+sudo bash /tmp/panel.sh
 
 # agent 安装（curl 管道）
 curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh | sudo bash -s -- \

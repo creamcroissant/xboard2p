@@ -163,7 +163,7 @@ func (r *agentHostRepo) ListAll(ctx context.Context) ([]*repository.AgentHost, e
 		FROM agent_hosts ORDER BY name ASC
 	`)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("agent_hosts list query: %w", err)
 	}
 	defer rows.Close()
 
@@ -171,11 +171,14 @@ func (r *agentHostRepo) ListAll(ctx context.Context) ([]*repository.AgentHost, e
 	for rows.Next() {
 		host, err := r.scanHostFromRows(rows)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("agent_hosts scan row: %w", err)
 		}
 		hosts = append(hosts, host)
 	}
-	return hosts, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("agent_hosts rows iteration: %w", err)
+	}
+	return hosts, nil
 }
 
 func (r *agentHostRepo) UpdateStatus(ctx context.Context, id int64, status int, heartbeatAt int64) error {

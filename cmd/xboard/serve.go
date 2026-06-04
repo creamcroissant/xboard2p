@@ -69,6 +69,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 		Level:     cfg.Log.SlogLevel(),
 		Format:    cfg.Log.Format,
 		AddSource: cfg.Log.AddSource,
+		LogDir:    cfg.Log.LogDir,
+		MaxDays:   cfg.Log.MaxDays,
 	})
 	logger.Info("database path resolved", "path", cfg.DB.Path)
 

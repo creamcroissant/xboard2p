@@ -62,6 +62,11 @@ type LogConfig struct {
 	Format      string `mapstructure:"format"`
 	AddSource   bool   `mapstructure:"add_source"`
 	Environment string `mapstructure:"environment"`
+	// File path for persistent log storage (daily rotation, 7-day retention).
+	// Empty disables file output (default). Example: /opt/xboard/logs
+	LogDir string `mapstructure:"log_dir"`
+	// MaxDays controls how many days of log files to retain (default 7).
+	MaxDays int `mapstructure:"max_days"`
 }
 
 // DBConfig 定义数据库配置。

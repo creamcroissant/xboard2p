@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -177,6 +178,7 @@ func (h *AgentHostHandler) List(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	hosts, err := h.service.List(ctx)
 	if err != nil {
+		slog.Error("agent_host.list failed", "error", err)
 		RespondErrorI18nAction(ctx, w, http.StatusInternalServerError, "agent_host.list", "error.internal_server_error", h.i18n)
 		return
 	}

@@ -197,6 +197,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("log.level", "info")
 	v.SetDefault("log.format", "json")
 	v.SetDefault("log.environment", "production")
+	v.SetDefault("log.log_dir", "")
+	v.SetDefault("log.max_days", 7)
 	v.SetDefault("database.driver", "sqlite")
 	v.SetDefault("database.path", "data/xboard.db")
 	v.SetDefault("auth.signing_key", "change-me")

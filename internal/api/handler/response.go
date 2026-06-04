@@ -63,6 +63,9 @@ func respondNotImplementedI18n(ctx context.Context, w http.ResponseWriter, names
 }
 
 func respondError(w http.ResponseWriter, status int, action string, err error) {
+	if status >= 500 {
+		slog.Error("handler internal error", "action", action, "error", err)
+	}
 	respondJSON(w, status, map[string]any{
 		"error":  err.Error(),
 		"action": action,
@@ -72,6 +75,9 @@ func respondError(w http.ResponseWriter, status int, action string, err error) {
 func RespondErrorI18nAction(ctx context.Context, w http.ResponseWriter, status int, action string, key string, i18nMgr *i18n.Manager, args ...interface{}) {
 	if key == "" {
 		key = action
+	}
+	if status >= 500 {
+		slog.Error("handler internal error", "action", action, "key", key, "status", status)
 	}
 	lang := requestctx.GetLanguage(ctx)
 	var msg string
@@ -114,6 +120,9 @@ func respondAgentOperationBusy(ctx context.Context, w http.ResponseWriter, actio
 
 // New helper for i18n error responses
 func RespondErrorI18n(ctx context.Context, w http.ResponseWriter, status int, key string, i18nMgr *i18n.Manager, args ...interface{}) {
+	if status >= 500 {
+		slog.Error("handler internal error", "key", key, "status", status)
+	}
 	lang := requestctx.GetLanguage(ctx)
 	var msg string
 	if i18nMgr != nil {

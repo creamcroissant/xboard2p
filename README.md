@@ -101,41 +101,33 @@ Use the provided scripts for install/uninstall:
 
 ```bash
 # Install panel (requires root)
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/panel.sh)
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/panel.sh | sudo bash
 
 # Install agent (requires root)
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh) \
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh | sudo bash -s -- \
   -k 'your-agent-communication-key' -g '10.0.0.2:9090'
 
 # Install agent + sing-box core
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh) \
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh | sudo bash -s -- \
   -k 'your-agent-communication-key' -g '10.0.0.2:9090' -c sing-box
 
 # One-liner bootstrap entry (bootstrap logic is merged into agent.sh)
-sudo INSTALL_DIR=/opt/xboard/agent bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh) \
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh | sudo INSTALL_DIR=/opt/xboard/agent bash -s -- \
   --bootstrap --ref latest -- -k 'your-agent-communication-key' -g '10.0.0.2:9090'
 
 # Bootstrap with explicit tag (script/service/binary version bound to same tag)
-sudo INSTALL_DIR=/opt/xboard/agent bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh) \
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh | sudo INSTALL_DIR=/opt/xboard/agent bash -s -- \
   --bootstrap --ref v1.2.3 -- -k 'your-agent-communication-key' -g '10.0.0.2:9090'
 
 # Uninstall panel-managed artifacts
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/panel.sh) --uninstall
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/panel.sh | sudo bash -s -- --uninstall
 
 # Uninstall agent-managed artifacts
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh) --uninstall
+curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh | sudo bash -s -- --uninstall
 
-# If your system does NOT support Bash process substitution (<(...)), use one of these alternatives:
-
-# Panel install (curl pipe)
-curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/panel.sh | sudo bash -s --
-
-# Panel install (wget pipe)
-wget -qO- https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/panel.sh | sudo bash -s --
-
-# Panel uninstall (wget download + run)
+# Alternative: download then run (works on all systems, no /dev/fd required)
 wget -qO /tmp/panel.sh https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/panel.sh
-sudo bash /tmp/panel.sh --uninstall
+sudo bash /tmp/panel.sh
 
 # Agent install (curl pipe)
 curl -fsSL https://raw.githubusercontent.com/creamcroissant/xboard2p/main/deploy/agent.sh | sudo bash -s -- \
