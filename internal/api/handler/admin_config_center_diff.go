@@ -200,6 +200,15 @@ func (h *AdminConfigCenterDiffHandler) GetSemanticDiff(w http.ResponseWriter, r 
 		Tag:             strings.TrimSpace(query.Get("tag")),
 	})
 	if err != nil {
+		// If no desired state exists yet, return an empty diff instead of 404.
+		// This prevents frontend null-reference crashes when opening Config Center
+		// on a fresh agent that has no specs saved.
+		if errors.Is(err, service.ErrDriftAndDiffDesiredMissing) {
+			respondJSON(w, http.StatusOK, map[string]any{
+				"data": map[string]any{"items": []any{}},
+			})
+			return
+		}
 		h.respondDiffError(r.Context(), w, "admin.config_center.diff.semantic", err)
 		return
 	}
