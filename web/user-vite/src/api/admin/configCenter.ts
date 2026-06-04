@@ -55,7 +55,7 @@ export async function createConfigCenterSpec(
     "/config-center/specs",
     payload
   );
-  return response.data.data;
+  return response.data.data ?? ({} as UpsertConfigCenterSpecResult);
 }
 
 export async function updateConfigCenterSpec(
@@ -66,7 +66,7 @@ export async function updateConfigCenterSpec(
     `/config-center/specs/${specId}`,
     payload
   );
-  return response.data.data;
+  return response.data.data ?? ({} as UpsertConfigCenterSpecResult);
 }
 
 export async function getConfigCenterSpecHistory(
@@ -90,7 +90,7 @@ export async function importConfigCenterSpecsFromApplied(
     "/config-center/specs/import-from-applied",
     payload
   );
-  return response.data.data;
+  return response.data.data ?? ({} as ImportConfigCenterSpecResult);
 }
 
 export async function listConfigCenterArtifacts(
@@ -112,7 +112,7 @@ export async function getConfigCenterTextDiff(
   const response = await adminApi.get<DataEnvelope<ConfigCenterTextDiff>>("/config-center/diff/text", {
     params,
   });
-  return response.data.data;
+  return response.data.data ?? ({} as ConfigCenterTextDiff);
 }
 
 export async function getConfigCenterSemanticDiff(
@@ -124,7 +124,7 @@ export async function getConfigCenterSemanticDiff(
       params,
     }
   );
-  return response.data.data;
+  return response.data.data ?? { items: [], desired_revision: 0 } as ConfigCenterSemanticDiff;
 }
 
 export async function createConfigCenterApplyRun(
@@ -134,7 +134,7 @@ export async function createConfigCenterApplyRun(
     "/config-center/apply-runs",
     payload
   );
-  return response.data.data;
+  return response.data.data ?? ({} as ConfigCenterApplyRun);
 }
 
 export async function listConfigCenterApplyRuns(
@@ -162,7 +162,7 @@ export async function getConfigCenterApplyRunDetail(
       params,
     }
   );
-  return response.data.data;
+  return response.data.data ?? ({} as ConfigCenterApplyRunDetail);
 }
 
 export async function listConfigCenterAppliedSnapshot(
@@ -174,7 +174,7 @@ export async function listConfigCenterAppliedSnapshot(
       params,
     }
   );
-  return response.data.data;
+  return response.data.data ?? ({} as ConfigCenterAppliedSnapshot);
 }
 
 export async function listConfigCenterDriftStates(
