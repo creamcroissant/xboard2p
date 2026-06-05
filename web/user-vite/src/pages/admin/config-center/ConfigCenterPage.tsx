@@ -1336,7 +1336,7 @@ export default function ConfigCenterPage() {
                                   </CardDescription>
                                 </CardHeader>
                                 <CardContent>
-                                  {applyDetail.semantic_diff && applyDetail.semantic_diff.items.length > 0 ? (
+                                  {applyDetail.semantic_diff && applyDetail.semantic_diff.items && applyDetail.semantic_diff.items.length > 0 ? (
                                     <Table>
                                       <TableHeader>
                                         <TableRow>
@@ -1649,7 +1649,7 @@ export default function ConfigCenterPage() {
                       <h3 className="mb-3 text-sm font-semibold text-foreground">
                         {t("admin.configCenter.snapshot.inventoryTitle")}
                       </h3>
-                      {!snapshot || snapshot.inventories.length === 0 ? (
+                      {!snapshot || !snapshot.inventories || snapshot.inventories.length === 0 ? (
                         <EmptyState
                           icon={<Diff className="h-full w-full" />}
                           title={t("admin.configCenter.empty.noInventoryTitle")}
@@ -1667,7 +1667,7 @@ export default function ConfigCenterPage() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {snapshot.inventories.map((item) => (
+                            {(snapshot.inventories ?? []).map((item) => (
                               <TableRow key={item.id}>
                                 <TableCell>
                                   <Badge variant="secondary">{t(`admin.configCenter.source.${item.source}`)}</Badge>
@@ -1692,7 +1692,7 @@ export default function ConfigCenterPage() {
                       <h3 className="mb-3 text-sm font-semibold text-foreground">
                         {t("admin.configCenter.snapshot.inboundTitle")}
                       </h3>
-                      {!snapshot || snapshot.inbound_indexes.length === 0 ? (
+                      {!snapshot || !snapshot.inbound_indexes || snapshot.inbound_indexes.length === 0 ? (
                         <EmptyState
                           icon={<GitCompare className="h-full w-full" />}
                           title={t("admin.configCenter.empty.noInboundIndexTitle")}
@@ -1711,7 +1711,7 @@ export default function ConfigCenterPage() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {snapshot.inbound_indexes.map((item) => (
+                            {(snapshot.inbound_indexes ?? []).map((item) => (
                               <TableRow key={item.id}>
                                 <TableCell>
                                   <Badge variant="secondary">{t(`admin.configCenter.source.${item.source}`)}</Badge>
