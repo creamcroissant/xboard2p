@@ -1164,6 +1164,11 @@ if ! ensure_download_dependencies; then
 fi
 
 set_stage "install panel binary"
+# Remove old dist before installing new binary so that if the frontend
+# step fails later, we don't serve mismatched HTML that references
+# missing chunks (which causes "MIME type text/html" browser errors).
+run_privileged rm -rf "$INSTALL_DIR/web/user-vite/dist" 2>/dev/null || true
+run_privileged rm -rf "$INSTALL_DIR/web/install" 2>/dev/null || true
 if ! install_binary "xboard" "./cmd/xboard/main.go"; then
     fail_stage "panel binary installation failed"
 fi
@@ -1172,6 +1177,10 @@ set_stage "install frontend assets"
 if ! install_release_archive_dir "$FRONTEND_RELEASE_ASSET" "$INSTALL_DIR/web/user-vite" "dist" "$INSTALL_DIR/web/user-vite/dist"; then
     echo "Error: failed to install frontend assets from GitHub release asset."
     fail_stage "frontend asset installation failed"
+fi
+if [ ! -f "$INSTALL_DIR/web/user-vite/dist/index.html" ]; then
+    echo "Error: frontend dist installed but index.html missing — rebuild may be incomplete."
+    fail_stage "frontend asset verification failed"
 fi
 
 set_stage "install setup UI assets"
